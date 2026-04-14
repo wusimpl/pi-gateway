@@ -7,4 +7,4 @@
 测试通过后方可git提交和推送。
 
 ## code review
-commit 后必须使用subagent skill，指定gpt 5.4 模型进行code review，根据反馈fix bugs，然后再做一次提交推送。
+commit 后，根据改动大小判断是否使用subagent skill，指定gpt 5.4 模型进行code review，根据反馈fix bugs，然后再做一次提交推送。
