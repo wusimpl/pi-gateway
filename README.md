@@ -62,9 +62,11 @@ cp .env.example .env
 | `FEISHU_APP_SECRET` | 是 | - | 飞书应用 App Secret |
 | `FEISHU_DOMAIN` | 否 | `feishu` | 飞书域名：`feishu`（国内）或 `larksuite`（海外） |
 | `DATA_DIR` | 否 | `./data` | 数据存储目录 |
+| `PI_WORKSPACE_ROOT` | 否 | `~/code/pi-workspace` | 每用户独立工作目录根路径，支持 `~` |
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug`/`info`/`warn`/`error` |
 | `STREAMING_ENABLED` | 否 | `true` | 是否启用流式回复 |
 | `TEXT_CHUNK_LIMIT` | 否 | `2000` | 单条消息文本上限（字符数） |
+| `FEISHU_PROCESSING_REACTION_TYPE` | 否 | `SMILE` | 处理中提示的飞书表情 `emoji_type`；留空则不启用 |
 
 同时确保环境变量中已配置 Pi 所需的 API Key（如 `ANTHROPIC_API_KEY`）。
 
