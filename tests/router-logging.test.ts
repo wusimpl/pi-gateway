@@ -138,4 +138,17 @@ describe("handleFeishuMessage 日志", () => {
       })
     );
   });
+
+  it("重复消息只打忽略日志，不再重复打印收到私聊消息", async () => {
+    await handleFeishuMessage({});
+    await handleFeishuMessage({});
+
+    expect(
+      mocks.logger.info.mock.calls.filter(([message]) => message === "收到私聊消息")
+    ).toHaveLength(1);
+    expect(mocks.logger.debug).toHaveBeenCalledWith("重复消息已忽略", {
+      openId: "ou_1",
+      messageId: "om_1",
+    });
+  });
 });

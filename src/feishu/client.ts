@@ -35,7 +35,7 @@ export function createFeishuConnection(config: Config): FeishuConnection {
     handler: (data: Record<string, unknown>) => Promise<void>,
   ): Promise<void> {
     eventDispatcher.register({
-      "im.message.receive_v1": async (data: Record<string, unknown>) => {
+      "im.message.receive_v1": (data: Record<string, unknown>) => {
         logger.debug("收到飞书消息事件", {
           topLevelKeys: Object.keys(data),
           hasEvent: typeof data.event === "object" && data.event !== null,
@@ -43,11 +43,12 @@ export function createFeishuConnection(config: Config): FeishuConnection {
           hasMessage: typeof data.message === "object" && data.message !== null,
         });
 
-        try {
-          await handler(data);
-        } catch (err) {
-          logger.error("处理飞书消息时出错", { error: String(err) });
-        }
+        // 飞书长连接要求尽快完成回调，实际消息处理放到后台异步执行。
+        void Promise.resolve()
+          .then(() => handler(data))
+          .catch((err) => {
+            logger.error("处理飞书消息时出错", { error: String(err) });
+          });
       },
     });
 

@@ -62,6 +62,11 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     const openId = identity.openId;
     const messageId = message.messageId;
 
+    if (deps.stateStore.isDuplicate(messageId)) {
+      logger.debug("重复消息已忽略", { openId, messageId });
+      return;
+    }
+
     logger.info("收到私聊消息", {
       openId,
       messageId,
@@ -73,11 +78,6 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       messageType: message.messageType,
       ...buildMessageLogPayload(message),
     });
-
-    if (deps.stateStore.isDuplicate(messageId)) {
-      logger.debug("重复消息已忽略", { openId, messageId });
-      return;
-    }
 
     const bridgeCommand = message.kind === "text" ? parseBridgeCommand(message.text) : null;
     if (bridgeCommand) {
