@@ -3,6 +3,7 @@ import { formatError } from "../feishu/format.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import {
   type AvailableModelInfo,
+  filterAvailableModels,
   formatModelLabel,
 } from "../pi/models.js";
 import type { SessionService } from "../pi/sessions.js";
@@ -107,7 +108,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     if (!targetModel) {
       await deps.messenger.sendTextMessage(
         openId,
-        "没找到这个可用模型，或者它现在还不能用。\n\n用 /models 看当前环境真的能跑的模型。",
+        "没找到这个模型，或者它现在还不能用。\n\n先用 /models 看编号，再用 /model <序号> 或 /model <provider/model> 切。",
       );
       return;
     }
@@ -131,19 +132,6 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
   return {
     handleBridgeCommand: handleBridgeCommandFlow,
   };
-}
-
-function filterAvailableModels(
-  models: AvailableModelInfo[],
-  providerFilter?: string,
-): AvailableModelInfo[] {
-  const trimmed = providerFilter?.trim();
-  if (!trimmed) {
-    return models;
-  }
-
-  const normalizedProvider = trimmed.toLowerCase();
-  return models.filter((model) => model.provider.toLowerCase() === normalizedProvider);
 }
 
 function getCurrentModelLabel(session: { model?: { provider: string; id: string } | undefined }): string | undefined {

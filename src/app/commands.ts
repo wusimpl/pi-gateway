@@ -29,7 +29,7 @@ interface BridgeCommandContext {
   currentModel?: string;
   previousModel?: string;
   availableModelCount?: number;
-  availableModels?: Array<Pick<AvailableModelInfo, "id" | "label" | "name">>;
+  availableModels?: Array<Pick<AvailableModelInfo, "order" | "id" | "label" | "name">>;
   requestedProvider?: string;
   contextFiles?: BridgeContextFile[];
   skills?: BridgeSkillInfo[];
@@ -99,7 +99,7 @@ export function handleBridgeCommand(
         if (typeof context.availableModelCount === "number") {
           lines.push(`✅ 当前可用模型: ${context.availableModelCount} 个`);
         }
-        lines.push("", "切换：/model <provider/model>", "查看可用模型：/models");
+        lines.push("", "切换：/model <序号> 或 /model <provider/model>", "查看可用模型：/models");
         return lines.join("\n");
       }
 
@@ -130,10 +130,11 @@ export function handleBridgeCommand(
           ? `📚 当前可用模型（${provider}，${models.length} 个）`
           : `📚 当前可用模型（${models.length} 个）`,
         "只显示当前环境真的能用的模型。",
+        "序号跟总列表一致，可直接用 /model <序号> 切换。",
         "",
         ...models.map(formatAvailableModelLine),
         "",
-        "切换：/model <provider/model>",
+        "切换：/model <序号> 或 /model <provider/model>",
       ];
       if (!provider) {
         lines.push("按 provider 查看：/models <provider>");
@@ -145,9 +146,9 @@ export function handleBridgeCommand(
   }
 }
 
-function formatAvailableModelLine(model: Pick<AvailableModelInfo, "id" | "label" | "name">): string {
+function formatAvailableModelLine(model: Pick<AvailableModelInfo, "order" | "id" | "label" | "name">): string {
   const suffix = model.name && model.name !== model.id ? ` · ${model.name}` : "";
-  return `- ${model.label}${suffix}`;
+  return `${model.order}. ${model.label}${suffix}`;
 }
 
 function formatContextReply(contextFiles: BridgeContextFile[]): string {

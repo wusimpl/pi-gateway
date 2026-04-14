@@ -4,6 +4,7 @@ import { getModelRegistry } from "./runtime.js";
 type RuntimeModel = Awaited<ReturnType<ModelRegistry["getAvailable"]>>[number];
 
 export interface AvailableModelInfo {
+  order: number;
   provider: string;
   id: string;
   name?: string;
@@ -14,6 +15,16 @@ export interface AvailableModelInfo {
 export interface ParsedModelReference {
   provider: string;
   id: string;
+}
+
+export function parseModelSelectionOrder(rawRef: string): number | null {
+  const trimmed = rawRef.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  const order = Number.parseInt(trimmed, 10);
+  return order >= 1 ? order : null;
 }
 
 export function parseModelReference(rawRef: string): ParsedModelReference | null {
@@ -47,7 +58,8 @@ export async function listAvailableModels(
       }
       return left.id.localeCompare(right.id);
     })
-    .map((model) => ({
+    .map((model, index) => ({
+      order: index + 1,
       provider: model.provider,
       id: model.id,
       name: model.name,
@@ -73,12 +85,18 @@ export async function findAvailableModel(
   rawRef: string,
   registry: ModelRegistryLike = getModelRegistry(),
 ): Promise<AvailableModelInfo | null> {
+  const models = await listAvailableModels(registry);
+
+  const order = parseModelSelectionOrder(rawRef);
+  if (order !== null) {
+    return models.find((model) => model.order === order) ?? null;
+  }
+
   const parsed = parseModelReference(rawRef);
   if (!parsed) {
     return null;
   }
 
-  const models = await listAvailableModels(registry);
   const exact = models.find(
     (model) => model.provider === parsed.provider && model.id === parsed.id,
   );

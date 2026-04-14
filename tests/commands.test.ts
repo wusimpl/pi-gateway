@@ -96,6 +96,7 @@ describe("handleBridgeCommand", () => {
     });
     expect(result).toContain("zen2api/minimax-m2.5-free");
     expect(result).toContain("5 个");
+    expect(result).toContain("/model <序号>");
   });
 
   it("should render switch success for /model provider/model", () => {
@@ -145,13 +146,14 @@ describe("handleBridgeCommand", () => {
       { name: "models", args: "" },
       {
         availableModels: [
-          { id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
-          { id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
+          { order: 1, id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
+          { order: 2, id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
         ],
       },
     );
     expect(result).toContain("只显示当前环境真的能用的模型");
-    expect(result).toContain("openai/gpt-4o");
-    expect(result).toContain("rightcodes/gpt-5.4-high");
+    expect(result).toContain("1. openai/gpt-4o");
+    expect(result).toContain("2. rightcodes/gpt-5.4-high");
+    expect(result).toContain("/model <序号>");
   });
 });

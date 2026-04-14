@@ -122,8 +122,8 @@ describe("handleFeishuMessage 模型命令", () => {
       text: "/models",
     });
     mocks.listAvailableModels.mockResolvedValue([
-      { provider: "openai", id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
-      { provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
+      { order: 1, provider: "openai", id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
+      { order: 2, provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
     ]);
 
     await handleFeishuMessage({});
@@ -131,8 +131,8 @@ describe("handleFeishuMessage 模型命令", () => {
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
     const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
     expect(replyText).toContain("只显示当前环境真的能用的模型");
-    expect(replyText).toContain("openai/gpt-4o");
-    expect(replyText).toContain("rightcodes/gpt-5.4-high");
+    expect(replyText).toContain("1. openai/gpt-4o");
+    expect(replyText).toContain("2. rightcodes/gpt-5.4-high");
   });
 
   it("`/model` 会返回当前模型和可用模型数量", async () => {
@@ -153,8 +153,8 @@ describe("handleFeishuMessage 模型命令", () => {
       piSession,
     });
     mocks.listAvailableModels.mockResolvedValue([
-      { provider: "zen2api", id: "minimax-m2.5-free", label: "zen2api/minimax-m2.5-free", name: "MiniMax M2.5 Free" },
-      { provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
+      { order: 1, provider: "zen2api", id: "minimax-m2.5-free", label: "zen2api/minimax-m2.5-free", name: "MiniMax M2.5 Free" },
+      { order: 2, provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
     ]);
 
     await handleFeishuMessage({});
@@ -262,6 +262,7 @@ describe("handleFeishuMessage 模型命令", () => {
       piSession,
     });
     mocks.findAvailableModel.mockResolvedValue({
+      order: 2,
       provider: "rightcodes",
       id: "gpt-5.4-high",
       label: "rightcodes/gpt-5.4-high",
@@ -289,6 +290,7 @@ describe("handleFeishuMessage 模型命令", () => {
       text: "/model rightcodes/gpt-5.4-high",
     });
     mocks.findAvailableModel.mockResolvedValue({
+      order: 2,
       provider: "rightcodes",
       id: "gpt-5.4-high",
       label: "rightcodes/gpt-5.4-high",
@@ -304,5 +306,43 @@ describe("handleFeishuMessage 模型命令", () => {
       "当前还有任务在跑，等这条回复结束后再切模型。",
     );
     expect(mocks.getOrCreateActiveSession).not.toHaveBeenCalled();
+  });
+
+  it("`/model 2` 会按 `/models` 序号切模型", async () => {
+    const piSession = {
+      model: { provider: "zen2api", id: "minimax-m2.5-free" },
+      setModel: vi.fn(async (model: { provider: string; id: string }) => {
+        piSession.model = { provider: model.provider, id: model.id };
+      }),
+    };
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/model 2"}',
+      text: "/model 2",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    mocks.findAvailableModel.mockResolvedValue({
+      order: 2,
+      provider: "rightcodes",
+      id: "gpt-5.4-high",
+      label: "rightcodes/gpt-5.4-high",
+      name: "gpt5.4-high",
+      model: { provider: "rightcodes", id: "gpt-5.4-high" },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.findAvailableModel).toHaveBeenCalledWith("2");
+    expect(piSession.setModel).toHaveBeenCalledWith({ provider: "rightcodes", id: "gpt-5.4-high" });
+    const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
+    expect(replyText).toContain("已切到模型");
+    expect(replyText).toContain("rightcodes/gpt-5.4-high");
   });
 });

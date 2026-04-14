@@ -294,8 +294,9 @@ npm run dev
 - `/context` -- 查看当前会话实际加载到的 `AGENTS.md`
 - `/skills` -- 查看当前会话实际加载到的 skills
 - `/model` -- 查看当前模型
+- `/model <序号>` -- 按 `/models` 里的序号切模型
 - `/model <provider/model>` -- 切换到指定模型
-- `/models` -- 查看当前环境真的能用的模型
+- `/models` -- 查看当前环境真的能用的模型，并显示可切换序号
 - `/models <provider>` -- 只看某个 provider 下面真的能用的模型
 
 除上面这些桥接层命令外，其他斜杠命令会透传给 Pi 处理。
