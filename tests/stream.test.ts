@@ -70,7 +70,7 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "hello world", error: undefined });
     expect(mockAddProcessingReaction).toHaveBeenCalledWith("om_source_1", "SMILE");
-    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "✍️ 正在生成回复...", "hello world");
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world");
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
     expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello world\n\n4.1%/200k", 2000);
@@ -78,7 +78,6 @@ describe("promptSession", () => {
 
   it("启用流式卡片时，应持续更新并最终收口到同一条消息", async () => {
     const mockStreamingMessage = {
-      updateStatus: vi.fn().mockResolvedValue(undefined),
       updateBody: vi.fn().mockResolvedValue(undefined),
       finish: vi.fn().mockResolvedValue(undefined),
     };
@@ -96,10 +95,9 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "hello world", error: undefined });
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
-    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "✍️ 正在生成回复...", "hello world");
-    expect(mockStreamingMessage.updateStatus).not.toHaveBeenCalledWith("🔧 正在调用工具：`read`");
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world");
     expect(mockStreamingMessage.updateBody).not.toHaveBeenCalledWith("hello world");
-    expect(mockStreamingMessage.finish).toHaveBeenCalledWith("✅ 已完成", "hello world\n\n4.1%/200k", 2000);
+    expect(mockStreamingMessage.finish).toHaveBeenCalledWith("hello world\n\n4.1%/200k", 2000);
   });
 
   it("reaction 添加失败时，仍应继续处理并发送回复", async () => {
@@ -254,7 +252,6 @@ describe("promptSession", () => {
 
   it("关闭流式开关时，不应初始化流式卡片", async () => {
     const mockStreamingMessage = {
-      updateStatus: vi.fn().mockResolvedValue(undefined),
       updateBody: vi.fn().mockResolvedValue(undefined),
       finish: vi.fn().mockResolvedValue(undefined),
     };

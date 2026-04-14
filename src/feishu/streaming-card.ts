@@ -1,12 +1,9 @@
 import type { RenderedFeishuMessage } from "./render.js";
 
-const STREAMING_TITLE = "Pi";
-const STREAMING_STATUS_ELEMENT_ID = "stream_status";
 const STREAMING_BODY_ELEMENT_ID = "stream_body";
 const STREAMING_SUMMARY_LIMIT = 120;
 
 interface BuildStreamingCardOptions {
-  statusText: string;
   bodyText?: string;
   summaryText?: string;
 }
@@ -17,25 +14,21 @@ interface BuildStreamingSettingsOptions {
 }
 
 interface BuildFinalStreamingCardOptions {
-  statusText: string;
   finalMessage: RenderedFeishuMessage;
   summaryText?: string;
 }
 
 export function buildStreamingCardData({
-  statusText,
   bodyText = "",
   summaryText = "",
 }: BuildStreamingCardOptions): string {
   return JSON.stringify({
     schema: "2.0",
-    header: buildStreamingCardHeader(),
     config: buildStreamingCardConfig(true, summaryText),
     body: {
       direction: "vertical",
       padding: "12px 12px 12px 12px",
       elements: [
-        buildMarkdownElement(statusText, STREAMING_STATUS_ELEMENT_ID),
         buildMarkdownElement(bodyText, STREAMING_BODY_ELEMENT_ID),
       ],
     },
@@ -43,19 +36,16 @@ export function buildStreamingCardData({
 }
 
 export function buildFinalStreamingCardData({
-  statusText,
   finalMessage,
   summaryText = "",
 }: BuildFinalStreamingCardOptions): string {
   return JSON.stringify({
     schema: "2.0",
-    header: buildStreamingCardHeader(),
     config: buildStreamingCardConfig(false, summaryText),
     body: {
       direction: "vertical",
       padding: "12px 12px 12px 12px",
       elements: [
-        buildMarkdownElement(statusText),
         ...extractMessageElements(finalMessage),
       ],
     },
@@ -82,21 +72,8 @@ export function buildStreamingSummary(text: string): string {
   return `${normalized.slice(0, STREAMING_SUMMARY_LIMIT - 3)}...`;
 }
 
-export function getStreamingStatusElementId(): string {
-  return STREAMING_STATUS_ELEMENT_ID;
-}
-
 export function getStreamingBodyElementId(): string {
   return STREAMING_BODY_ELEMENT_ID;
-}
-
-function buildStreamingCardHeader(): Record<string, unknown> {
-  return {
-    title: {
-      content: STREAMING_TITLE,
-      tag: "plain_text",
-    },
-  };
 }
 
 function buildStreamingCardConfig(

@@ -63,9 +63,6 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let reactionId: string | null = null;
       let streamingMessage: FeishuStreamingMessage | null = null;
       let streamingBroken = false;
-      let latestStatus = formatStreamStatusThinking();
-      let activeToolName: string | null = null;
-      let flushedStatus = "";
       let flushedBody = "";
       let pendingTimer: NodeJS.Timeout | null = null;
       let flushChain: Promise<void> = Promise.resolve();
@@ -78,7 +75,6 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       }
 
       async function ensureStreamingMessage(
-        initialStatus: string = latestStatus,
         initialBody: string = stripLeadingBlankLines(fullText),
       ): Promise<void> {
         if (
@@ -93,13 +89,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
         streamingInitAttempted = true;
         try {
-          streamingMessage = await messenger.startStreamingMessage(
-            openId,
-            initialStatus,
-            initialBody,
-          );
+          streamingMessage = await messenger.startStreamingMessage(openId, initialBody);
           if (streamingMessage) {
-            flushedStatus = initialStatus;
             flushedBody = initialBody;
           }
         } catch (err) {
@@ -114,13 +105,12 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       function queueStreamingFlush(force: boolean = false): void {
         if (!streamingEnabled || streamingBroken || !hasVisibleAssistantText(fullText)) return;
         if (force) {
-          const statusSnapshot = latestStatus;
           const bodySnapshot = stripLeadingBlankLines(fullText);
           if (pendingTimer) {
             clearTimeout(pendingTimer);
             pendingTimer = null;
           }
-          flushChain = flushChain.then(() => flushStreamingState(statusSnapshot, bodySnapshot));
+          flushChain = flushChain.then(() => flushStreamingState(bodySnapshot));
           return;
         }
         if (pendingTimer) return;
@@ -131,21 +121,16 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       }
 
       async function flushStreamingState(
-        nextStatus: string = latestStatus,
         nextBody: string = stripLeadingBlankLines(fullText),
       ): Promise<void> {
         if (streamingBroken) return;
-        await ensureStreamingMessage(nextStatus, nextBody);
+        await ensureStreamingMessage(nextBody);
         if (!streamingMessage) return;
-        if (nextBody === flushedBody && nextStatus === flushedStatus) {
+        if (nextBody === flushedBody) {
           return;
         }
 
         try {
-          if (nextStatus !== flushedStatus) {
-            await streamingMessage.updateStatus(nextStatus);
-            flushedStatus = nextStatus;
-          }
           if (nextBody !== flushedBody) {
             await streamingMessage.updateBody(nextBody);
             flushedBody = nextBody;
@@ -165,9 +150,6 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           case "message_update":
             if (event.assistantMessageEvent.type === "text_delta") {
               fullText += event.assistantMessageEvent.delta;
-              if (!activeToolName) {
-                latestStatus = formatStreamStatusGenerating();
-              }
               queueStreamingFlush();
             }
             break;
@@ -179,20 +161,12 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             break;
           case "tool_execution_start":
             logger.debug("Pi tool_execution_start", { toolName: event.toolName });
-            activeToolName = event.toolName;
-            latestStatus = formatStreamStatusToolRunning(event.toolName);
-            queueStreamingFlush(true);
             break;
           case "tool_execution_end":
             logger.debug("Pi tool_execution_end", {
               toolName: event.toolName,
               isError: event.isError,
             });
-            activeToolName = null;
-            latestStatus = hasVisibleAssistantText(fullText)
-              ? formatStreamStatusGenerating()
-              : formatStreamStatusThinking();
-            queueStreamingFlush(true);
             break;
           default:
             logger.debug("Pi event", { type: event.type });
@@ -239,9 +213,6 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const contextUsageFooter = formatContextUsageFooter(session.getContextUsage());
       const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), contextUsageFooter);
       const finalOutputText = finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
-      const finalStatus = lastError
-        ? formatStreamStatusInterrupted()
-        : formatStreamStatusCompleted();
       if (!lastError || hasVisibleAssistantText(fullText)) {
         await finalizeMessage(
           messenger,
@@ -250,7 +221,6 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           textChunkLimit,
           streamingMessage,
           streamingBroken,
-          finalStatus,
         );
       }
 
@@ -299,11 +269,10 @@ async function finalizeMessage(
   textChunkLimit: number,
   streamingMessage?: FeishuStreamingMessage | null,
   streamingBroken: boolean = false,
-  finalStatusText: string = formatStreamStatusCompleted(),
 ): Promise<void> {
   if (streamingMessage && !streamingBroken) {
     try {
-      await streamingMessage.finish(finalStatusText, fullText, textChunkLimit);
+      await streamingMessage.finish(fullText, textChunkLimit);
       return;
     } catch (err) {
       logger.error("飞书流式卡片收口失败，回退到最终消息发送", {
@@ -327,26 +296,6 @@ function hasVisibleAssistantText(text: string): boolean {
 function appendMessageFooter(text: string, footer?: string): string {
   if (!text || !footer) return text;
   return text ? `${text}\n\n${footer}` : footer;
-}
-
-function formatStreamStatusThinking(): string {
-  return "⏳ 正在思考...";
-}
-
-function formatStreamStatusGenerating(): string {
-  return "✍️ 正在生成回复...";
-}
-
-function formatStreamStatusToolRunning(toolName?: string): string {
-  return toolName ? `🔧 正在调用工具：\`${toolName}\`` : "🔧 正在调用工具...";
-}
-
-function formatStreamStatusCompleted(): string {
-  return "✅ 已完成";
-}
-
-function formatStreamStatusInterrupted(): string {
-  return "⚠️ 已中断";
 }
 
 function formatContextUsageFooter(

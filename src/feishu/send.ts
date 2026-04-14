@@ -9,7 +9,6 @@ import {
   buildStreamingCardSettings,
   buildStreamingSummary,
   getStreamingBodyElementId,
-  getStreamingStatusElementId,
 } from "./streaming-card.js";
 
 const MAX_RETRIES = 2;
@@ -85,16 +84,15 @@ export interface FeishuApiClient {
 }
 
 export interface FeishuStreamingMessage {
-  updateStatus(statusText: string): Promise<void>;
   updateBody(text: string): Promise<void>;
-  finish(statusText: string, bodyText: string, textChunkLimit: number): Promise<void>;
+  finish(bodyText: string, textChunkLimit: number): Promise<void>;
 }
 
 export interface FeishuMessenger {
   sendFeishuMessage(openId: string, msgType: FeishuMessageType, content: Record<string, unknown>): Promise<string | null>;
   sendTextMessage(openId: string, text: string): Promise<string | null>;
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
-  startStreamingMessage(openId: string, statusText: string, bodyText?: string): Promise<FeishuStreamingMessage | null>;
+  startStreamingMessage(openId: string, bodyText?: string): Promise<FeishuStreamingMessage | null>;
   addProcessingReaction(messageId: string, reactionType?: string): Promise<string | null>;
   removeReaction(messageId: string, reactionId: string): Promise<boolean>;
 }
@@ -175,7 +173,6 @@ export function createFeishuMessenger(client: FeishuApiClient): FeishuMessenger 
 
   async function startStreamingMessage(
     openId: string,
-    statusText: string,
     bodyText: string = "",
   ): Promise<FeishuStreamingMessage | null> {
     try {
@@ -183,7 +180,6 @@ export function createFeishuMessenger(client: FeishuApiClient): FeishuMessenger 
         data: {
           type: "card_json",
           data: buildStreamingCardData({
-            statusText,
             bodyText,
           }),
         },
@@ -259,22 +255,18 @@ export function createFeishuMessenger(client: FeishuApiClient): FeishuMessenger 
       }
 
       return {
-        updateStatus: (nextStatusText: string) =>
-          updateElement(getStreamingStatusElementId(), nextStatusText),
         updateBody: (nextBodyText: string) =>
           updateElement(getStreamingBodyElementId(), nextBodyText),
-        async finish(finalStatusText: string, finalBodyText: string, textChunkLimit: number): Promise<void> {
+        async finish(finalBodyText: string, textChunkLimit: number): Promise<void> {
           const renderedMessages = renderAssistantMessage(finalBodyText, textChunkLimit);
           if (renderedMessages.length === 1 && renderedMessages[0].msgType === "interactive") {
             await updateCard(buildFinalStreamingCardData({
-              statusText: finalStatusText,
               finalMessage: renderedMessages[0],
               summaryText: buildStreamingSummary(finalBodyText),
             }));
             return;
           }
 
-          await updateElement(getStreamingStatusElementId(), finalStatusText);
           await updateElement(getStreamingBodyElementId(), finalBodyText);
           await updateSettings(buildStreamingCardSettings({
             streamingMode: false,
