@@ -192,6 +192,30 @@ describe("promptSession", () => {
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
   });
 
+  it("只有空白行后就失败时，也应按纯失败处理", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([], async () => {
+      session.subscribeHandler?.({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "\n\n" },
+      });
+      throw new Error("boom");
+    }) as any;
+
+    session.subscribe = (callback: (event: StreamEvent) => void) => {
+      (session as any).subscribeHandler = callback;
+      return () => {
+        (session as any).subscribeHandler = undefined;
+      };
+    };
+
+    const result = await promptSession(session, "hi", "ou_1", "om_source_1", undefined, true);
+
+    expect(result).toEqual({ text: "\n\n", error: "boom" });
+    expect(mockStartStreamingMessage).not.toHaveBeenCalled();
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
+  });
+
   it("最终发送前应去掉开头的空白行", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([

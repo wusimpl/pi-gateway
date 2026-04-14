@@ -86,7 +86,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           streamingBroken ||
           streamingMessage ||
           streamingInitAttempted ||
-          fullText.length === 0
+          !hasVisibleAssistantText(fullText)
         ) {
           return;
         }
@@ -112,7 +112,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       }
 
       function queueStreamingFlush(force: boolean = false): void {
-        if (!streamingEnabled || streamingBroken || fullText.length === 0) return;
+        if (!streamingEnabled || streamingBroken || !hasVisibleAssistantText(fullText)) return;
         if (force) {
           const statusSnapshot = latestStatus;
           const bodySnapshot = stripLeadingBlankLines(fullText);
@@ -189,7 +189,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               isError: event.isError,
             });
             activeToolName = null;
-            latestStatus = fullText ? formatStreamStatusGenerating() : formatStreamStatusThinking();
+            latestStatus = hasVisibleAssistantText(fullText)
+              ? formatStreamStatusGenerating()
+              : formatStreamStatusThinking();
             queueStreamingFlush(true);
             break;
           default:
@@ -219,7 +221,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           clearTimeout(pendingTimer);
           pendingTimer = null;
         }
-        if (streamingEnabled && !streamingBroken && fullText.length > 0) {
+        if (streamingEnabled && !streamingBroken && hasVisibleAssistantText(fullText)) {
           flushChain = flushChain.then(() => flushStreamingState());
         }
         await flushChain;
@@ -231,7 +233,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         }
       }
 
-      const displayText = lastError && fullText
+      const displayText = lastError && hasVisibleAssistantText(fullText)
         ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
         : fullText;
       const contextUsageFooter = formatContextUsageFooter(session.getContextUsage());
@@ -240,7 +242,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const finalStatus = lastError
         ? formatStreamStatusInterrupted()
         : formatStreamStatusCompleted();
-      if (!lastError || fullText) {
+      if (!lastError || hasVisibleAssistantText(fullText)) {
         await finalizeMessage(
           messenger,
           openId,
@@ -316,6 +318,10 @@ async function finalizeMessage(
 
 function stripLeadingBlankLines(text: string): string {
   return text.replace(/^(?:[ \t]*\r?\n)+/, "");
+}
+
+function hasVisibleAssistantText(text: string): boolean {
+  return stripLeadingBlankLines(text).length > 0;
 }
 
 function appendMessageFooter(text: string, footer?: string): string {
