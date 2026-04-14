@@ -1,5 +1,7 @@
 import { z } from "zod";
 import "dotenv/config";
+import { logger } from "./app/logger.js";
+import { sanitizeFeishuReactionType } from "./feishu/reaction-types.js";
 
 const envSchema = z.object({
   FEISHU_APP_ID: z.string().min(1, "FEISHU_APP_ID is required"),
@@ -33,9 +35,22 @@ export function loadConfig(): Config {
 
   _config = {
     ...result.data,
+    FEISHU_PROCESSING_REACTION_TYPE: resolveProcessingReactionType(
+      result.data.FEISHU_PROCESSING_REACTION_TYPE
+    ),
     PI_WORKSPACE_ROOT: expandHomeDir(result.data.PI_WORKSPACE_ROOT),
   };
   return _config;
+}
+
+function resolveProcessingReactionType(value?: string): string | undefined {
+  const reactionType = sanitizeFeishuReactionType(value);
+  if (!value || reactionType) return reactionType;
+
+  logger.warn("FEISHU_PROCESSING_REACTION_TYPE 非法，已自动禁用 reaction", {
+    reactionType: value,
+  });
+  return undefined;
 }
 
 function expandHomeDir(value: string): string {
