@@ -17,7 +17,12 @@ vi.mock("../src/feishu/client.js", () => ({
   }),
 }));
 
-import { downloadFeishuResource, getFeishuInboxDir, resolveDownloadType } from "../src/feishu/inbound/resource.js";
+import {
+  createFeishuResourceDownloader,
+  downloadFeishuResource,
+  getFeishuInboxDir,
+  resolveDownloadType,
+} from "../src/feishu/inbound/resource.js";
 
 describe("downloadFeishuResource", () => {
   const tempDirs: string[] = [];
@@ -83,6 +88,38 @@ describe("downloadFeishuResource", () => {
     expect(result.fileName).toBe("voice_note.m4a");
     expect(result.mimeType).toBe("audio/mp4");
     expect(await readFile(result.filePath, "utf8")).toBe("audio-binary");
+  });
+
+  it("显式资源下载器应优先使用传入的 client", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "pi-gateway-explicit-"));
+    tempDirs.push(workspaceDir);
+    const explicitGetResource = vi.fn().mockResolvedValue({
+      headers: { "content-type": "audio/ogg" },
+      writeFile: async (filePath: string) => {
+        await writeFile(filePath, "explicit-audio");
+      },
+    });
+    const downloadWithExplicitClient = createFeishuResourceDownloader({
+      im: {
+        messageResource: {
+          get: explicitGetResource,
+        },
+      },
+    });
+
+    const result = await downloadWithExplicitClient({
+      workspaceDir,
+      messageId: "om_3",
+      fileKey: "file_explicit",
+      resourceType: "audio",
+    });
+
+    expect(explicitGetResource).toHaveBeenCalledWith({
+      params: { type: "file" },
+      path: { message_id: "om_3", file_key: "file_explicit" },
+    });
+    expect(mocks.getResource).not.toHaveBeenCalled();
+    expect(await readFile(result.filePath, "utf8")).toBe("explicit-audio");
   });
 });
 

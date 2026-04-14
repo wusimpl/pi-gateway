@@ -1,5 +1,6 @@
 import type { Config } from "../config.js";
 import { formatError } from "../feishu/format.js";
+import { downloadFeishuResource } from "../feishu/inbound/resource.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
 import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
 import type { FeishuMessenger } from "../feishu/send.js";
@@ -30,6 +31,7 @@ interface PromptServiceDeps {
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
   promptRunner: Pick<PromptRunner, "promptSession">;
   messenger: Pick<FeishuMessenger, "sendTextMessage">;
+  downloadResource?: typeof downloadFeishuResource;
   preparePromptInput?: typeof prepareFeishuPromptInput;
 }
 
@@ -55,6 +57,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         ocrModel: deps.config.FEISHU_MEDIA_OCR_MODEL,
         audioTranscribeScript: deps.config.FEISHU_AUDIO_TRANSCRIBE_SCRIPT,
         audioLanguage: deps.config.FEISHU_AUDIO_TRANSCRIBE_LANGUAGE,
+      }, {
+        downloadResource: deps.downloadResource,
       });
 
       const logCtx = { openId, sessionId: activeSessionId, messageId };

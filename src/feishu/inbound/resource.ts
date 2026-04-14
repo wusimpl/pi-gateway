@@ -3,6 +3,33 @@ import { ensureDir } from "../../storage/files.js";
 import { getLarkClient } from "../client.js";
 import type { DownloadedFeishuResource } from "./types.js";
 
+export interface FeishuResourceResponse {
+  headers: unknown;
+  writeFile(filePath: string): Promise<void>;
+}
+
+export interface FeishuResourceClient {
+  im: {
+    messageResource: {
+      get(args: {
+        params: { type: "image" | "file" };
+        path: {
+          message_id: string;
+          file_key: string;
+        };
+      }): Promise<FeishuResourceResponse>;
+    };
+  };
+}
+
+export interface DownloadFeishuResourceOptions {
+  workspaceDir: string;
+  messageId: string;
+  fileKey: string;
+  resourceType: DownloadedFeishuResource["resourceType"];
+  fileNameHint?: string;
+}
+
 const DEFAULT_EXTENSIONS: Record<DownloadedFeishuResource["resourceType"], string> = {
   image: ".png",
   audio: ".ogg",
@@ -23,18 +50,19 @@ const MIME_EXTENSIONS: Record<string, string> = {
   "audio/x-wav": ".wav",
 };
 
-export async function downloadFeishuResource(options: {
-  workspaceDir: string;
-  messageId: string;
-  fileKey: string;
-  resourceType: DownloadedFeishuResource["resourceType"];
-  fileNameHint?: string;
-}): Promise<DownloadedFeishuResource> {
+export function createFeishuResourceDownloader(client: FeishuResourceClient) {
+  return (options: DownloadFeishuResourceOptions) => downloadFeishuResource(options, client);
+}
+
+export async function downloadFeishuResource(
+  options: DownloadFeishuResourceOptions,
+  client: FeishuResourceClient = getLarkClient() as unknown as FeishuResourceClient,
+): Promise<DownloadedFeishuResource> {
   const inboxDir = getFeishuInboxDir(options.workspaceDir, options.messageId);
   await ensureDir(inboxDir);
 
   const downloadType = resolveDownloadType(options.resourceType);
-  const response = await getLarkClient().im.messageResource.get({
+  const response = await client.im.messageResource.get({
     params: { type: downloadType },
     path: {
       message_id: options.messageId,
