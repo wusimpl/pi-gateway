@@ -1,0 +1,21 @@
+{
+  "name": "pi-gateway",
+  "version": "0.1.0",
+  "description": "飞书 Pi 桥接服务 - 将飞书私聊消息桥接到 Pi SDK",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.60.0",
+    "@mariozechner/pi-coding-agent": "latest",
+    "zod": "^3.23.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}
