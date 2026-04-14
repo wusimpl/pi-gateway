@@ -8,12 +8,12 @@
 飞书用户 --> 飞书 WebSocket --> pi-gateway --> Pi SDK --> LLM
 ```
 
-pi-gateway 通过飞书 WebSocket 长连接接收私聊消息，转发给 Pi Agent 处理，并将回复流式更新到飞书对话中。
+pi-gateway 通过飞书 WebSocket 长连接接收私聊消息，转发给 Pi Agent 处理，并将回复发送回飞书对话中。
 
 ## 功能
 
 - 飞书私聊文本消息桥接到 Pi Agent
-- 流式回复：基于飞书流式卡片，在同一条消息里展示“正在思考 / 正在调用工具 / 正在生成回复 / 已完成”
+- 可选流式回复：基于飞书流式卡片，在同一条消息里展示“正在思考 / 正在调用工具 / 正在生成回复 / 已完成”
 - 长文本自动分块发送
 - 每用户独立会话，服务重启后自动恢复
 - 消息去重与并发保护，避免重复处理；处理中状态同时通过卡片状态和消息 reaction 提示
@@ -64,13 +64,13 @@ cp .env.example .env
 | `DATA_DIR` | 否 | `./data` | 数据存储目录 |
 | `PI_WORKSPACE_ROOT` | 否 | `~/code/pi-workspace` | 每用户独立工作目录根路径，支持 `~` |
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug`/`info`/`warn`/`error` |
-| `STREAMING_ENABLED` | 否 | `true` | 是否启用飞书流式卡片回复；关闭后回退为最终一次性发送 |
+| `STREAMING_ENABLED` | 否 | `false` | 是否启用飞书流式卡片回复；默认关闭，打开后只建议给 7.20+ 客户端使用 |
 | `TEXT_CHUNK_LIMIT` | 否 | `2000` | 单条消息文本上限（字符数） |
 | `FEISHU_PROCESSING_REACTION_TYPE` | 否 | `SMILE` | 处理中提示的飞书表情 `emoji_type`；留空则不启用，填错也会自动禁用 |
 
 同时确保环境变量中已配置 Pi 所需的 API Key（如 `ANTHROPIC_API_KEY`）。
 
-如果启用了 `STREAMING_ENABLED=true`，飞书应用还必须开通 `cardkit:card:write`，否则会自动回退为最终一次性发送。
+如果启用了 `STREAMING_ENABLED=true`，飞书应用还必须开通 `cardkit:card:write`，否则会自动回退为最终一次性发送。飞书 2.0 卡片在旧客户端上展示不完整，所以这一项默认关闭，只有确认用户客户端版本足够新时再打开。
 
 `FEISHU_PROCESSING_REACTION_TYPE` 大小写敏感。服务启动时会按飞书官方列表校验；如果你填了不合法的值，比如 `EYES`，服务会打出警告日志，并自动关闭 reaction，不会再去重试。
 

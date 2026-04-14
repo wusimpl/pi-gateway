@@ -4,6 +4,7 @@ import { renderAssistantMessage } from "./render.js";
 import { chunkText } from "./text.js";
 import { randomUUID } from "node:crypto";
 import {
+  buildFinalStreamingCardData,
   buildStreamingCardData,
   buildStreamingCardSettings,
   buildStreamingSummary,
@@ -49,6 +50,17 @@ export interface FeishuApiClient {
             data: string;
           };
         }): Promise<{ data?: { card_id?: string | null } }>;
+        update(args: {
+          path: { card_id: string };
+          data: {
+            card: {
+              type: "card_json";
+              data: string;
+            };
+            uuid?: string;
+            sequence: number;
+          };
+        }): Promise<unknown>;
         settings(args: {
           path: { card_id: string };
           data: {
@@ -75,7 +87,7 @@ export interface FeishuApiClient {
 export interface FeishuStreamingMessage {
   updateStatus(statusText: string): Promise<void>;
   updateBody(text: string): Promise<void>;
-  finish(statusText: string, bodyText: string): Promise<void>;
+  finish(statusText: string, bodyText: string, textChunkLimit: number): Promise<void>;
 }
 
 export interface FeishuMessenger {
@@ -229,12 +241,39 @@ export function createFeishuMessenger(client: FeishuApiClient): FeishuMessenger 
           }));
       }
 
+      async function updateCard(cardData: string): Promise<void> {
+        await retryRequest("飞书流式卡片整卡更新", { openId, cardId }, () =>
+          client.cardkit.v1.card.update({
+            path: {
+              card_id: cardId,
+            },
+            data: {
+              card: {
+                type: "card_json",
+                data: cardData,
+              },
+              sequence: nextSequence(),
+              uuid: randomUUID(),
+            },
+          }));
+      }
+
       return {
         updateStatus: (nextStatusText: string) =>
           updateElement(getStreamingStatusElementId(), nextStatusText),
         updateBody: (nextBodyText: string) =>
           updateElement(getStreamingBodyElementId(), nextBodyText),
-        async finish(finalStatusText: string, finalBodyText: string): Promise<void> {
+        async finish(finalStatusText: string, finalBodyText: string, textChunkLimit: number): Promise<void> {
+          const renderedMessages = renderAssistantMessage(finalBodyText, textChunkLimit);
+          if (renderedMessages.length === 1 && renderedMessages[0].msgType === "interactive") {
+            await updateCard(buildFinalStreamingCardData({
+              statusText: finalStatusText,
+              finalMessage: renderedMessages[0],
+              summaryText: buildStreamingSummary(finalBodyText),
+            }));
+            return;
+          }
+
           await updateElement(getStreamingStatusElementId(), finalStatusText);
           await updateElement(getStreamingBodyElementId(), finalBodyText);
           await updateSettings(buildStreamingCardSettings({

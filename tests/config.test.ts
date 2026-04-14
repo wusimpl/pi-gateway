@@ -31,6 +31,13 @@ describe("loadConfig", () => {
     expect(loadConfig().FEISHU_PROCESSING_REACTION_TYPE).toBeUndefined();
   });
 
+  it("STREAMING_ENABLED 默认应为 false", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().STREAMING_ENABLED).toBe(false);
+  });
+
   it("音频转写脚本路径里的 ~ 应展开成 home 目录", async () => {
     applyBaseEnv({
       HOME: "/tmp/test-home",

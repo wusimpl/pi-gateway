@@ -21,7 +21,7 @@ const envSchema = z.object({
   STREAMING_ENABLED: z
     .string()
     .transform((v) => v === "true")
-    .default("true"),
+    .default("false"),
   TEXT_CHUNK_LIMIT: z.coerce.number().int().positive().default(2000),
   FEISHU_PROCESSING_REACTION_TYPE: z.string().optional(),
 });

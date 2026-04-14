@@ -66,11 +66,11 @@ describe("promptSession", () => {
       { type: "message_end" },
     ], undefined, { percent: 4.1, contextWindow: 200000 });
 
-    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE");
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE", true);
 
     expect(result).toEqual({ text: "hello world", error: undefined });
     expect(mockAddProcessingReaction).toHaveBeenCalledWith("om_source_1", "SMILE");
-    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "⏳ 正在思考...");
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "✍️ 正在生成回复...", "hello world");
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
     expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello world\n\n4.1%/200k", 2000);
@@ -92,13 +92,14 @@ describe("promptSession", () => {
       { type: "message_end" },
     ], undefined, { percent: 4.1, contextWindow: 200000 });
 
-    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE");
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE", true);
 
     expect(result).toEqual({ text: "hello world", error: undefined });
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
-    expect(mockStreamingMessage.updateStatus).toHaveBeenCalledWith("🔧 正在调用工具：`read`");
-    expect(mockStreamingMessage.updateBody).toHaveBeenCalledWith("hello world");
-    expect(mockStreamingMessage.finish).toHaveBeenCalledWith("✅ 已完成", "hello world\n\n4.1%/200k");
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "✍️ 正在生成回复...", "hello world");
+    expect(mockStreamingMessage.updateStatus).not.toHaveBeenCalledWith("🔧 正在调用工具：`read`");
+    expect(mockStreamingMessage.updateBody).not.toHaveBeenCalledWith("hello world");
+    expect(mockStreamingMessage.finish).toHaveBeenCalledWith("✅ 已完成", "hello world\n\n4.1%/200k", 2000);
   });
 
   it("reaction 添加失败时，仍应继续处理并发送回复", async () => {
@@ -176,6 +177,19 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "partial", error: "boom" });
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "partial\n\n⚠️ 回复中断: boom", 2000);
+  });
+
+  it("prompt 在产出正文前失败时，不应先发一条流式卡片错误消息", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([], async () => {
+      throw new Error("boom");
+    });
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, true);
+
+    expect(result).toEqual({ text: "", error: "boom" });
+    expect(mockStartStreamingMessage).not.toHaveBeenCalled();
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
   });
 
   it("最终发送前应去掉开头的空白行", async () => {

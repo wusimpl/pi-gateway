@@ -4,6 +4,7 @@ const mockCreate = vi.fn();
 const mockReactionCreate = vi.fn();
 const mockReactionDelete = vi.fn();
 const mockCardCreate = vi.fn();
+const mockCardUpdate = vi.fn();
 const mockCardSettings = vi.fn();
 const mockCardContent = vi.fn();
 
@@ -22,6 +23,7 @@ vi.mock("../src/feishu/client.js", () => ({
       v1: {
         card: {
           create: mockCardCreate,
+          update: mockCardUpdate,
           settings: mockCardSettings,
         },
         cardElement: {
@@ -39,6 +41,7 @@ describe("send helpers", () => {
     mockReactionCreate.mockReset();
     mockReactionDelete.mockReset();
     mockCardCreate.mockReset();
+    mockCardUpdate.mockReset();
     mockCardSettings.mockReset();
     mockCardContent.mockReset();
   });
@@ -189,6 +192,7 @@ describe("send helpers", () => {
   it("startStreamingMessage: 应更新状态、正文并在结束时关闭流式模式", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
+    mockCardUpdate.mockResolvedValue({});
     mockCardContent.mockResolvedValue({});
     mockCardSettings.mockResolvedValue({});
     const { startStreamingMessage } = await import("../src/feishu/send.js");
@@ -198,7 +202,7 @@ describe("send helpers", () => {
     expect(stream).not.toBeNull();
     await stream!.updateStatus("🔧 正在调用工具：`read`");
     await stream!.updateBody("hello");
-    await stream!.finish("✅ 已完成", "hello world");
+    await stream!.finish("✅ 已完成", "hello world", 2000);
 
     expect(mockCardContent).toHaveBeenNthCalledWith(1, {
       path: {
@@ -256,5 +260,44 @@ describe("send helpers", () => {
     const settingsJson = JSON.parse(mockCardSettings.mock.calls[0][0].data.settings);
     expect(settingsJson.config.streaming_mode).toBe(false);
     expect(settingsJson.config.summary.content).toBe("hello world");
+  });
+
+  it("startStreamingMessage: 最终是表格卡片时应整卡更新，保留原有表格渲染", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
+    mockCardUpdate.mockResolvedValue({});
+    mockCardContent.mockResolvedValue({});
+    mockCardSettings.mockResolvedValue({});
+    const { startStreamingMessage } = await import("../src/feishu/send.js");
+
+    const stream = await startStreamingMessage("ou_1", "⏳ 正在思考...");
+
+    expect(stream).not.toBeNull();
+    await stream!.finish(
+      "✅ 已完成",
+      "模型列表\n\n| Provider | 模型 |\n| --- | --- |\n| rightcode | GPT-5.4 |\n",
+      2000,
+    );
+
+    expect(mockCardUpdate).toHaveBeenCalledTimes(1);
+    const updatePayload = mockCardUpdate.mock.calls[0][0];
+    expect(updatePayload.path).toEqual({ card_id: "card_1" });
+    expect(updatePayload.data.sequence).toBe(1);
+
+    const cardJson = JSON.parse(updatePayload.data.card.data);
+    expect(cardJson.config.streaming_mode).toBe(false);
+    expect(cardJson.body.elements[0]).toMatchObject({
+      tag: "markdown",
+      content: "✅ 已完成",
+    });
+    expect(cardJson.body.elements[1]).toMatchObject({
+      tag: "markdown",
+      content: "模型列表",
+    });
+    expect(cardJson.body.elements[2]).toMatchObject({
+      tag: "table",
+      rows: [{ col_0: "rightcode", col_1: "GPT-5.4" }],
+    });
+    expect(mockCardSettings).not.toHaveBeenCalled();
   });
 });

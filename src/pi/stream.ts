@@ -53,7 +53,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       openId: string,
       sourceMessageId: string,
       processingReactionType?: string,
-      streamingEnabled: boolean = true,
+      streamingEnabled: boolean = false,
       textChunkLimit: number = 2000,
       timeoutMs: number = PROMPT_TIMEOUT_MS
     ): Promise<PromptResult> {
@@ -69,6 +69,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let flushedBody = "";
       let pendingTimer: NodeJS.Timeout | null = null;
       let flushChain: Promise<void> = Promise.resolve();
+      let streamingInitAttempted = false;
 
       try {
         reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
@@ -76,21 +77,42 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         logger.warn("处理中 reaction 添加失败", { openId, sourceMessageId, error: String(err) });
       }
 
-      if (streamingEnabled) {
+      async function ensureStreamingMessage(
+        initialStatus: string = latestStatus,
+        initialBody: string = stripLeadingBlankLines(fullText),
+      ): Promise<void> {
+        if (
+          !streamingEnabled ||
+          streamingBroken ||
+          streamingMessage ||
+          streamingInitAttempted ||
+          fullText.length === 0
+        ) {
+          return;
+        }
+
+        streamingInitAttempted = true;
         try {
-          streamingMessage = await messenger.startStreamingMessage(openId, latestStatus);
+          streamingMessage = await messenger.startStreamingMessage(
+            openId,
+            initialStatus,
+            initialBody,
+          );
+          if (streamingMessage) {
+            flushedStatus = initialStatus;
+            flushedBody = initialBody;
+          }
         } catch (err) {
           logger.warn("飞书流式卡片初始化失败，回退到最终消息发送", {
             openId,
             sourceMessageId,
             error: String(err),
           });
-          streamingMessage = null;
         }
       }
 
       function queueStreamingFlush(force: boolean = false): void {
-        if (!streamingMessage || streamingBroken) return;
+        if (!streamingEnabled || streamingBroken || fullText.length === 0) return;
         if (force) {
           const statusSnapshot = latestStatus;
           const bodySnapshot = stripLeadingBlankLines(fullText);
@@ -112,7 +134,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         nextStatus: string = latestStatus,
         nextBody: string = stripLeadingBlankLines(fullText),
       ): Promise<void> {
-        if (!streamingMessage || streamingBroken) return;
+        if (streamingBroken) return;
+        await ensureStreamingMessage(nextStatus, nextBody);
+        if (!streamingMessage) return;
         if (nextBody === flushedBody && nextStatus === flushedStatus) {
           return;
         }
@@ -195,7 +219,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           clearTimeout(pendingTimer);
           pendingTimer = null;
         }
-        if (streamingMessage && !streamingBroken) {
+        if (streamingEnabled && !streamingBroken && fullText.length > 0) {
           flushChain = flushChain.then(() => flushStreamingState());
         }
         await flushChain;
@@ -209,24 +233,24 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       const displayText = lastError && fullText
         ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
-        : lastError
-          ? `⚠️ 回复中断: ${lastError}`
-          : fullText;
+        : fullText;
       const contextUsageFooter = formatContextUsageFooter(session.getContextUsage());
       const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), contextUsageFooter);
       const finalOutputText = finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
       const finalStatus = lastError
         ? formatStreamStatusInterrupted()
         : formatStreamStatusCompleted();
-      await finalizeMessage(
-        messenger,
-        openId,
-        finalOutputText,
-        textChunkLimit,
-        streamingMessage,
-        streamingBroken,
-        finalStatus,
-      );
+      if (!lastError || fullText) {
+        await finalizeMessage(
+          messenger,
+          openId,
+          finalOutputText,
+          textChunkLimit,
+          streamingMessage,
+          streamingBroken,
+          finalStatus,
+        );
+      }
 
       return {
         text: fullText,
@@ -249,7 +273,7 @@ export async function promptSession(
   openId: string,
   sourceMessageId: string,
   processingReactionType?: string,
-  streamingEnabled: boolean = true,
+  streamingEnabled: boolean = false,
   textChunkLimit: number = 2000,
   timeoutMs: number = PROMPT_TIMEOUT_MS
 ): Promise<PromptResult> {
@@ -277,7 +301,7 @@ async function finalizeMessage(
 ): Promise<void> {
   if (streamingMessage && !streamingBroken) {
     try {
-      await streamingMessage.finish(finalStatusText, fullText);
+      await streamingMessage.finish(finalStatusText, fullText, textChunkLimit);
       return;
     } catch (err) {
       logger.error("飞书流式卡片收口失败，回退到最终消息发送", {

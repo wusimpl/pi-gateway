@@ -1,3 +1,5 @@
+import type { RenderedFeishuMessage } from "./render.js";
+
 const STREAMING_TITLE = "Pi";
 const STREAMING_STATUS_ELEMENT_ID = "stream_status";
 const STREAMING_BODY_ELEMENT_ID = "stream_body";
@@ -14,6 +16,12 @@ interface BuildStreamingSettingsOptions {
   summaryText?: string;
 }
 
+interface BuildFinalStreamingCardOptions {
+  statusText: string;
+  finalMessage: RenderedFeishuMessage;
+  summaryText?: string;
+}
+
 export function buildStreamingCardData({
   statusText,
   bodyText = "",
@@ -21,49 +29,34 @@ export function buildStreamingCardData({
 }: BuildStreamingCardOptions): string {
   return JSON.stringify({
     schema: "2.0",
-    header: {
-      title: {
-        content: STREAMING_TITLE,
-        tag: "plain_text",
-      },
-    },
-    config: {
-      streaming_mode: true,
-      summary: {
-        content: summaryText,
-      },
-      streaming_config: {
-        print_frequency_ms: {
-          default: 120,
-          android: 120,
-          ios: 120,
-          pc: 120,
-        },
-        print_step: {
-          default: 1,
-          android: 1,
-          ios: 1,
-          pc: 1,
-        },
-        print_strategy: "fast",
-      },
-    },
+    header: buildStreamingCardHeader(),
+    config: buildStreamingCardConfig(true, summaryText),
     body: {
       direction: "vertical",
       padding: "12px 12px 12px 12px",
       elements: [
-        {
-          tag: "markdown",
-          content: statusText,
-          text_align: "left",
-          element_id: STREAMING_STATUS_ELEMENT_ID,
-        },
-        {
-          tag: "markdown",
-          content: bodyText,
-          text_align: "left",
-          element_id: STREAMING_BODY_ELEMENT_ID,
-        },
+        buildMarkdownElement(statusText, STREAMING_STATUS_ELEMENT_ID),
+        buildMarkdownElement(bodyText, STREAMING_BODY_ELEMENT_ID),
+      ],
+    },
+  });
+}
+
+export function buildFinalStreamingCardData({
+  statusText,
+  finalMessage,
+  summaryText = "",
+}: BuildFinalStreamingCardOptions): string {
+  return JSON.stringify({
+    schema: "2.0",
+    header: buildStreamingCardHeader(),
+    config: buildStreamingCardConfig(false, summaryText),
+    body: {
+      direction: "vertical",
+      padding: "12px 12px 12px 12px",
+      elements: [
+        buildMarkdownElement(statusText),
+        ...extractMessageElements(finalMessage),
       ],
     },
   });
@@ -74,16 +67,7 @@ export function buildStreamingCardSettings({
   summaryText,
 }: BuildStreamingSettingsOptions): string {
   return JSON.stringify({
-    config: {
-      streaming_mode: streamingMode,
-      ...(summaryText !== undefined
-        ? {
-          summary: {
-            content: summaryText,
-          },
-        }
-        : {}),
-    },
+    config: buildStreamingCardConfig(streamingMode, summaryText),
   });
 }
 
@@ -104,4 +88,70 @@ export function getStreamingStatusElementId(): string {
 
 export function getStreamingBodyElementId(): string {
   return STREAMING_BODY_ELEMENT_ID;
+}
+
+function buildStreamingCardHeader(): Record<string, unknown> {
+  return {
+    title: {
+      content: STREAMING_TITLE,
+      tag: "plain_text",
+    },
+  };
+}
+
+function buildStreamingCardConfig(
+  streamingMode: boolean,
+  summaryText?: string,
+): Record<string, unknown> {
+  return {
+    streaming_mode: streamingMode,
+    ...(summaryText !== undefined
+      ? {
+        summary: {
+          content: summaryText,
+        },
+      }
+      : {}),
+    ...(streamingMode
+      ? {
+        streaming_config: {
+          print_frequency_ms: {
+            default: 120,
+            android: 120,
+            ios: 120,
+            pc: 120,
+          },
+          print_step: {
+            default: 1,
+            android: 1,
+            ios: 1,
+            pc: 1,
+          },
+          print_strategy: "fast",
+        },
+      }
+      : {}),
+  };
+}
+
+function buildMarkdownElement(
+  content: string,
+  elementId?: string,
+): Record<string, unknown> {
+  return {
+    tag: "markdown",
+    content,
+    text_align: "left",
+    ...(elementId ? { element_id: elementId } : {}),
+  };
+}
+
+function extractMessageElements(finalMessage: RenderedFeishuMessage): Array<Record<string, unknown>> {
+  if (finalMessage.msgType !== "interactive") {
+    const text = typeof finalMessage.content.text === "string" ? finalMessage.content.text : "";
+    return text ? [buildMarkdownElement(text)] : [];
+  }
+
+  const body = finalMessage.content.body as { elements?: Array<Record<string, unknown>> } | undefined;
+  return Array.isArray(body?.elements) ? body.elements : [];
 }
