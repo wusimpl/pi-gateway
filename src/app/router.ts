@@ -3,8 +3,8 @@ import { logger } from "./logger.js";
 import { isDuplicate, acquireLock, releaseLock } from "./state.js";
 import { parseBridgeCommand, handleBridgeCommand } from "./commands.js";
 import { parseMessageEvent, isP2PTextMessage, extractTextContent } from "../feishu/events.js";
-import { sendTextMessage, chunkText } from "../feishu/send.js";
-import { formatThinking, formatError } from "../feishu/format.js";
+import { sendTextMessage } from "../feishu/send.js";
+import { formatError } from "../feishu/format.js";
 import { getOrCreateActiveSession, createNewSession, touchSession } from "../pi/sessions.js";
 import { promptSession } from "../pi/stream.js";
 import type { Config } from "../config.js";
@@ -90,22 +90,18 @@ async function handleUserPrompt(
     // 获取或创建 session
     const { activeSessionId, piSession } = await getOrCreateActiveSession(openId);
 
-    // 发送"正在思考"提示
-    await sendTextMessage(openId, formatThinking());
+    // 调用 Pi prompt（内部会发送"正在思考..."占位消息并流式更新）
+    const result = await promptSession(
+      piSession,
+      text,
+      openId,
+      config.STREAMING_ENABLED,
+      config.TEXT_CHUNK_LIMIT
+    );
 
-    // 调用 Pi prompt
-    const result = await promptSession(piSession, text);
-
-    // 分块发送回复
-    if (result.text) {
-      const chunks = chunkText(result.text, config.TEXT_CHUNK_LIMIT);
-      for (const chunk of chunks) {
-        await sendTextMessage(openId, chunk);
-      }
-    }
-
+    // 分块发送回复（stream.ts 中已处理，此处仅处理 error 场景）
     if (result.error) {
-      // 流式中断时发送已聚合的内容 + 中断提示
+      // 流式中断时发送中断提示
       const interruptMsg = result.text
         ? `\n\n⚠️ 回复中断: ${result.error}`
         : formatError(result.error);
