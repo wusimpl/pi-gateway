@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockCreate = vi.fn();
 const mockReactionCreate = vi.fn();
 const mockReactionDelete = vi.fn();
+const mockCardCreate = vi.fn();
+const mockCardSettings = vi.fn();
+const mockCardContent = vi.fn();
 
 vi.mock("../src/feishu/client.js", () => ({
   getLarkClient: () => ({
@@ -15,6 +18,17 @@ vi.mock("../src/feishu/client.js", () => ({
         delete: mockReactionDelete,
       },
     },
+    cardkit: {
+      v1: {
+        card: {
+          create: mockCardCreate,
+          settings: mockCardSettings,
+        },
+        cardElement: {
+          content: mockCardContent,
+        },
+      },
+    },
   }),
 }));
 
@@ -24,6 +38,9 @@ describe("send helpers", () => {
     mockCreate.mockReset();
     mockReactionCreate.mockReset();
     mockReactionDelete.mockReset();
+    mockCardCreate.mockReset();
+    mockCardSettings.mockReset();
+    mockCardContent.mockReset();
   });
 
   it("chunkText: 短文本不分块", async () => {
@@ -135,5 +152,109 @@ describe("send helpers", () => {
         reaction_id: "reaction_1",
       },
     });
+  });
+
+  it("startStreamingMessage: 应创建流式卡片并发送消息", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
+    const { startStreamingMessage } = await import("../src/feishu/send.js");
+
+    const stream = await startStreamingMessage("ou_1", "⏳ 正在思考...");
+
+    expect(stream).not.toBeNull();
+    expect(mockCardCreate).toHaveBeenCalledTimes(1);
+    const cardPayload = mockCardCreate.mock.calls[0][0];
+    expect(cardPayload.data.type).toBe("card_json");
+    const cardJson = JSON.parse(cardPayload.data.data);
+    expect(cardJson.config.streaming_mode).toBe(true);
+    expect(cardJson.body.elements.map((element: { element_id: string }) => element.element_id)).toEqual([
+      "stream_status",
+      "stream_body",
+    ]);
+    expect(mockCreate).toHaveBeenCalledWith({
+      params: { receive_id_type: "open_id" },
+      data: {
+        receive_id: "ou_1",
+        msg_type: "interactive",
+        content: JSON.stringify({
+          type: "card",
+          data: {
+            card_id: "card_1",
+          },
+        }),
+      },
+    });
+  });
+
+  it("startStreamingMessage: 应更新状态、正文并在结束时关闭流式模式", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
+    mockCardContent.mockResolvedValue({});
+    mockCardSettings.mockResolvedValue({});
+    const { startStreamingMessage } = await import("../src/feishu/send.js");
+
+    const stream = await startStreamingMessage("ou_1", "⏳ 正在思考...");
+
+    expect(stream).not.toBeNull();
+    await stream!.updateStatus("🔧 正在调用工具：`read`");
+    await stream!.updateBody("hello");
+    await stream!.finish("✅ 已完成", "hello world");
+
+    expect(mockCardContent).toHaveBeenNthCalledWith(1, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_status",
+      },
+      data: expect.objectContaining({
+        content: "🔧 正在调用工具：`read`",
+        sequence: 1,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardContent).toHaveBeenNthCalledWith(2, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_body",
+      },
+      data: expect.objectContaining({
+        content: "hello",
+        sequence: 2,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardContent).toHaveBeenNthCalledWith(3, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_status",
+      },
+      data: expect.objectContaining({
+        content: "✅ 已完成",
+        sequence: 3,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardContent).toHaveBeenNthCalledWith(4, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_body",
+      },
+      data: expect.objectContaining({
+        content: "hello world",
+        sequence: 4,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardSettings).toHaveBeenCalledWith({
+      path: {
+        card_id: "card_1",
+      },
+      data: expect.objectContaining({
+        sequence: 5,
+        uuid: expect.any(String),
+      }),
+    });
+    const settingsJson = JSON.parse(mockCardSettings.mock.calls[0][0].data.settings);
+    expect(settingsJson.config.streaming_mode).toBe(false);
+    expect(settingsJson.config.summary.content).toBe("hello world");
   });
 });

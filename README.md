@@ -13,10 +13,10 @@ pi-gateway 通过飞书 WebSocket 长连接接收私聊消息，转发给 Pi Age
 ## 功能
 
 - 飞书私聊文本消息桥接到 Pi Agent
-- 流式回复：先发送"正在思考..."占位消息，随后按节流间隔实时更新
+- 流式回复：基于飞书流式卡片，在同一条消息里展示“正在思考 / 正在调用工具 / 正在生成回复 / 已完成”
 - 长文本自动分块发送
 - 每用户独立会话，服务重启后自动恢复
-- 消息去重与并发保护，避免重复处理；处理中状态仅通过消息 reaction 提示
+- 消息去重与并发保护，避免重复处理；处理中状态同时通过卡片状态和消息 reaction 提示
 - 命令支持：`/new`、`/reset`、`/status`、`/context`、`/skills`、`/model`、`/models`
 - 优雅关停
 
@@ -32,7 +32,7 @@ pi-gateway 通过飞书 WebSocket 长连接接收私聊消息，转发给 Pi Age
 1. 在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用
 2. 获取 App ID 和 App Secret
 3. 启用机器人能力
-4. 配置权限：`im:message.p2p_msg:readonly`、`im:message:send_as_bot`、`im:resource`
+4. 配置权限：`im:message.p2p_msg:readonly`、`im:message:send_as_bot`、`im:resource`、`cardkit:card:write`
 5. 事件订阅选择 **WebSocket 长连接**，添加 `im.message.receive_v1` 事件
 6. 发布应用并获管理员批准
 
@@ -64,11 +64,13 @@ cp .env.example .env
 | `DATA_DIR` | 否 | `./data` | 数据存储目录 |
 | `PI_WORKSPACE_ROOT` | 否 | `~/code/pi-workspace` | 每用户独立工作目录根路径，支持 `~` |
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug`/`info`/`warn`/`error` |
-| `STREAMING_ENABLED` | 否 | `true` | 是否启用流式回复 |
+| `STREAMING_ENABLED` | 否 | `true` | 是否启用飞书流式卡片回复；关闭后回退为最终一次性发送 |
 | `TEXT_CHUNK_LIMIT` | 否 | `2000` | 单条消息文本上限（字符数） |
 | `FEISHU_PROCESSING_REACTION_TYPE` | 否 | `SMILE` | 处理中提示的飞书表情 `emoji_type`；留空则不启用，填错也会自动禁用 |
 
 同时确保环境变量中已配置 Pi 所需的 API Key（如 `ANTHROPIC_API_KEY`）。
+
+如果启用了 `STREAMING_ENABLED=true`，飞书应用还必须开通 `cardkit:card:write`，否则会自动回退为最终一次性发送。
 
 `FEISHU_PROCESSING_REACTION_TYPE` 大小写敏感。服务启动时会按飞书官方列表校验；如果你填了不合法的值，比如 `EYES`，服务会打出警告日志，并自动关闭 reaction，不会再去重试。
 
