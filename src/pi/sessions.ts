@@ -1,6 +1,11 @@
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import { createPiSession, continueRecentPiSession } from "./runtime.js";
-import { readUserState, createUserState, switchActiveSession } from "../storage/users.js";
+import {
+  readUserState,
+  createUserState,
+  switchActiveSession,
+  touchUserState,
+} from "../storage/users.js";
 import { logger } from "../app/logger.js";
 
 /** 内存中缓存的 Pi session 实例（open_id -> session） */
@@ -14,7 +19,7 @@ interface SessionResult {
 /**
  * 获取或创建用户活跃 session
  * - 如果内存中有缓存 -> 直接返回
- * - 如果存储中有状态 -> 尝试恢复 Pi session
+ * - 如果存储中有状态且 Pi session 可恢复 -> 恢复
  * - 否则 -> 创建全新 session
  */
 export async function getOrCreateActiveSession(openId: string): Promise<SessionResult> {
@@ -30,11 +35,16 @@ export async function getOrCreateActiveSession(openId: string): Promise<SessionR
 
   // 2. 检查持久化状态，尝试恢复
   const state = await readUserState(openId);
-  if (state?.activeSessionId) {
+  if (state?.activeSessionId && state.piSessionFile) {
     try {
+      // 使用 Pi SDK 的 continueRecent 恢复最近的 session
       const result = await continueRecentPiSession(process.cwd());
       if (result) {
         sessionCache.set(openId, result.session);
+        logger.info("Pi session 从持久化恢复", {
+          openId,
+          sessionId: state.activeSessionId,
+        });
         return { activeSessionId: state.activeSessionId, piSession: result.session };
       }
     } catch (err) {
@@ -43,13 +53,7 @@ export async function getOrCreateActiveSession(openId: string): Promise<SessionR
   }
 
   // 3. 创建全新 session
-  const newSessionId = generateSessionId();
-  const piSession = await createPiSession(process.cwd());
-  await createUserState(openId, newSessionId);
-  sessionCache.set(openId, piSession);
-
-  logger.info("为新用户创建 session", { openId, sessionId: newSessionId });
-  return { activeSessionId: newSessionId, piSession };
+  return await doCreateNewSession(openId);
 }
 
 /**
@@ -64,18 +68,42 @@ export async function createNewSession(openId: string): Promise<SessionResult> {
     } catch {
       // 忽略 dispose 错误
     }
+    sessionCache.delete(openId);
   }
 
-  // 创建新 Pi session
+  return await doCreateNewSession(openId);
+}
+
+/** 内部：创建全新 session 并更新存储 */
+async function doCreateNewSession(openId: string): Promise<SessionResult> {
   const piSession = await createPiSession(process.cwd());
   const newSessionId = generateSessionId();
 
-  // 更新用户状态
-  await switchActiveSession(openId, newSessionId);
-  sessionCache.set(openId, piSession);
+  // 在用户状态中记录 Pi session 文件路径
+  const existing = await readUserState(openId);
+  if (existing) {
+    existing.activeSessionId = newSessionId;
+    existing.piSessionFile = piSession.sessionFile ?? undefined;
+    existing.updatedAt = new Date().toISOString();
+    existing.lastActiveAt = new Date().toISOString();
+    const { writeUserState } = await import("../storage/users.js");
+    await writeUserState(openId, existing);
+  } else {
+    const state = await createUserState(openId, newSessionId);
+    // 追加 piSessionFile
+    state.piSessionFile = piSession.sessionFile ?? undefined;
+    const { writeUserState } = await import("../storage/users.js");
+    await writeUserState(openId, state);
+  }
 
-  logger.info("用户创建新 session", { openId, sessionId: newSessionId });
+  sessionCache.set(openId, piSession);
+  logger.info("新 session 已创建", { openId, sessionId: newSessionId });
   return { activeSessionId: newSessionId, piSession };
+}
+
+/** 更新用户活跃时间 */
+export async function touchSession(openId: string, messageId: string): Promise<void> {
+  await touchUserState(openId, messageId);
 }
 
 /** 生成 session ID: YYYYMMDD-HHMMSS 格式 */

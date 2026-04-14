@@ -22,6 +22,7 @@ export interface FeishuMessageEvent {
 /** 用户持久状态 */
 export interface UserState {
   activeSessionId: string;
+  piSessionFile?: string;
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
