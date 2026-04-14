@@ -1,0 +1,134 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockSendRenderedMessage = vi.fn();
+const mockAddProcessingReaction = vi.fn();
+const mockRemoveReaction = vi.fn();
+
+vi.mock("../src/feishu/send.js", () => ({
+  sendRenderedMessage: mockSendRenderedMessage,
+  addProcessingReaction: mockAddProcessingReaction,
+  removeReaction: mockRemoveReaction,
+  sendTextMessage: vi.fn(),
+}));
+
+type StreamEvent =
+  | { type: "message_update"; assistantMessageEvent: { type: "text_delta"; delta: string } }
+  | { type: "message_end" }
+  | { type: "agent_end" };
+
+function createSession(events: StreamEvent[], promptImpl?: () => Promise<void>) {
+  let subscriber: ((event: StreamEvent) => void) | undefined;
+
+  return {
+    subscribe(callback: (event: StreamEvent) => void) {
+      subscriber = callback;
+      return () => {
+        subscriber = undefined;
+      };
+    },
+    async prompt() {
+      if (promptImpl) {
+        await promptImpl();
+        return;
+      }
+      for (const event of events) {
+        subscriber?.(event);
+      }
+    },
+    abort: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+describe("promptSession", () => {
+  beforeEach(() => {
+    mockSendRenderedMessage.mockReset();
+    mockAddProcessingReaction.mockReset();
+    mockRemoveReaction.mockReset();
+    mockSendRenderedMessage.mockResolvedValue(undefined);
+    mockAddProcessingReaction.mockResolvedValue("reaction_1");
+    mockRemoveReaction.mockResolvedValue(true);
+  });
+
+  it("开始时添加 reaction，结束后删除并发送最终文本", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello" } },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " world" } },
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE");
+
+    expect(result).toEqual({ text: "hello world", error: undefined });
+    expect(mockAddProcessingReaction).toHaveBeenCalledWith("om_source_1", "SMILE");
+    expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
+    expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello world", 2000);
+  });
+
+  it("reaction 添加失败时，仍应继续处理并发送回复", async () => {
+    mockAddProcessingReaction.mockResolvedValue(null);
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "done" } },
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(result.text).toBe("done");
+    expect(mockRemoveReaction).not.toHaveBeenCalled();
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "done", 2000);
+  });
+
+  it("长文本应交给渲染发送层处理", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const longText = "a".repeat(4005);
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: longText } },
+      { type: "message_end" },
+    ]);
+
+    await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, true, 2000);
+
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", longText, 2000);
+  });
+
+  it("prompt 失败但已有部分输出时，应追加中断提示", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([], async () => {
+      session.subscribeHandler?.({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "partial" },
+      });
+      throw new Error("boom");
+    }) as any;
+
+    const subscriberHolder = { current: undefined as ((event: StreamEvent) => void) | undefined };
+    session.subscribe = (callback: (event: StreamEvent) => void) => {
+      subscriberHolder.current = callback;
+      (session as any).subscribeHandler = callback;
+      return () => {
+        subscriberHolder.current = undefined;
+      };
+    };
+
+    const result = await promptSession(session, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(result).toEqual({ text: "partial", error: "boom" });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "partial\n\n⚠️ 回复中断: boom", 2000);
+  });
+
+  it("最终发送前应去掉开头的空白行", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "\n\nhello" } },
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(result).toEqual({ text: "\n\nhello", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello", 2000);
+  });
+});
