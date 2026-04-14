@@ -19,6 +19,11 @@ export interface FeishuMessageEvent {
   };
 }
 
+export interface UserIdentity {
+  openId: string;
+  userId?: string;
+}
+
 /** 用户持久状态 */
 export interface UserState {
   activeSessionId: string;

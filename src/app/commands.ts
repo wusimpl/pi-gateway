@@ -21,7 +21,13 @@ export function parseBridgeCommand(text: string): BridgeCommand | null {
 /** 处理桥接层命令，返回回复文本 */
 export function handleBridgeCommand(
   command: BridgeCommand,
-  context: { openId: string; sessionId: string; createdAt?: string; piSessionFile?: string }
+  context: {
+    openId: string;
+    sessionId: string;
+    createdAt?: string;
+    piSessionFile?: string;
+    workspaceDir?: string;
+  }
 ): string {
   logger.info("桥接层命令", { command, openId: context.openId, sessionId: context.sessionId });
   switch (command) {
@@ -36,6 +42,9 @@ export function handleBridgeCommand(
         // 仅展示文件名，避免泄露服务端目录结构
         const fileName = context.piSessionFile.split(/[\/\\]/).pop() ?? context.piSessionFile;
         lines.push(`📁 Session: ${fileName}`);
+      }
+      if (context.workspaceDir) {
+        lines.push(`🧰 Workspace: ${context.workspaceDir}`);
       }
       return lines.join("\n");
     }

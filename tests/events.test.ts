@@ -33,6 +33,28 @@ describe("parseMessageEvent", () => {
     expect(parseMessageEvent(data as Record<string, unknown>)).toBeNull();
   });
 
+  it("应支持飞书原始 snake_case 事件", () => {
+    const data = {
+      sender: {
+        sender_id: { open_id: "ou_456", user_id: "uid_456", union_id: "on_456" },
+        sender_type: "user",
+        tenant_key: "tk_456",
+      },
+      message: {
+        message_id: "om_456",
+        chat_id: "oc_456",
+        chat_type: "p2p",
+        message_type: "text",
+        content: '{"text":"hello"}',
+        create_time: "1234567890",
+      },
+    };
+    const result = parseMessageEvent(data as Record<string, unknown>);
+    expect(result).not.toBeNull();
+    expect(result!.sender.senderId.userId).toBe("uid_456");
+    expect(result!.message.messageId).toBe("om_456");
+  });
+
   it("缺少 messageId 应返回 null", () => {
     const data = {
       sender: { senderId: { openId: "ou_123", userId: "uid_123", unionId: "on_123" }, senderType: "user", tenantKey: "tk" },

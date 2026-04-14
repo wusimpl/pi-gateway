@@ -37,6 +37,7 @@ describe("handleBridgeCommand", () => {
     sessionId: "20260414-120000",
     createdAt: "2026-04-14T12:00:00.000Z",
     piSessionFile: "/data/users/ou_test123/sessions/abc.json",
+    workspaceDir: "C:/Users/Administrator/code/pi-workspace/cli_user_123",
   };
 
   it("should return new session message for /new", () => {
@@ -54,6 +55,7 @@ describe("handleBridgeCommand", () => {
     expect(result).toContain(ctx.sessionId);
     expect(result).toContain(ctx.createdAt!);
     expect(result).toContain(ctx.piSessionFile!.split("/").pop());
+    expect(result).toContain(ctx.workspaceDir);
   });
 
   it("should handle /status without optional fields", () => {

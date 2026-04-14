@@ -52,6 +52,13 @@ export async function startFeishuConnection(): Promise<void> {
   // 注册消息事件
   eventDispatcher.register({
     "im.message.receive_v1": async (data: Record<string, unknown>) => {
+      logger.debug("收到飞书消息事件", {
+        topLevelKeys: Object.keys(data),
+        hasEvent: typeof data.event === "object" && data.event !== null,
+        hasSender: typeof data.sender === "object" && data.sender !== null,
+        hasMessage: typeof data.message === "object" && data.message !== null,
+      });
+
       try {
         // 动态导入避免循环依赖
         const { handleFeishuMessage } = await import("../app/router.js");

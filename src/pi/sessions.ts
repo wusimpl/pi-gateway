@@ -8,6 +8,8 @@ import {
   userSessionsDir,
 } from "../storage/users.js";
 import { logger } from "../app/logger.js";
+import { ensureUserWorkspace } from "./workspace.js";
+import type { UserIdentity } from "../types.js";
 
 /** 内存中缓存的 Pi session 实例（open_id -> session） */
 const sessionCache = new Map<string, AgentSession>();
@@ -23,7 +25,9 @@ interface SessionResult {
  * - 如果存储中有状态且 Pi session 可恢复 -> 恢复
  * - 否则 -> 创建全新 session
  */
-export async function getOrCreateActiveSession(openId: string): Promise<SessionResult> {
+export async function getOrCreateActiveSession(identity: UserIdentity): Promise<SessionResult> {
+  const openId = identity.openId;
+
   // 1. 检查内存缓存
   const cached = sessionCache.get(openId);
   if (cached) {
@@ -38,7 +42,8 @@ export async function getOrCreateActiveSession(openId: string): Promise<SessionR
   const state = await readUserState(openId);
   if (state?.activeSessionId && state.piSessionFile) {
     try {
-      const session = await openPiSession(state.piSessionFile, process.cwd());
+      const workspaceDir = await ensureUserWorkspace(identity);
+      const session = await openPiSession(state.piSessionFile, workspaceDir);
       sessionCache.set(openId, session);
       logger.info("Pi session 从指定文件恢复", {
         openId,
@@ -59,7 +64,8 @@ export async function getOrCreateActiveSession(openId: string): Promise<SessionR
   if (state?.activeSessionId) {
     try {
       const sessionDir = userSessionsDir(openId);
-      const result = await continueRecentPiSession(process.cwd(), sessionDir);
+      const workspaceDir = await ensureUserWorkspace(identity);
+      const result = await continueRecentPiSession(workspaceDir, sessionDir);
       if (result) {
         sessionCache.set(openId, result.session);
         // 恢复成功后更新 piSessionFile
@@ -78,13 +84,15 @@ export async function getOrCreateActiveSession(openId: string): Promise<SessionR
   }
 
   // 4. 创建全新 session
-  return await doCreateNewSession(openId);
+  return await doCreateNewSession(identity);
 }
 
 /**
  * 为用户创建新 session（/new 或 /reset 时调用）
  */
-export async function createNewSession(openId: string): Promise<SessionResult> {
+export async function createNewSession(identity: UserIdentity): Promise<SessionResult> {
+  const openId = identity.openId;
+
   // 清除旧缓存
   const oldSession = sessionCache.get(openId);
   if (oldSession) {
@@ -96,13 +104,15 @@ export async function createNewSession(openId: string): Promise<SessionResult> {
     sessionCache.delete(openId);
   }
 
-  return await doCreateNewSession(openId);
+  return await doCreateNewSession(identity);
 }
 
 /** 内部：创建全新 session 并更新存储 */
-async function doCreateNewSession(openId: string): Promise<SessionResult> {
+async function doCreateNewSession(identity: UserIdentity): Promise<SessionResult> {
+  const openId = identity.openId;
   const sessionDir = userSessionsDir(openId);
-  const piSession = await createPiSession(process.cwd(), sessionDir);
+  const workspaceDir = await ensureUserWorkspace(identity);
+  const piSession = await createPiSession(workspaceDir, sessionDir);
   const newSessionId = generateSessionId();
 
   const existing = await readUserState(openId);
@@ -119,7 +129,12 @@ async function doCreateNewSession(openId: string): Promise<SessionResult> {
   }
 
   sessionCache.set(openId, piSession);
-  logger.info("新 session 已创建", { openId, sessionId: newSessionId });
+  logger.info("新 session 已创建", {
+    openId,
+    userId: identity.userId,
+    sessionId: newSessionId,
+    workspaceDir,
+  });
   return { activeSessionId: newSessionId, piSession };
 }
 

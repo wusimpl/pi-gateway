@@ -7,6 +7,7 @@ import { initPiRuntime } from "./pi/runtime.js";
 import { initRouter } from "./app/router.js";
 import { disposeAllSessions } from "./pi/sessions.js";
 import { clearAllState } from "./app/state.js";
+import { setWorkspaceRoot } from "./pi/workspace.js";
 import { ModelRegistry } from "@mariozechner/pi-coding-agent";
 
 async function main() {
@@ -14,18 +15,26 @@ async function main() {
   const config = loadConfig();
   setLogLevel(config.LOG_LEVEL);
   setDataDir(config.DATA_DIR);
+  setWorkspaceRoot(config.PI_WORKSPACE_ROOT);
 
   logger.info("配置加载成功", {
     feishuDomain: config.FEISHU_DOMAIN,
     dataDir: config.DATA_DIR,
+    workspaceRoot: config.PI_WORKSPACE_ROOT,
     logLevel: config.LOG_LEVEL,
+    processingReactionEnabled: Boolean(config.FEISHU_PROCESSING_REACTION_TYPE),
   });
 
   // 2. 确保数据目录
   await ensureDir(config.DATA_DIR);
   logger.info("数据目录就绪", { dataDir: config.DATA_DIR });
 
-  // 3. 初始化 Pi 运行时（含自检）
+  // 3. 确保 workspace 根目录
+  await ensureDir(config.PI_WORKSPACE_ROOT);
+  logger.info("Workspace 根目录就绪", { workspaceRoot: config.PI_WORKSPACE_ROOT });
+
+  // 4. 初始化 Pi 运行时（含自检）
+
   try {
     initPiRuntime();
     logger.info("Pi 运行时就绪");
@@ -34,7 +43,7 @@ async function main() {
     process.exit(1);
   }
 
-  // 4. 自检：验证 Pi 可用模型
+  // 5. 自检：验证 Pi 可用模型
   try {
     const models = await checkPiModels();
     if (models.length === 0) {
@@ -47,7 +56,7 @@ async function main() {
     process.exit(1);
   }
 
-  // 5. 初始化飞书客户端（含自检）
+  // 6. 初始化飞书客户端（含自检）
   try {
     initFeishuClient(config);
     logger.info("飞书客户端就绪");
@@ -56,14 +65,14 @@ async function main() {
     process.exit(1);
   }
 
-  // 6. 初始化消息路由
+  // 7. 初始化消息路由
   initRouter(config);
   logger.info("消息路由就绪");
 
-  // 7. 注册优雅关停
+  // 8. 注册优雅关停
   registerShutdown();
 
-  // 8. 启动飞书 WebSocket 连接
+  // 9. 启动飞书 WebSocket 连接
   try {
     await startFeishuConnection();
     logger.info("🚀 pi-gateway 服务已启动，等待飞书消息...");
