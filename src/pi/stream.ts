@@ -130,7 +130,7 @@ function stripLeadingBlankLines(text: string): string {
 }
 
 function appendMessageFooter(text: string, footer?: string): string {
-  if (!footer) return text;
+  if (!text || !footer) return text;
   return text ? `${text}\n\n${footer}` : footer;
 }
 

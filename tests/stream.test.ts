@@ -111,6 +111,18 @@ describe("promptSession", () => {
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "done", 2000);
   });
 
+  it("没有正文时不应单独发送尾巴", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_end" },
+    ], undefined, { percent: 4.1, contextWindow: 200000 });
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(result).toEqual({ text: "", error: undefined });
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
+  });
+
   it("prompt 失败但已有部分输出时，应追加中断提示", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([], async () => {
