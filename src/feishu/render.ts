@@ -119,7 +119,7 @@ function buildCardElements(tokens: TokensList): CardElement[] {
       continue;
     }
 
-    if (token.type === "table") {
+    if (isTableToken(token)) {
       flushMarkdown();
       elements.push(buildTableElement(token));
       continue;
@@ -143,7 +143,7 @@ function blockTokenToMarkdown(token: Token): string {
 }
 
 function buildTableElement(token: Tokens.Table): TableCardElement {
-  const columns = token.header.map((cell, index) => {
+  const columns: TableColumn[] = token.header.map((cell, index) => {
     const name = `col_${index}`;
     const values = token.rows.map((row) => inlineCellText(row[index]));
     const isNumberColumn = values.length > 0 && values.every(isNumericCell);
@@ -178,6 +178,10 @@ function buildTableElement(token: Tokens.Table): TableCardElement {
     columns,
     rows,
   };
+}
+
+function isTableToken(token: Token): token is Tokens.Table {
+  return token.type === "table";
 }
 
 function normalizeMarkdownForCard(content: string): string {

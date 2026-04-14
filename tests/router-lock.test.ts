@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   sendTextMessage: vi.fn(),
+  sendRenderedMessage: vi.fn(),
   promptSession: vi.fn(),
   getOrCreateActiveSession: vi.fn(),
   touchSession: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../src/feishu/send.js", () => ({
   sendTextMessage: mocks.sendTextMessage,
+  sendRenderedMessage: mocks.sendRenderedMessage,
 }));
 
 vi.mock("../src/pi/stream.js", () => ({
@@ -52,6 +54,7 @@ describe("handleFeishuMessage 运行锁", () => {
   beforeEach(() => {
     clearAllState();
     mocks.sendTextMessage.mockReset();
+    mocks.sendRenderedMessage.mockReset();
     mocks.promptSession.mockReset();
     mocks.getOrCreateActiveSession.mockReset();
     mocks.touchSession.mockReset();
@@ -98,6 +101,7 @@ describe("handleFeishuMessage 运行锁", () => {
 
     expect(mocks.promptSession).toHaveBeenCalledTimes(1);
     expect(mocks.sendTextMessage).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
 
     releasePrompt?.();
     await firstCall;

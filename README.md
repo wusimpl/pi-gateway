@@ -17,7 +17,7 @@ pi-gateway 通过飞书 WebSocket 长连接接收私聊消息，转发给 Pi Age
 - 长文本自动分块发送
 - 每用户独立会话，服务重启后自动恢复
 - 消息去重与并发保护，避免重复处理；处理中状态仅通过消息 reaction 提示
-- 命令支持：`/new`、`/reset`、`/status`
+- 命令支持：`/new`、`/reset`、`/status`、`/model`、`/models`
 - 优雅关停
 
 ## 前置条件
@@ -289,8 +289,12 @@ npm run dev
 - `/new` -- 创建新会话
 - `/reset` -- 重置会话（当前与 `/new` 行为一致）
 - `/status` -- 查看当前会话状态
+- `/model` -- 查看当前模型
+- `/model <provider/model>` -- 切换到指定模型
+- `/models` -- 查看当前环境真的能用的模型
+- `/models <provider>` -- 只看某个 provider 下面真的能用的模型
 
-其他斜杠命令（如 Pi 扩展注册的命令）会透传给 Pi 处理。
+除上面这些桥接层命令外，其他斜杠命令会透传给 Pi 处理。
 
 ## 项目结构
 

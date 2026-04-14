@@ -1,0 +1,178 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  sendTextMessage: vi.fn(),
+  sendRenderedMessage: vi.fn(),
+  getOrCreateActiveSession: vi.fn(),
+  createNewSession: vi.fn(),
+  touchSession: vi.fn(),
+  readUserState: vi.fn(),
+  parseMessageEvent: vi.fn(),
+  isP2PTextMessage: vi.fn(),
+  extractTextContent: vi.fn(),
+  listAvailableModels: vi.fn(),
+  findAvailableModel: vi.fn(),
+}));
+
+vi.mock("../src/feishu/send.js", () => ({
+  sendTextMessage: mocks.sendTextMessage,
+  sendRenderedMessage: mocks.sendRenderedMessage,
+}));
+
+vi.mock("../src/pi/sessions.js", () => ({
+  getOrCreateActiveSession: mocks.getOrCreateActiveSession,
+  createNewSession: mocks.createNewSession,
+  touchSession: mocks.touchSession,
+}));
+
+vi.mock("../src/storage/users.js", () => ({
+  readUserState: mocks.readUserState,
+}));
+
+vi.mock("../src/feishu/events.js", () => ({
+  parseMessageEvent: mocks.parseMessageEvent,
+  isP2PTextMessage: mocks.isP2PTextMessage,
+  extractTextContent: mocks.extractTextContent,
+}));
+
+vi.mock("../src/pi/workspace.js", () => ({
+  getUserWorkspaceDir: () => "workspace/user",
+}));
+
+vi.mock("../src/pi/models.js", () => ({
+  listAvailableModels: mocks.listAvailableModels,
+  findAvailableModel: mocks.findAvailableModel,
+  filterAvailableModels: (models: Array<{ provider: string }>, providerFilter?: string) => {
+    const trimmed = providerFilter?.trim();
+    if (!trimmed) {
+      return models;
+    }
+    return models.filter((model) => model.provider === trimmed);
+  },
+  formatModelLabel: (provider: string, id: string) => `${provider}/${id}`,
+}));
+
+import { acquireLock, clearAllState, releaseLock } from "../src/app/state.js";
+import { handleFeishuMessage, initRouter } from "../src/app/router.js";
+
+const baseEvent = {
+  sender: { senderId: { openId: "ou_1", userId: "u_1" } },
+  message: { messageId: "om_1", content: "{}" },
+};
+
+describe("handleFeishuMessage 模型命令", () => {
+  beforeEach(() => {
+    clearAllState();
+    releaseLock("ou_1");
+
+    mocks.sendTextMessage.mockReset();
+    mocks.sendRenderedMessage.mockReset();
+    mocks.getOrCreateActiveSession.mockReset();
+    mocks.createNewSession.mockReset();
+    mocks.touchSession.mockReset();
+    mocks.readUserState.mockReset();
+    mocks.parseMessageEvent.mockReset();
+    mocks.isP2PTextMessage.mockReset();
+    mocks.extractTextContent.mockReset();
+    mocks.listAvailableModels.mockReset();
+    mocks.findAvailableModel.mockReset();
+
+    initRouter({
+      FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      STREAMING_ENABLED: true,
+      TEXT_CHUNK_LIMIT: 2000,
+    } as any);
+
+    mocks.parseMessageEvent.mockReturnValue(baseEvent);
+    mocks.isP2PTextMessage.mockReturnValue(true);
+    mocks.sendRenderedMessage.mockResolvedValue(undefined);
+    mocks.sendTextMessage.mockResolvedValue("om_reply");
+  });
+
+  it("`/models` 只返回当前可用模型", async () => {
+    mocks.extractTextContent.mockReturnValue("/models");
+    mocks.listAvailableModels.mockResolvedValue([
+      { provider: "openai", id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
+      { provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
+    ]);
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+    const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
+    expect(replyText).toContain("只显示当前环境真的能用的模型");
+    expect(replyText).toContain("openai/gpt-4o");
+    expect(replyText).toContain("rightcodes/gpt-5.4-high");
+  });
+
+  it("`/model` 会返回当前模型和可用模型数量", async () => {
+    const piSession = {
+      model: { provider: "zen2api", id: "minimax-m2.5-free" },
+    };
+    mocks.extractTextContent.mockReturnValue("/model");
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    mocks.listAvailableModels.mockResolvedValue([
+      { provider: "zen2api", id: "minimax-m2.5-free", label: "zen2api/minimax-m2.5-free", name: "MiniMax M2.5 Free" },
+      { provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
+    ]);
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+    const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
+    expect(replyText).toContain("zen2api/minimax-m2.5-free");
+    expect(replyText).toContain("2 个");
+  });
+
+  it("`/model provider/model` 会切到指定的可用模型", async () => {
+    const piSession = {
+      model: { provider: "zen2api", id: "minimax-m2.5-free" },
+      setModel: vi.fn(async (model: { provider: string; id: string }) => {
+        piSession.model = { provider: model.provider, id: model.id };
+      }),
+    };
+    mocks.extractTextContent.mockReturnValue("/model rightcodes/gpt-5.4-high");
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    mocks.findAvailableModel.mockResolvedValue({
+      provider: "rightcodes",
+      id: "gpt-5.4-high",
+      label: "rightcodes/gpt-5.4-high",
+      name: "gpt5.4-high",
+      model: { provider: "rightcodes", id: "gpt-5.4-high" },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(piSession.setModel).toHaveBeenCalledWith({ provider: "rightcodes", id: "gpt-5.4-high" });
+    const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
+    expect(replyText).toContain("已切到模型");
+    expect(replyText).toContain("rightcodes/gpt-5.4-high");
+    expect(replyText).toContain("zen2api/minimax-m2.5-free");
+  });
+
+  it("模型切换时如果用户还有任务在跑，就直接提示稍后再切", async () => {
+    mocks.extractTextContent.mockReturnValue("/model rightcodes/gpt-5.4-high");
+    mocks.findAvailableModel.mockResolvedValue({
+      provider: "rightcodes",
+      id: "gpt-5.4-high",
+      label: "rightcodes/gpt-5.4-high",
+      name: "gpt5.4-high",
+      model: { provider: "rightcodes", id: "gpt-5.4-high" },
+    });
+    acquireLock("ou_1", "busy_message");
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "当前还有任务在跑，等这条回复结束后再切模型。",
+    );
+    expect(mocks.getOrCreateActiveSession).not.toHaveBeenCalled();
+  });
+});

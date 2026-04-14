@@ -8,7 +8,6 @@ import { initRouter } from "./app/router.js";
 import { disposeAllSessions } from "./pi/sessions.js";
 import { clearAllState } from "./app/state.js";
 import { setWorkspaceRoot } from "./pi/workspace.js";
-import { ModelRegistry } from "@mariozechner/pi-coding-agent";
 
 async function main() {
   // 1. 加载配置

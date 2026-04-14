@@ -1,15 +1,21 @@
 import type { FeishuMessageEvent } from "../types.js";
 import { logger } from "./logger.js";
-import { isDuplicate, acquireLock, releaseLock } from "./state.js";
-import { parseBridgeCommand, handleBridgeCommand } from "./commands.js";
+import { isDuplicate, acquireLock, releaseLock, isLocked } from "./state.js";
+import { parseBridgeCommand, handleBridgeCommand, type BridgeCommand } from "./commands.js";
 import { parseMessageEvent, isP2PTextMessage, extractTextContent } from "../feishu/events.js";
-import { sendTextMessage } from "../feishu/send.js";
+import { sendRenderedMessage, sendTextMessage } from "../feishu/send.js";
 import { formatError } from "../feishu/format.js";
 import { getOrCreateActiveSession, createNewSession, touchSession } from "../pi/sessions.js";
 import { readUserState } from "../storage/users.js";
 import { promptSession } from "../pi/stream.js";
 import type { Config } from "../config.js";
 import { getUserWorkspaceDir } from "../pi/workspace.js";
+import {
+  filterAvailableModels,
+  findAvailableModel,
+  formatModelLabel,
+  listAvailableModels,
+} from "../pi/models.js";
 
 let config: Config;
 const MESSAGE_LOG_PREVIEW_LIMIT = 30;
@@ -71,19 +77,20 @@ function truncateForLog(text: string, limit: number): string {
 /** 处理桥接层命令 */
 async function handleBridgeCommandFlow(
   identity: { openId: string; userId?: string },
-  command: "new" | "reset" | "status"
+  command: BridgeCommand,
 ): Promise<void> {
   const openId = identity.openId;
   try {
-    if (command === "new" || command === "reset") {
+    if (command.name === "new" || command.name === "reset") {
       const sessionState = await createNewSession(identity);
       const reply = handleBridgeCommand(command, {
         openId,
         sessionId: sessionState.activeSessionId,
         workspaceDir: getUserWorkspaceDir(identity),
+        currentModel: getCurrentModelLabel(sessionState.piSession),
       });
-      await sendTextMessage(openId, reply);
-    } else if (command === "status") {
+      await sendCommandReply(openId, reply);
+    } else if (command.name === "status") {
       const sessionState = await getOrCreateActiveSession(identity);
       const userState = await readUserState(openId);
       const reply = handleBridgeCommand(command, {
@@ -92,11 +99,23 @@ async function handleBridgeCommandFlow(
         createdAt: userState?.createdAt,
         piSessionFile: userState?.piSessionFile,
         workspaceDir: getUserWorkspaceDir(identity),
+        currentModel: getCurrentModelLabel(sessionState.piSession),
       });
-      await sendTextMessage(openId, reply);
+      await sendCommandReply(openId, reply);
+    } else if (command.name === "models") {
+      const availableModels = await listAvailableModels();
+      const filteredModels = filterAvailableModels(availableModels, command.args);
+      const reply = handleBridgeCommand(command, {
+        openId,
+        requestedProvider: command.args,
+        availableModels: filteredModels,
+      });
+      await sendCommandReply(openId, reply);
+    } else if (command.name === "model") {
+      await handleModelCommand(identity, command);
     }
   } catch (err) {
-    logger.error("桥接层命令处理失败", { openId, command, error: String(err) });
+    logger.error("桥接层命令处理失败", { openId, command: command.name, args: command.args, error: String(err) });
     await sendTextMessage(openId, formatError("命令处理失败，请稍后重试"));
   }
 }
@@ -145,4 +164,60 @@ async function handleUserPrompt(
   } finally {
     releaseLock(openId);
   }
+}
+
+async function handleModelCommand(
+  identity: { openId: string; userId?: string },
+  command: BridgeCommand,
+): Promise<void> {
+  const openId = identity.openId;
+  const argText = command.args.trim();
+
+  if (!argText || argText.toLowerCase() === "status") {
+    const sessionState = await getOrCreateActiveSession(identity);
+    const availableModels = await listAvailableModels();
+    const reply = handleBridgeCommand(command, {
+      openId,
+      currentModel: getCurrentModelLabel(sessionState.piSession),
+      availableModelCount: availableModels.length,
+    });
+    await sendCommandReply(openId, reply);
+    return;
+  }
+
+  if (isLocked(openId)) {
+    await sendTextMessage(openId, "当前还有任务在跑，等这条回复结束后再切模型。");
+    return;
+  }
+
+  const targetModel = await findAvailableModel(argText);
+  if (!targetModel) {
+    await sendTextMessage(
+      openId,
+      "没找到这个可用模型，或者它现在还不能用。\n\n用 /models 看当前环境真的能跑的模型。",
+    );
+    return;
+  }
+
+  const sessionState = await getOrCreateActiveSession(identity);
+  const previousModel = getCurrentModelLabel(sessionState.piSession);
+  await sessionState.piSession.setModel(targetModel.model);
+
+  const reply = handleBridgeCommand(command, {
+    openId,
+    currentModel: getCurrentModelLabel(sessionState.piSession) ?? formatModelLabel(targetModel.provider, targetModel.id),
+    previousModel,
+  });
+  await sendCommandReply(openId, reply);
+}
+
+function getCurrentModelLabel(session: { model?: { provider: string; id: string } | undefined }): string | undefined {
+  if (!session.model) {
+    return undefined;
+  }
+  return formatModelLabel(session.model.provider, session.model.id);
+}
+
+async function sendCommandReply(openId: string, text: string): Promise<void> {
+  await sendRenderedMessage(openId, text, config.TEXT_CHUNK_LIMIT);
 }
