@@ -24,12 +24,8 @@ const envSchema = z.object({
 
 export type Config = z.infer<typeof envSchema>;
 
-let _config: Config | null = null;
-
-export function loadConfig(): Config {
-  if (_config) return _config;
-
-  const result = envSchema.safeParse(process.env);
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const result = envSchema.safeParse(env);
   if (!result.success) {
     const errors = result.error.errors
       .map((e) => `  - ${e.path.join(".")}: ${e.message}`)
@@ -37,7 +33,7 @@ export function loadConfig(): Config {
     throw new Error(`配置校验失败:\n${errors}`);
   }
 
-  _config = {
+  return {
     ...result.data,
     FEISHU_PROCESSING_REACTION_TYPE: resolveProcessingReactionType(
       result.data.FEISHU_PROCESSING_REACTION_TYPE,
@@ -45,7 +41,6 @@ export function loadConfig(): Config {
     FEISHU_AUDIO_TRANSCRIBE_SCRIPT: expandHomeDir(result.data.FEISHU_AUDIO_TRANSCRIBE_SCRIPT),
     PI_WORKSPACE_ROOT: expandHomeDir(result.data.PI_WORKSPACE_ROOT),
   };
-  return _config;
 }
 
 function resolveProcessingReactionType(value?: string): string | undefined {

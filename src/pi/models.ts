@@ -32,8 +32,11 @@ export function parseModelReference(rawRef: string): ParsedModelReference | null
   return { provider, id };
 }
 
-export async function listAvailableModels(): Promise<AvailableModelInfo[]> {
-  const registry = getModelRegistry();
+type ModelRegistryLike = Pick<ModelRegistry, "getAvailable">;
+
+export async function listAvailableModels(
+  registry: ModelRegistryLike = getModelRegistry(),
+): Promise<AvailableModelInfo[]> {
   const models = await registry.getAvailable();
 
   return [...models]
@@ -66,13 +69,16 @@ export function filterAvailableModels(
   return models.filter((model) => model.provider.toLowerCase() === normalizedProvider);
 }
 
-export async function findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null> {
+export async function findAvailableModel(
+  rawRef: string,
+  registry: ModelRegistryLike = getModelRegistry(),
+): Promise<AvailableModelInfo | null> {
   const parsed = parseModelReference(rawRef);
   if (!parsed) {
     return null;
   }
 
-  const models = await listAvailableModels();
+  const models = await listAvailableModels(registry);
   const exact = models.find(
     (model) => model.provider === parsed.provider && model.id === parsed.id,
   );
