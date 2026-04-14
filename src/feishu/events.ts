@@ -1,6 +1,8 @@
 import type { FeishuMessageEvent } from "../types.js";
 import { logger } from "../app/logger.js";
 
+export const SUPPORTED_P2P_MESSAGE_TYPES = ["text", "image", "audio"] as const;
+
 /**
  * 从飞书事件 payload 中提取消息事件数据
  * 返回 null 表示解析失败
@@ -91,6 +93,25 @@ export function isP2PTextMessage(event: FeishuMessageEvent): boolean {
     logger.debug("忽略飞书事件：不是私聊文本消息", {
       chatType: event.message.chatType,
       messageType: event.message.messageType,
+    });
+  }
+
+  return matched;
+}
+
+/** 过滤：仅保留当前网关支持的私聊消息 */
+export function isSupportedP2PMessage(event: FeishuMessageEvent): boolean {
+  const matched =
+    event.message.chatType === "p2p" &&
+    SUPPORTED_P2P_MESSAGE_TYPES.includes(
+      event.message.messageType as (typeof SUPPORTED_P2P_MESSAGE_TYPES)[number],
+    );
+
+  if (!matched) {
+    logger.debug("忽略飞书事件：不是支持的私聊消息", {
+      chatType: event.message.chatType,
+      messageType: event.message.messageType,
+      supportedTypes: SUPPORTED_P2P_MESSAGE_TYPES,
     });
   }
 

@@ -1,26 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  sendTextMessage: vi.fn(),
   promptSession: vi.fn(),
   getOrCreateActiveSession: vi.fn(),
   touchSession: vi.fn(),
-  createNewSession: vi.fn(),
-  readUserState: vi.fn(),
   parseMessageEvent: vi.fn(),
   isSupportedP2PMessage: vi.fn(),
   normalizeFeishuInboundMessage: vi.fn(),
   prepareFeishuPromptInput: vi.fn(),
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
-
-vi.mock("../src/feishu/send.js", () => ({
-  sendTextMessage: mocks.sendTextMessage,
 }));
 
 vi.mock("../src/pi/stream.js", () => ({
@@ -29,21 +16,17 @@ vi.mock("../src/pi/stream.js", () => ({
 
 vi.mock("../src/pi/sessions.js", () => ({
   getOrCreateActiveSession: mocks.getOrCreateActiveSession,
-  createNewSession: mocks.createNewSession,
+  createNewSession: vi.fn(),
   touchSession: mocks.touchSession,
 }));
 
 vi.mock("../src/storage/users.js", () => ({
-  readUserState: mocks.readUserState,
+  readUserState: vi.fn(),
 }));
 
 vi.mock("../src/feishu/events.js", () => ({
   parseMessageEvent: mocks.parseMessageEvent,
   isSupportedP2PMessage: mocks.isSupportedP2PMessage,
-}));
-
-vi.mock("../src/pi/workspace.js", () => ({
-  getUserWorkspaceDir: () => "workspace/user",
 }));
 
 vi.mock("../src/feishu/inbound/normalize.js", () => ({
@@ -54,85 +37,82 @@ vi.mock("../src/feishu/inbound/transform.js", () => ({
   prepareFeishuPromptInput: mocks.prepareFeishuPromptInput,
 }));
 
-vi.mock("../src/app/logger.js", () => ({
-  logger: mocks.logger,
+vi.mock("../src/feishu/send.js", () => ({
+  sendTextMessage: vi.fn(),
+  sendRenderedMessage: vi.fn(),
+}));
+
+vi.mock("../src/pi/workspace.js", () => ({
+  getUserWorkspaceDir: () => "workspace/user",
 }));
 
 import { clearAllState } from "../src/app/state.js";
 import { handleFeishuMessage, initRouter } from "../src/app/router.js";
 
-const baseEvent = {
-  sender: { senderId: { openId: "ou_1", userId: "u_1" } },
-  message: { messageId: "om_1", messageType: "text", content: "{}" },
-};
-
-describe("handleFeishuMessage 日志", () => {
+describe("handleFeishuMessage 多模态消息", () => {
   beforeEach(() => {
     clearAllState();
-    mocks.sendTextMessage.mockReset();
     mocks.promptSession.mockReset();
     mocks.getOrCreateActiveSession.mockReset();
     mocks.touchSession.mockReset();
-    mocks.createNewSession.mockReset();
-    mocks.readUserState.mockReset();
     mocks.parseMessageEvent.mockReset();
     mocks.isSupportedP2PMessage.mockReset();
     mocks.normalizeFeishuInboundMessage.mockReset();
     mocks.prepareFeishuPromptInput.mockReset();
-    mocks.logger.debug.mockReset();
-    mocks.logger.info.mockReset();
-    mocks.logger.warn.mockReset();
-    mocks.logger.error.mockReset();
 
     initRouter({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,
+      FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+      FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+      FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+      FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
     } as any);
 
-    mocks.parseMessageEvent.mockReturnValue(baseEvent);
+    mocks.parseMessageEvent.mockReturnValue({
+      sender: { senderId: { openId: "ou_1", userId: "u_1" } },
+      message: { messageId: "om_1", messageType: "image" },
+    });
     mocks.isSupportedP2PMessage.mockReturnValue(true);
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
-      kind: "text",
+      kind: "image",
       identity: { openId: "ou_1", userId: "u_1" },
       messageId: "om_1",
-      messageType: "text",
+      messageType: "image",
       createTime: "123",
-      rawContent: '{"text":"hello"}',
-      text: "hello",
+      rawContent: '{"image_key":"img_123"}',
+      imageKey: "img_123",
     });
     mocks.getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
-      piSession: { id: "pi_session" },
+      piSession: { model: { input: ["text", "image"] } },
     });
-    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "hello", localFiles: [] });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({
+      text: "用户发来了一张图片",
+      images: [{ type: "image", data: "ZmFrZQ==", mimeType: "image/png" }],
+      localFiles: ["workspace/user/.feishu-inbox/om_1/image.png"],
+    });
     mocks.promptSession.mockResolvedValue({ text: "done", error: undefined });
     mocks.touchSession.mockResolvedValue(undefined);
   });
 
-  it("收到私聊消息时在 info 日志里打印前 30 个字符", async () => {
-    const text = "123456789012345678901234567890XYZ";
-    mocks.normalizeFeishuInboundMessage.mockReturnValue({
-      kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
-      messageId: "om_1",
-      messageType: "text",
-      createTime: "123",
-      rawContent: `{\"text\":\"${text}\"}`,
-      text,
-    });
-
+  it("图片消息应走中间层后再进入 Pi", async () => {
     await handleFeishuMessage({});
 
-    expect(mocks.logger.info).toHaveBeenCalledWith(
-      "收到私聊消息",
-      expect.objectContaining({
-        openId: "ou_1",
-        messageId: "om_1",
-        messageType: "text",
-        textLen: text.length,
-        text: "123456789012345678901234567890",
-      })
+    expect(mocks.prepareFeishuPromptInput).toHaveBeenCalledTimes(1);
+    expect(mocks.promptSession).toHaveBeenCalledWith(
+      { model: { input: ["text", "image"] } },
+      {
+        text: "用户发来了一张图片",
+        images: [{ type: "image", data: "ZmFrZQ==", mimeType: "image/png" }],
+        localFiles: ["workspace/user/.feishu-inbox/om_1/image.png"],
+      },
+      "ou_1",
+      "om_1",
+      "SMILE",
+      true,
+      2000,
     );
   });
 });

@@ -1,4 +1,5 @@
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { ImageContent } from "@mariozechner/pi-ai";
 import { logger } from "../app/logger.js";
 import { sendRenderedMessage, sendTextMessage, addProcessingReaction, removeReaction } from "../feishu/send.js";
 import { BridgeError, withTimeout } from "../app/errors.js";
@@ -8,6 +9,11 @@ export interface PromptResult {
   text: string;
   /** 错误信息（如有） */
   error?: string;
+}
+
+export interface PromptInput {
+  text: string;
+  images?: ImageContent[];
 }
 
 /** Pi prompt 默认超时（5 分钟） */
@@ -24,7 +30,7 @@ const PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
  */
 export async function promptSession(
   session: AgentSession,
-  text: string,
+  promptInput: string | PromptInput,
   openId: string,
   sourceMessageId: string,
   processingReactionType?: string,
@@ -32,6 +38,7 @@ export async function promptSession(
   textChunkLimit: number = 2000,
   timeoutMs: number = PROMPT_TIMEOUT_MS
 ): Promise<PromptResult> {
+  const normalizedPrompt = typeof promptInput === "string" ? { text: promptInput } : promptInput;
   let fullText = "";
   let lastError: string | undefined;
   let reactionId: string | null = null;
@@ -70,7 +77,8 @@ export async function promptSession(
   });
 
   try {
-    await withTimeout(session.prompt(text), timeoutMs, "Pi prompt 超时");
+    const promptOptions = normalizedPrompt.images?.length ? { images: normalizedPrompt.images } : undefined;
+    await withTimeout(session.prompt(normalizedPrompt.text, promptOptions), timeoutMs, "Pi prompt 超时");
   } catch (err) {
     if (err instanceof BridgeError && err.category === "pi_prompt_timeout") {
       lastError = err.message;

@@ -7,6 +7,10 @@ const envSchema = z.object({
   FEISHU_APP_ID: z.string().min(1, "FEISHU_APP_ID is required"),
   FEISHU_APP_SECRET: z.string().min(1, "FEISHU_APP_SECRET is required"),
   FEISHU_DOMAIN: z.enum(["feishu", "larksuite"]).default("feishu"),
+  FEISHU_MEDIA_OLLAMA_BASE_URL: z.string().url().default("http://127.0.0.1:11434"),
+  FEISHU_MEDIA_OCR_MODEL: z.string().default("glm-ocr:latest"),
+  FEISHU_AUDIO_TRANSCRIBE_SCRIPT: z.string().default("~/.openclaw/skills/audio-transcribe/transcribe.sh"),
+  FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: z.string().default("zh"),
   DATA_DIR: z.string().default("./data"),
   PI_WORKSPACE_ROOT: z.string().default("~/code/pi-workspace"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -36,8 +40,9 @@ export function loadConfig(): Config {
   _config = {
     ...result.data,
     FEISHU_PROCESSING_REACTION_TYPE: resolveProcessingReactionType(
-      result.data.FEISHU_PROCESSING_REACTION_TYPE
+      result.data.FEISHU_PROCESSING_REACTION_TYPE,
     ),
+    FEISHU_AUDIO_TRANSCRIBE_SCRIPT: expandHomeDir(result.data.FEISHU_AUDIO_TRANSCRIBE_SCRIPT),
     PI_WORKSPACE_ROOT: expandHomeDir(result.data.PI_WORKSPACE_ROOT),
   };
   return _config;

@@ -2,7 +2,7 @@ import type { FeishuMessageEvent } from "../types.js";
 import { logger } from "./logger.js";
 import { isDuplicate, acquireLock, releaseLock, isLocked } from "./state.js";
 import { parseBridgeCommand, handleBridgeCommand, type BridgeCommand } from "./commands.js";
-import { parseMessageEvent, isP2PTextMessage, extractTextContent } from "../feishu/events.js";
+import { parseMessageEvent, isSupportedP2PMessage } from "../feishu/events.js";
 import { sendRenderedMessage, sendTextMessage } from "../feishu/send.js";
 import { formatError } from "../feishu/format.js";
 import { getOrCreateActiveSession, createNewSession, touchSession } from "../pi/sessions.js";
@@ -10,6 +10,9 @@ import { readUserState } from "../storage/users.js";
 import { promptSession } from "../pi/stream.js";
 import type { Config } from "../config.js";
 import { getUserWorkspaceDir } from "../pi/workspace.js";
+import { normalizeFeishuInboundMessage } from "../feishu/inbound/normalize.js";
+import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
+import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
 import {
   filterAvailableModels,
   findAvailableModel,
@@ -32,26 +35,27 @@ export async function handleFeishuMessage(data: Record<string, unknown>): Promis
   const event = parseMessageEvent(data);
   if (!event) return;
 
-  // 2. 过滤：仅私聊文本
-  if (!isP2PTextMessage(event)) return;
+  // 2. 过滤：仅私聊支持的消息
+  if (!isSupportedP2PMessage(event)) return;
 
-  const identity = {
-    openId: event.sender.senderId.openId,
-    userId: event.sender.senderId.userId,
-  };
+  const message = normalizeFeishuInboundMessage(event);
+  if (!message) return;
+
+  const identity = message.identity;
   const openId = identity.openId;
-  const messageId = event.message.messageId;
-  const text = extractTextContent(event.message.content).trim();
-
-  if (!text) return;
+  const messageId = message.messageId;
 
   logger.info("收到私聊消息", {
     openId,
     messageId,
-    textLen: text.length,
-    text: truncateForLog(text, MESSAGE_LOG_PREVIEW_LIMIT),
+    messageType: message.messageType,
+    ...buildMessageLogPayload(message),
   });
-  logger.debug("消息内容", { openId, text: truncateForLog(text, MESSAGE_LOG_PREVIEW_LIMIT) });
+  logger.debug("消息内容", {
+    openId,
+    messageType: message.messageType,
+    ...buildMessageLogPayload(message),
+  });
 
   // 3. 去重
   if (isDuplicate(messageId)) {
@@ -60,14 +64,14 @@ export async function handleFeishuMessage(data: Record<string, unknown>): Promis
   }
 
   // 4. 命令分流
-  const bridgeCommand = parseBridgeCommand(text);
+  const bridgeCommand = message.kind === "text" ? parseBridgeCommand(message.text) : null;
   if (bridgeCommand) {
     await handleBridgeCommandFlow(identity, bridgeCommand);
     return;
   }
 
   // 5. 普通消息 -> Pi
-  await handleUserPrompt(identity, messageId, text);
+  await handleUserPrompt(identity, message);
 }
 
 function truncateForLog(text: string, limit: number): string {
@@ -123,10 +127,10 @@ async function handleBridgeCommandFlow(
 /** 处理普通用户消息 -> Pi prompt */
 async function handleUserPrompt(
   identity: { openId: string; userId?: string },
-  messageId: string,
-  text: string
+  message: FeishuInboundMessage,
 ): Promise<void> {
   const openId = identity.openId;
+  const messageId = message.messageId;
   // 获取运行锁
   if (!acquireLock(openId, messageId)) {
     logger.info("用户消息因已有处理中任务被忽略", { openId, messageId });
@@ -136,13 +140,20 @@ async function handleUserPrompt(
   try {
     // 获取或创建 session
     const { activeSessionId, piSession } = await getOrCreateActiveSession(identity);
+    const promptInput = await prepareFeishuPromptInput(message, piSession, {
+      workspaceDir: getUserWorkspaceDir(identity),
+      ollamaBaseUrl: config.FEISHU_MEDIA_OLLAMA_BASE_URL,
+      ocrModel: config.FEISHU_MEDIA_OCR_MODEL,
+      audioTranscribeScript: config.FEISHU_AUDIO_TRANSCRIBE_SCRIPT,
+      audioLanguage: config.FEISHU_AUDIO_TRANSCRIBE_LANGUAGE,
+    });
 
     const logCtx = { openId, sessionId: activeSessionId, messageId };
 
     // 调用 Pi prompt（可选添加 reaction 表示处理中，完成后发送最终回复）
     const result = await promptSession(
       piSession,
-      text,
+      promptInput,
       openId,
       messageId,
       config.FEISHU_PROCESSING_REACTION_TYPE,
@@ -163,6 +174,25 @@ async function handleUserPrompt(
     await sendTextMessage(openId, formatError("处理失败，请稍后重试或使用 /new 新建会话"));
   } finally {
     releaseLock(openId);
+  }
+}
+
+function buildMessageLogPayload(message: FeishuInboundMessage): Record<string, number | string> {
+  switch (message.kind) {
+    case "text":
+      return {
+        textLen: message.text.length,
+        text: truncateForLog(message.text, MESSAGE_LOG_PREVIEW_LIMIT),
+      };
+    case "image":
+      return {
+        imageKey: message.imageKey,
+      };
+    case "audio":
+      return {
+        fileKey: message.fileKey,
+        durationMs: message.durationMs ?? 0,
+      };
   }
 }
 

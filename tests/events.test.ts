@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMessageEvent, isP2PTextMessage, extractTextContent } from "../src/feishu/events.js";
+import { parseMessageEvent, isP2PTextMessage, isSupportedP2PMessage, extractTextContent } from "../src/feishu/events.js";
 import type { FeishuMessageEvent } from "../src/types.js";
 
 describe("parseMessageEvent", () => {
@@ -80,6 +80,29 @@ describe("isP2PTextMessage", () => {
 
   it("非文本消息应返回 false", () => {
     expect(isP2PTextMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "image" } })).toBe(false);
+  });
+});
+
+describe("isSupportedP2PMessage", () => {
+  const baseEvent: FeishuMessageEvent = {
+    sender: { senderId: { openId: "ou_1", userId: "u1", unionId: "on1" }, senderType: "user", tenantKey: "tk" },
+    message: { messageId: "om_1", chatId: "oc_1", chatType: "p2p", messageType: "text", content: "{}", createTime: "" },
+  };
+
+  it("私聊文本消息应返回 true", () => {
+    expect(isSupportedP2PMessage(baseEvent)).toBe(true);
+  });
+
+  it("私聊图片消息应返回 true", () => {
+    expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "image" } })).toBe(true);
+  });
+
+  it("私聊语音消息应返回 true", () => {
+    expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "audio" } })).toBe(true);
+  });
+
+  it("不支持的消息类型应返回 false", () => {
+    expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "file" } })).toBe(false);
   });
 });
 

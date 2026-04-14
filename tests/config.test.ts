@@ -30,4 +30,16 @@ describe("loadConfig", () => {
 
     expect(loadConfig().FEISHU_PROCESSING_REACTION_TYPE).toBeUndefined();
   });
+
+  it("音频转写脚本路径里的 ~ 应展开成 home 目录", async () => {
+    applyBaseEnv({
+      HOME: "/tmp/test-home",
+      FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "~/.openclaw/skills/audio-transcribe/transcribe.sh",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().FEISHU_AUDIO_TRANSCRIBE_SCRIPT).toBe(
+      "/tmp/test-home/.openclaw/skills/audio-transcribe/transcribe.sh",
+    );
+  });
 });

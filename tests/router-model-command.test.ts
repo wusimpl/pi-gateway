@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
   touchSession: vi.fn(),
   readUserState: vi.fn(),
   parseMessageEvent: vi.fn(),
-  isP2PTextMessage: vi.fn(),
-  extractTextContent: vi.fn(),
+  isSupportedP2PMessage: vi.fn(),
+  normalizeFeishuInboundMessage: vi.fn(),
   listAvailableModels: vi.fn(),
   findAvailableModel: vi.fn(),
 }));
@@ -31,12 +31,19 @@ vi.mock("../src/storage/users.js", () => ({
 
 vi.mock("../src/feishu/events.js", () => ({
   parseMessageEvent: mocks.parseMessageEvent,
-  isP2PTextMessage: mocks.isP2PTextMessage,
-  extractTextContent: mocks.extractTextContent,
+  isSupportedP2PMessage: mocks.isSupportedP2PMessage,
 }));
 
 vi.mock("../src/pi/workspace.js", () => ({
   getUserWorkspaceDir: () => "workspace/user",
+}));
+
+vi.mock("../src/feishu/inbound/normalize.js", () => ({
+  normalizeFeishuInboundMessage: mocks.normalizeFeishuInboundMessage,
+}));
+
+vi.mock("../src/feishu/inbound/transform.js", () => ({
+  prepareFeishuPromptInput: vi.fn(),
 }));
 
 vi.mock("../src/pi/models.js", () => ({
@@ -57,7 +64,7 @@ import { handleFeishuMessage, initRouter } from "../src/app/router.js";
 
 const baseEvent = {
   sender: { senderId: { openId: "ou_1", userId: "u_1" } },
-  message: { messageId: "om_1", content: "{}" },
+  message: { messageId: "om_1", messageType: "text", content: "{}" },
 };
 
 describe("handleFeishuMessage 模型命令", () => {
@@ -72,8 +79,8 @@ describe("handleFeishuMessage 模型命令", () => {
     mocks.touchSession.mockReset();
     mocks.readUserState.mockReset();
     mocks.parseMessageEvent.mockReset();
-    mocks.isP2PTextMessage.mockReset();
-    mocks.extractTextContent.mockReset();
+    mocks.isSupportedP2PMessage.mockReset();
+    mocks.normalizeFeishuInboundMessage.mockReset();
     mocks.listAvailableModels.mockReset();
     mocks.findAvailableModel.mockReset();
 
@@ -84,13 +91,30 @@ describe("handleFeishuMessage 模型命令", () => {
     } as any);
 
     mocks.parseMessageEvent.mockReturnValue(baseEvent);
-    mocks.isP2PTextMessage.mockReturnValue(true);
+    mocks.isSupportedP2PMessage.mockReturnValue(true);
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/models"}',
+      text: "/models",
+    });
     mocks.sendRenderedMessage.mockResolvedValue(undefined);
     mocks.sendTextMessage.mockResolvedValue("om_reply");
   });
 
   it("`/models` 只返回当前可用模型", async () => {
-    mocks.extractTextContent.mockReturnValue("/models");
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/models"}',
+      text: "/models",
+    });
     mocks.listAvailableModels.mockResolvedValue([
       { provider: "openai", id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
       { provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
@@ -109,7 +133,15 @@ describe("handleFeishuMessage 模型命令", () => {
     const piSession = {
       model: { provider: "zen2api", id: "minimax-m2.5-free" },
     };
-    mocks.extractTextContent.mockReturnValue("/model");
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/model"}',
+      text: "/model",
+    });
     mocks.getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
       piSession,
@@ -134,7 +166,15 @@ describe("handleFeishuMessage 模型命令", () => {
         piSession.model = { provider: model.provider, id: model.id };
       }),
     };
-    mocks.extractTextContent.mockReturnValue("/model rightcodes/gpt-5.4-high");
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/model rightcodes/gpt-5.4-high"}',
+      text: "/model rightcodes/gpt-5.4-high",
+    });
     mocks.getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
       piSession,
@@ -157,7 +197,15 @@ describe("handleFeishuMessage 模型命令", () => {
   });
 
   it("模型切换时如果用户还有任务在跑，就直接提示稍后再切", async () => {
-    mocks.extractTextContent.mockReturnValue("/model rightcodes/gpt-5.4-high");
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/model rightcodes/gpt-5.4-high"}',
+      text: "/model rightcodes/gpt-5.4-high",
+    });
     mocks.findAvailableModel.mockResolvedValue({
       provider: "rightcodes",
       id: "gpt-5.4-high",

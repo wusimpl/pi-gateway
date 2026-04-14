@@ -20,13 +20,7 @@ function createSession(events: StreamEvent[], promptImpl?: () => Promise<void>) 
   let subscriber: ((event: StreamEvent) => void) | undefined;
 
   return {
-    subscribe(callback: (event: StreamEvent) => void) {
-      subscriber = callback;
-      return () => {
-        subscriber = undefined;
-      };
-    },
-    async prompt() {
+    prompt: vi.fn(async (..._args: unknown[]) => {
       if (promptImpl) {
         await promptImpl();
         return;
@@ -34,6 +28,12 @@ function createSession(events: StreamEvent[], promptImpl?: () => Promise<void>) 
       for (const event of events) {
         subscriber?.(event);
       }
+    }),
+    subscribe(callback: (event: StreamEvent) => void) {
+      subscriber = callback;
+      return () => {
+        subscriber = undefined;
+      };
     },
     abort: vi.fn().mockResolvedValue(undefined),
   };
@@ -130,5 +130,28 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "\n\nhello", error: undefined });
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello", 2000);
+  });
+
+  it("带图片输入时应把 images 透传给 session.prompt", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "ok" } },
+      { type: "message_end" },
+    ]);
+
+    await promptSession(
+      session as any,
+      {
+        text: "看看这张图",
+        images: [{ type: "image", data: "ZmFrZS1pbWFnZQ==", mimeType: "image/png" }],
+      },
+      "ou_1",
+      "om_source_1",
+      undefined,
+    );
+
+    expect(session.prompt).toHaveBeenCalledWith("看看这张图", {
+      images: [{ type: "image", data: "ZmFrZS1pbWFnZQ==", mimeType: "image/png" }],
+    });
   });
 });

@@ -9,8 +9,9 @@ const mocks = vi.hoisted(() => ({
   createNewSession: vi.fn(),
   readUserState: vi.fn(),
   parseMessageEvent: vi.fn(),
-  isP2PTextMessage: vi.fn(),
-  extractTextContent: vi.fn(),
+  isSupportedP2PMessage: vi.fn(),
+  normalizeFeishuInboundMessage: vi.fn(),
+  prepareFeishuPromptInput: vi.fn(),
 }));
 
 vi.mock("../src/feishu/send.js", () => ({
@@ -34,12 +35,19 @@ vi.mock("../src/storage/users.js", () => ({
 
 vi.mock("../src/feishu/events.js", () => ({
   parseMessageEvent: mocks.parseMessageEvent,
-  isP2PTextMessage: mocks.isP2PTextMessage,
-  extractTextContent: mocks.extractTextContent,
+  isSupportedP2PMessage: mocks.isSupportedP2PMessage,
 }));
 
 vi.mock("../src/pi/workspace.js", () => ({
   getUserWorkspaceDir: () => "workspace/user",
+}));
+
+vi.mock("../src/feishu/inbound/normalize.js", () => ({
+  normalizeFeishuInboundMessage: mocks.normalizeFeishuInboundMessage,
+}));
+
+vi.mock("../src/feishu/inbound/transform.js", () => ({
+  prepareFeishuPromptInput: mocks.prepareFeishuPromptInput,
 }));
 
 import { clearAllState } from "../src/app/state.js";
@@ -47,7 +55,7 @@ import { handleFeishuMessage, initRouter } from "../src/app/router.js";
 
 const baseEvent = {
   sender: { senderId: { openId: "ou_1", userId: "u_1" } },
-  message: { messageId: "om_1", content: '{}' },
+  message: { messageId: "om_1", messageType: "text", content: '{}' },
 };
 
 describe("handleFeishuMessage 运行锁", () => {
@@ -61,8 +69,9 @@ describe("handleFeishuMessage 运行锁", () => {
     mocks.createNewSession.mockReset();
     mocks.readUserState.mockReset();
     mocks.parseMessageEvent.mockReset();
-    mocks.isP2PTextMessage.mockReset();
-    mocks.extractTextContent.mockReset();
+    mocks.isSupportedP2PMessage.mockReset();
+    mocks.normalizeFeishuInboundMessage.mockReset();
+    mocks.prepareFeishuPromptInput.mockReset();
 
     initRouter({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
@@ -71,8 +80,17 @@ describe("handleFeishuMessage 运行锁", () => {
     } as any);
 
     mocks.parseMessageEvent.mockReturnValue(baseEvent);
-    mocks.isP2PTextMessage.mockReturnValue(true);
-    mocks.extractTextContent.mockReturnValue("hello");
+    mocks.isSupportedP2PMessage.mockReturnValue(true);
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"hello"}',
+      text: "hello",
+    });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "hello", localFiles: [] });
     mocks.getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
       piSession: { id: "pi_session" },
@@ -95,7 +113,16 @@ describe("handleFeishuMessage 运行锁", () => {
       ...baseEvent,
       message: { ...baseEvent.message, messageId: "om_2", content: '{}' },
     });
-    mocks.extractTextContent.mockReturnValue("second");
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_2",
+      messageType: "text",
+      createTime: "124",
+      rawContent: '{"text":"second"}',
+      text: "second",
+    });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "second", localFiles: [] });
 
     await handleFeishuMessage({});
 
