@@ -5,7 +5,7 @@ import { parseBridgeCommand, handleBridgeCommand } from "./commands.js";
 import { parseMessageEvent, isP2PTextMessage, extractTextContent } from "../feishu/events.js";
 import { sendTextMessage, chunkText } from "../feishu/send.js";
 import { formatThinking, formatError } from "../feishu/format.js";
-import { getOrCreateActiveSession, createNewSession } from "../pi/sessions.js";
+import { getOrCreateActiveSession, createNewSession, touchSession } from "../pi/sessions.js";
 import { promptSession } from "../pi/stream.js";
 import type { Config } from "../config.js";
 
@@ -111,6 +111,9 @@ async function handleUserPrompt(
         : formatError(result.error);
       await sendTextMessage(openId, interruptMsg);
     }
+
+    // 更新活跃时间
+    await touchSession(openId, messageId);
   } catch (err) {
     logger.error("Pi prompt 处理失败", { openId, messageId, error: String(err) });
     await sendTextMessage(openId, formatError("处理失败，请稍后重试或使用 /new 新建会话"));
