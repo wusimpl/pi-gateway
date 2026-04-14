@@ -12,6 +12,7 @@ import type { Config } from "../config.js";
 import { getUserWorkspaceDir } from "../pi/workspace.js";
 
 let config: Config;
+const MESSAGE_LOG_PREVIEW_LIMIT = 30;
 
 export function initRouter(cfg: Config): void {
   config = cfg;
@@ -38,8 +39,13 @@ export async function handleFeishuMessage(data: Record<string, unknown>): Promis
 
   if (!text) return;
 
-  logger.info("收到私聊消息", { openId, messageId, textLen: text.length });
-  logger.debug("消息内容", { openId, text: text.slice(0, 100) });
+  logger.info("收到私聊消息", {
+    openId,
+    messageId,
+    textLen: text.length,
+    text: truncateForLog(text, MESSAGE_LOG_PREVIEW_LIMIT),
+  });
+  logger.debug("消息内容", { openId, text: truncateForLog(text, MESSAGE_LOG_PREVIEW_LIMIT) });
 
   // 3. 去重
   if (isDuplicate(messageId)) {
@@ -56,6 +62,10 @@ export async function handleFeishuMessage(data: Record<string, unknown>): Promis
 
   // 5. 普通消息 -> Pi
   await handleUserPrompt(identity, messageId, text);
+}
+
+function truncateForLog(text: string, limit: number): string {
+  return Array.from(text).slice(0, limit).join("");
 }
 
 /** 处理桥接层命令 */
