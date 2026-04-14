@@ -3,31 +3,46 @@ import { logger } from "./logger.js";
 /** 默认锁超时时间：10 分钟 */
 const LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 
+/** 锁内部结构 */
+interface LockEntry {
+  lockedAt: number;
+  messageId: string;
+  timer: NodeJS.Timeout;
+}
+
 /** 单用户运行锁 */
-const userLocks = new Map<string, { lockedAt: number; messageId: string; timer: NodeJS.Timeout }>();
+const userLocks = new Map<string, LockEntry>();
+
+/** 检查并清理过期锁（内部统一逻辑） */
+function cleanupExpiredLock(openId: string): void {
+  const lock = userLocks.get(openId);
+  if (lock && Date.now() - lock.lockedAt > LOCK_TIMEOUT_MS) {
+    clearTimeout(lock.timer);
+    userLocks.delete(openId);
+    logger.warn("运行锁已超时，强制释放", { openId, lockedAt: lock.lockedAt, messageId: lock.messageId });
+  }
+}
 
 export function acquireLock(openId: string, messageId: string): boolean {
-  const existing = userLocks.get(openId);
-  if (existing) {
-    // 检查是否已超时，超时则强制释放
-    if (Date.now() - existing.lockedAt > LOCK_TIMEOUT_MS) {
-      logger.warn("运行锁已超时，强制释放", { openId, lockedAt: existing.lockedAt, messageId: existing.messageId });
-      clearTimeout(existing.timer);
-      userLocks.delete(openId);
-    } else {
-      return false; // 已锁且未超时
-    }
+  cleanupExpiredLock(openId);
+
+  if (userLocks.has(openId)) {
+    return false; // 已锁且未超时
   }
-  // 设置超时自动释放的定时器
+
+  // 设置超时自动释放的定时器（使用 lockedAt 作为额外防 ABA 校验）
+  const lockedAt = Date.now();
   const timer = setTimeout(() => {
     const lock = userLocks.get(openId);
-    if (lock?.messageId === messageId) {
+    // 同时校验 messageId 和 lockedAt，防止旧定时器误删新锁
+    if (lock && lock.messageId === messageId && lock.lockedAt === lockedAt) {
       userLocks.delete(openId);
       logger.warn("运行锁超时自动释放", { openId, messageId });
     }
   }, LOCK_TIMEOUT_MS);
   timer.unref();
-  userLocks.set(openId, { lockedAt: Date.now(), messageId, timer });
+
+  userLocks.set(openId, { lockedAt, messageId, timer });
   logger.debug("锁已获取", { openId, messageId });
   return true;
 }
@@ -42,6 +57,7 @@ export function releaseLock(openId: string): void {
 }
 
 export function isLocked(openId: string): boolean {
+  cleanupExpiredLock(openId);
   return userLocks.has(openId);
 }
 
@@ -69,6 +85,10 @@ setInterval(() => {
 
 /** 清理所有运行时状态（关停时使用） */
 export function clearAllState(): void {
+  // 清理所有定时器，避免关停后旧定时器误删
+  for (const [, lock] of userLocks) {
+    clearTimeout(lock.timer);
+  }
   userLocks.clear();
   dedupMap.clear();
   logger.info("所有运行时状态已清理");

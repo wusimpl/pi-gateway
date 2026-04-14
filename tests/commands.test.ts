@@ -53,7 +53,7 @@ describe("handleBridgeCommand", () => {
     const result = handleBridgeCommand("status", ctx);
     expect(result).toContain(ctx.sessionId);
     expect(result).toContain(ctx.createdAt!);
-    expect(result).toContain(ctx.piSessionFile!);
+    expect(result).toContain(ctx.piSessionFile!.split("/").pop());
   });
 
   it("should handle /status without optional fields", () => {

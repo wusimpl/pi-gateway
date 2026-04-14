@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { acquireLock, releaseLock, isLocked, isDuplicate, clearAllState } from "../src/app/state.js";
 
 describe("运行锁", () => {
@@ -36,6 +36,16 @@ describe("运行锁", () => {
     expect(isLocked("ou_user1")).toBe(true);
     releaseLock("ou_user1");
     expect(isLocked("ou_user1")).toBe(false);
+  });
+
+  it("clearAllState 应清理所有锁和定时器", () => {
+    acquireLock("ou_user1", "msg_1");
+    acquireLock("ou_user2", "msg_2");
+    clearAllState();
+    expect(isLocked("ou_user1")).toBe(false);
+    expect(isLocked("ou_user2")).toBe(false);
+    // 清理后应可重新获取锁
+    expect(acquireLock("ou_user1", "msg_3")).toBe(true);
   });
 });
 

@@ -110,14 +110,9 @@ async function handleUserPrompt(
       config.TEXT_CHUNK_LIMIT
     );
 
-    // 分块发送回复（stream.ts 中已处理，此处仅处理 error 场景）
-    if (result.error) {
-      // 流式中断时发送中断提示
-      const interruptMsg = result.text
-        ? `\n\n⚠️ 回复中断: ${result.error}`
-        : formatError(result.error);
-      await sendTextMessage(openId, interruptMsg);
-      logger.warn("Pi 流式中断", { ...logCtx, error: result.error });
+    // 分块发送回复（stream.ts 中已处理，此处仅处理无文本时的错误场景）
+    if (result.error && !result.text) {
+      await sendTextMessage(openId, formatError(result.error));
     }
 
     // 更新活跃时间

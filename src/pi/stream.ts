@@ -114,8 +114,11 @@ export async function promptSession(
     unsubscribe();
   }
 
-  // 3. 最终更新：完整文本
-  await finalizeMessage(openId, placeholderMsgId, fullText, textChunkLimit, updateFailed);
+  // 3. 最终更新：完整文本（如有错误，追加中断提示）
+  const displayText = lastError && fullText
+    ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
+    : fullText;
+  await finalizeMessage(openId, placeholderMsgId, displayText, textChunkLimit, updateFailed);
 
   return {
     text: fullText,

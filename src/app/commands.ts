@@ -4,13 +4,6 @@ import { logger } from "./logger.js";
 const BRIDGE_COMMANDS = ["new", "reset", "status"] as const;
 export type BridgeCommand = (typeof BRIDGE_COMMANDS)[number];
 
-/** 命令到用户输入文本的映射 */
-const COMMAND_INPUTS: Record<string, string> = {
-  new: "/new",
-  reset: "/reset",
-  status: "/status",
-};
-
 /**
  * 解析用户消息，判断是否为桥接层命令
  * 返回 null 表示不是桥接层命令，应透传给 Pi
@@ -39,7 +32,11 @@ export function handleBridgeCommand(
     case "status": {
       const lines = [`📋 当前会话: ${context.sessionId}`];
       if (context.createdAt) lines.push(`🕐 创建时间: ${context.createdAt}`);
-      if (context.piSessionFile) lines.push(`📁 Session: ${context.piSessionFile}`);
+      if (context.piSessionFile) {
+        // 仅展示文件名，避免泄露服务端目录结构
+        const fileName = context.piSessionFile.split(/[\/\\]/).pop() ?? context.piSessionFile;
+        lines.push(`📁 Session: ${fileName}`);
+      }
       return lines.join("\n");
     }
     default:
