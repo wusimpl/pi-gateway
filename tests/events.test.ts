@@ -12,6 +12,9 @@ describe("parseMessageEvent", () => {
       },
       message: {
         messageId: "om_123",
+        rootId: "om_root_123",
+        parentId: "om_parent_123",
+        threadId: "omt_123",
         chatId: "oc_123",
         chatType: "p2p",
         messageType: "text",
@@ -23,6 +26,9 @@ describe("parseMessageEvent", () => {
     expect(result).not.toBeNull();
     expect(result!.sender.senderId.openId).toBe("ou_123");
     expect(result!.message.messageId).toBe("om_123");
+    expect(result!.message.parentId).toBe("om_parent_123");
+    expect(result!.message.rootId).toBe("om_root_123");
+    expect(result!.message.threadId).toBe("omt_123");
   });
 
   it("缺少 openId 应返回 null", () => {
@@ -42,6 +48,9 @@ describe("parseMessageEvent", () => {
       },
       message: {
         message_id: "om_456",
+        root_id: "om_root_456",
+        parent_id: "om_parent_456",
+        thread_id: "omt_456",
         chat_id: "oc_456",
         chat_type: "p2p",
         message_type: "text",
@@ -53,6 +62,9 @@ describe("parseMessageEvent", () => {
     expect(result).not.toBeNull();
     expect(result!.sender.senderId.userId).toBe("uid_456");
     expect(result!.message.messageId).toBe("om_456");
+    expect(result!.message.parentId).toBe("om_parent_456");
+    expect(result!.message.rootId).toBe("om_root_456");
+    expect(result!.message.threadId).toBe("omt_456");
   });
 
   it("缺少 messageId 应返回 null", () => {

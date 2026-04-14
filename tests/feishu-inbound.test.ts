@@ -24,6 +24,9 @@ describe("normalizeFeishuInboundMessage", () => {
       },
       message: {
         messageId: "om_1",
+        rootId: "om_root_1",
+        parentId: "om_parent_1",
+        threadId: "omt_1",
         chatId: "oc_1",
         chatType: "p2p",
         messageType: "image",
@@ -36,6 +39,9 @@ describe("normalizeFeishuInboundMessage", () => {
       kind: "image",
       identity: { openId: "ou_1", userId: "u_1" },
       messageId: "om_1",
+      rootMessageId: "om_root_1",
+      parentMessageId: "om_parent_1",
+      threadId: "omt_1",
       messageType: "image",
       createTime: "123",
       rawContent: '{"image_key":"img_123"}',
@@ -52,6 +58,9 @@ describe("normalizeFeishuInboundMessage", () => {
       },
       message: {
         messageId: "om_2",
+        rootId: "om_root_2",
+        parentId: "om_parent_2",
+        threadId: "omt_2",
         chatId: "oc_1",
         chatType: "p2p",
         messageType: "audio",
@@ -64,6 +73,9 @@ describe("normalizeFeishuInboundMessage", () => {
       kind: "audio",
       identity: { openId: "ou_1", userId: "u_1" },
       messageId: "om_2",
+      rootMessageId: "om_root_2",
+      parentMessageId: "om_parent_2",
+      threadId: "omt_2",
       messageType: "audio",
       createTime: "456",
       rawContent: '{"file_key":"file_123","duration":3200}',
@@ -111,6 +123,34 @@ describe("prepareFeishuPromptInput", () => {
       ],
       localFiles: ["/tmp/pi-workspace/user/.feishu-inbox/om_1/image.png"],
     });
+  });
+
+  it("引用回复时应把被引用消息一起拼进文本 prompt", async () => {
+    const result = await prepareFeishuPromptInput(
+      {
+        kind: "text",
+        identity: { openId: "ou_1" },
+        messageId: "om_quoted_1",
+        parentMessageId: "om_parent_1",
+        quotedMessage: {
+          messageId: "om_parent_1",
+          messageType: "text",
+          text: "上一条消息内容",
+        },
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"go on"}',
+        text: "go on",
+      },
+      { model: { input: ["text"] } } as any,
+      baseOptions,
+    );
+
+    expect(result.images).toBeUndefined();
+    expect(result.localFiles).toEqual([]);
+    expect(result.text).toContain("用户这次是在回复一条之前的消息");
+    expect(result.text).toContain("上一条消息内容");
+    expect(result.text).toContain("go on");
   });
 
   it("模型不支持图片时应走 OCR 文本兜底", async () => {

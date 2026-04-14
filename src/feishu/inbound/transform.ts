@@ -34,7 +34,7 @@ export async function prepareFeishuPromptInput(
   switch (message.kind) {
     case "text":
       return {
-        text: message.text,
+        text: withQuotedMessageContext(message, message.text),
         localFiles: [],
       };
     case "image": {
@@ -48,7 +48,10 @@ export async function prepareFeishuPromptInput(
       if (supportsImageInput(session)) {
         const binary = await readBinaryFile(resource.filePath);
         return {
-          text: `用户发来了一张图片，图片已保存到本地：${resource.filePath}\n请直接查看图片内容并继续对话；如果用户没写额外说明，就先简短描述图片里有什么。`,
+          text: withQuotedMessageContext(
+            message,
+            `用户发来了一张图片，图片已保存到本地：${resource.filePath}\n请直接查看图片内容并继续对话；如果用户没写额外说明，就先简短描述图片里有什么。`,
+          ),
           images: [
             {
               type: "image",
@@ -62,7 +65,10 @@ export async function prepareFeishuPromptInput(
 
       const ocrText = await runOcr(resource.filePath, options);
       return {
-        text: `用户发来了一张图片，图片已保存到本地：${resource.filePath}\n当前模型不支持直接看图，以下是本地 OCR/视觉结果：\n${ocrText}`,
+        text: withQuotedMessageContext(
+          message,
+          `用户发来了一张图片，图片已保存到本地：${resource.filePath}\n当前模型不支持直接看图，以下是本地 OCR/视觉结果：\n${ocrText}`,
+        ),
         localFiles: [resource.filePath],
       };
     }
@@ -76,7 +82,10 @@ export async function prepareFeishuPromptInput(
       const transcript = await transcribeAudio(resource.filePath, options);
       const durationLine = typeof message.durationMs === "number" ? `\n语音时长：${message.durationMs}ms` : "";
       return {
-        text: `用户发来了一段语音，音频已保存到本地：${resource.filePath}${durationLine}\n以下是本地转写结果：\n${transcript}`,
+        text: withQuotedMessageContext(
+          message,
+          `用户发来了一段语音，音频已保存到本地：${resource.filePath}${durationLine}\n以下是本地转写结果：\n${transcript}`,
+        ),
         localFiles: [resource.filePath],
       };
     }
@@ -199,4 +208,19 @@ async function transcribeAudioWithSenseVoice(
   }
 
   return transcript;
+}
+
+function withQuotedMessageContext(message: FeishuInboundMessage, currentMessageText: string): string {
+  if (!message.quotedMessage) {
+    return currentMessageText;
+  }
+
+  return [
+    "用户这次是在回复一条之前的消息。",
+    "被引用消息：",
+    message.quotedMessage.text,
+    "",
+    "用户这次的新消息：",
+    currentMessageText,
+  ].join("\n");
 }

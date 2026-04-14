@@ -10,6 +10,7 @@ describe("createPromptService", () => {
   const acquireLock = vi.fn();
   const releaseLock = vi.fn();
   const downloadResource = vi.fn();
+  const readQuotedMessage = vi.fn();
 
   beforeEach(() => {
     preparePromptInput.mockReset();
@@ -20,6 +21,7 @@ describe("createPromptService", () => {
     acquireLock.mockReset();
     releaseLock.mockReset();
     downloadResource.mockReset();
+    readQuotedMessage.mockReset();
 
     acquireLock.mockReturnValue(true);
     getOrCreateActiveSession.mockResolvedValue({
@@ -32,6 +34,11 @@ describe("createPromptService", () => {
     });
     promptSession.mockResolvedValue({ text: "done", error: undefined });
     touchSession.mockResolvedValue(undefined);
+    readQuotedMessage.mockResolvedValue({
+      messageId: "om_parent_1",
+      messageType: "text",
+      text: "上一条消息内容",
+    });
   });
 
   it("应把显式资源下载器透传给 prompt 输入预处理", async () => {
@@ -67,6 +74,7 @@ describe("createPromptService", () => {
         sendTextMessage,
       },
       downloadResource,
+      readQuotedMessage,
       preparePromptInput,
     });
 
@@ -104,5 +112,77 @@ describe("createPromptService", () => {
     expect(promptSession).toHaveBeenCalled();
     expect(sendTextMessage).not.toHaveBeenCalled();
     expect(releaseLock).toHaveBeenCalledWith("ou_1");
+  });
+
+  it("引用回复时应先读取父消息，再把引用内容透传给 prompt 预处理", async () => {
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        STREAMING_ENABLED: true,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_2",
+        parentMessageId: "om_parent_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"go on"}',
+        text: "go on",
+      },
+    );
+
+    expect(readQuotedMessage).toHaveBeenCalledWith("om_parent_1");
+    expect(preparePromptInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: "om_2",
+        parentMessageId: "om_parent_1",
+        quotedMessage: {
+          messageId: "om_parent_1",
+          messageType: "text",
+          text: "上一条消息内容",
+        },
+      }),
+      { model: { input: ["text"] } },
+      expect.objectContaining({
+        workspaceDir: "/tmp/workspace",
+      }),
+      expect.objectContaining({
+        downloadResource,
+      }),
+    );
   });
 });

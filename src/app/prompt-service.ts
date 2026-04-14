@@ -1,5 +1,6 @@
 import type { Config } from "../config.js";
 import { formatError } from "../feishu/format.js";
+import { readFeishuQuotedMessage } from "../feishu/inbound/message.js";
 import { downloadFeishuResource } from "../feishu/inbound/resource.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
 import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
@@ -36,11 +37,13 @@ interface PromptServiceDeps {
   promptRunner: Pick<PromptRunner, "promptSession">;
   messenger: Pick<FeishuMessenger, "sendTextMessage">;
   downloadResource?: typeof downloadFeishuResource;
+  readQuotedMessage?: typeof readFeishuQuotedMessage;
   preparePromptInput?: typeof prepareFeishuPromptInput;
 }
 
 export function createPromptService(deps: PromptServiceDeps): PromptService {
   const preparePromptInput = deps.preparePromptInput ?? prepareFeishuPromptInput;
+  const readQuotedMessage = deps.readQuotedMessage ?? readFeishuQuotedMessage;
 
   async function handleUserPrompt(
     identity: UserIdentity,
@@ -55,7 +58,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
     try {
       const { activeSessionId, piSession } = await deps.sessionService.getOrCreateActiveSession(identity);
-      const promptInput = await preparePromptInput(message, piSession, {
+      const enrichedMessage = await attachQuotedMessage(message, readQuotedMessage);
+      const promptInput = await preparePromptInput(enrichedMessage, piSession, {
         workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
         ollamaBaseUrl: deps.config.FEISHU_MEDIA_OLLAMA_BASE_URL,
         ocrModel: deps.config.FEISHU_MEDIA_OCR_MODEL,
@@ -97,4 +101,32 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
   return {
     handleUserPrompt,
   };
+}
+
+async function attachQuotedMessage(
+  message: FeishuInboundMessage,
+  readQuotedMessage: typeof readFeishuQuotedMessage,
+): Promise<FeishuInboundMessage> {
+  if (!message.parentMessageId) {
+    return message;
+  }
+
+  try {
+    const quotedMessage = await readQuotedMessage(message.parentMessageId);
+    if (!quotedMessage) {
+      return message;
+    }
+
+    return {
+      ...message,
+      quotedMessage,
+    };
+  } catch (error) {
+    logger.warn("读取被引用消息失败，已退回仅处理当前消息", {
+      messageId: message.messageId,
+      parentMessageId: message.parentMessageId,
+      error: String(error),
+    });
+    return message;
+  }
 }

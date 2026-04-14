@@ -64,6 +64,9 @@ function normalizeMessageEvent(payload: Record<string, unknown>): Partial<Feishu
     },
     message: {
       messageId: asString(message?.message_id ?? message?.messageId),
+      rootId: asOptionalString(message?.root_id ?? message?.rootId),
+      parentId: asOptionalString(message?.parent_id ?? message?.parentId),
+      threadId: asOptionalString(message?.thread_id ?? message?.threadId),
       chatId: asString(message?.chat_id ?? message?.chatId),
       chatType: asString(message?.chat_type ?? message?.chatType) as "p2p" | "group",
       messageType: asString(message?.message_type ?? message?.messageType),
@@ -79,6 +82,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined;
 }
 
 function getObjectKeys(value: unknown): string[] {

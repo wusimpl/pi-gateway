@@ -1,32 +1,40 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { UserIdentity } from "../../types.js";
 
+export interface FeishuQuotedMessage {
+  messageId: string;
+  messageType: string;
+  text: string;
+}
+
+interface FeishuInboundMessageBase {
+  identity: UserIdentity;
+  messageId: string;
+  rootMessageId?: string;
+  parentMessageId?: string;
+  threadId?: string;
+  quotedMessage?: FeishuQuotedMessage;
+  createTime: string;
+  rawContent: string;
+}
+
 export type FeishuInboundMessage =
   | {
       kind: "text";
-      identity: UserIdentity;
-      messageId: string;
+      } & FeishuInboundMessageBase & {
       messageType: "text";
-      createTime: string;
-      rawContent: string;
       text: string;
     }
   | {
       kind: "image";
-      identity: UserIdentity;
-      messageId: string;
+      } & FeishuInboundMessageBase & {
       messageType: "image";
-      createTime: string;
-      rawContent: string;
       imageKey: string;
     }
   | {
       kind: "audio";
-      identity: UserIdentity;
-      messageId: string;
+      } & FeishuInboundMessageBase & {
       messageType: "audio";
-      createTime: string;
-      rawContent: string;
       fileKey: string;
       durationMs?: number;
     };

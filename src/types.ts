@@ -11,6 +11,9 @@ export interface FeishuMessageEvent {
   };
   message: {
     messageId: string;
+    rootId?: string;
+    parentId?: string;
+    threadId?: string;
     chatId: string;
     chatType: "p2p" | "group";
     messageType: string;

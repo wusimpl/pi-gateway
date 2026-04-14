@@ -6,6 +6,7 @@ import { createMessageRouter } from "./app/router.js";
 import { createRuntimeStateStore, type RuntimeStateStore } from "./app/state.js";
 import { ensureDir } from "./storage/files.js";
 import { createFeishuConnection } from "./feishu/client.js";
+import { createFeishuMessageReader, type FeishuMessageClient } from "./feishu/inbound/message.js";
 import { createFeishuResourceDownloader, type FeishuResourceClient } from "./feishu/inbound/resource.js";
 import { createFeishuMessenger, type FeishuApiClient } from "./feishu/send.js";
 import { findAvailableModel, listAvailableModels } from "./pi/models.js";
@@ -68,6 +69,9 @@ async function main() {
   }
 
   const feishuMessenger = createFeishuMessenger(feishuConnection.client as unknown as FeishuApiClient);
+  const feishuMessageReader = createFeishuMessageReader(
+    feishuConnection.client as unknown as FeishuMessageClient,
+  );
   const feishuResourceDownloader = createFeishuResourceDownloader(
     feishuConnection.client as unknown as FeishuResourceClient,
   );
@@ -95,6 +99,7 @@ async function main() {
     promptRunner,
     messenger: feishuMessenger,
     downloadResource: feishuResourceDownloader,
+    readQuotedMessage: feishuMessageReader,
   });
   const router = createMessageRouter({
     stateStore: runtimeState,

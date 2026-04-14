@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => {
       client,
       startMessageConnection,
     })),
+    createFeishuMessageReader: vi.fn(() => vi.fn()),
     createFeishuResourceDownloader: vi.fn(() => vi.fn()),
     createFeishuMessenger: vi.fn(() => ({
       sendFeishuMessage: vi.fn(),
@@ -106,6 +107,10 @@ vi.mock("../src/feishu/inbound/resource.js", () => ({
   createFeishuResourceDownloader: mocks.createFeishuResourceDownloader,
 }));
 
+vi.mock("../src/feishu/inbound/message.js", () => ({
+  createFeishuMessageReader: mocks.createFeishuMessageReader,
+}));
+
 vi.mock("../src/feishu/send.js", () => ({
   createFeishuMessenger: mocks.createFeishuMessenger,
 }));
@@ -154,6 +159,7 @@ describe("index wiring", () => {
     mocks.logger.debug.mockClear();
     mocks.createPiRuntime.mockClear();
     mocks.createFeishuConnection.mockClear();
+    mocks.createFeishuMessageReader.mockClear();
     mocks.createFeishuResourceDownloader.mockClear();
     mocks.createFeishuMessenger.mockClear();
     mocks.createPromptRunner.mockClear();
@@ -168,6 +174,8 @@ describe("index wiring", () => {
 
   it("启动时应把飞书资源下载器注入 prompt service", async () => {
     const downloadResource = vi.fn();
+    const readQuotedMessage = vi.fn();
+    mocks.createFeishuMessageReader.mockReturnValue(readQuotedMessage);
     mocks.createFeishuResourceDownloader.mockReturnValue(downloadResource);
 
     await import("../src/index.ts");
@@ -176,8 +184,10 @@ describe("index wiring", () => {
       expect(mocks.createPromptService).toHaveBeenCalledTimes(1);
     });
 
+    expect(mocks.createFeishuMessageReader).toHaveBeenCalledWith(mocks.client);
     expect(mocks.createFeishuResourceDownloader).toHaveBeenCalledWith(mocks.client);
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.downloadResource).toBe(downloadResource);
+    expect(mocks.createPromptService.mock.calls[0]?.[0]?.readQuotedMessage).toBe(readQuotedMessage);
     expect(mocks.startMessageConnection).toHaveBeenCalledTimes(1);
   });
 });

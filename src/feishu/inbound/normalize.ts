@@ -8,6 +8,9 @@ export function normalizeFeishuInboundMessage(event: FeishuMessageEvent): Feishu
       userId: event.sender.senderId.userId || undefined,
     },
     messageId: event.message.messageId,
+    rootMessageId: event.message.rootId,
+    parentMessageId: event.message.parentId,
+    threadId: event.message.threadId,
     createTime: event.message.createTime,
     rawContent: event.message.content,
   };
