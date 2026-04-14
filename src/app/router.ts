@@ -106,6 +106,14 @@ async function handleBridgeCommandFlow(
         currentModel: getCurrentModelLabel(sessionState.piSession),
       });
       await sendCommandReply(openId, reply);
+    } else if (command.name === "context" || command.name === "skills") {
+      const sessionState = await getOrCreateActiveSession(identity);
+      const reply = handleBridgeCommand(command, {
+        openId,
+        contextFiles: getLoadedContextFiles(sessionState.piSession),
+        skills: getLoadedSkills(sessionState.piSession),
+      });
+      await sendCommandReply(openId, reply);
     } else if (command.name === "models") {
       const availableModels = await listAvailableModels();
       const filteredModels = filterAvailableModels(availableModels, command.args);
@@ -246,6 +254,30 @@ function getCurrentModelLabel(session: { model?: { provider: string; id: string 
     return undefined;
   }
   return formatModelLabel(session.model.provider, session.model.id);
+}
+
+function getLoadedContextFiles(session: {
+  resourceLoader?: {
+    getAgentsFiles?: () => {
+      agentsFiles?: Array<{ path: string }>;
+    };
+  };
+}): Array<{ path: string }> {
+  return session.resourceLoader?.getAgentsFiles?.().agentsFiles ?? [];
+}
+
+function getLoadedSkills(session: {
+  resourceLoader?: {
+    getSkills?: () => {
+      skills?: Array<{ filePath: string; sourceInfo?: { scope?: string } }>;
+    };
+  };
+}): Array<{ filePath: string; scope?: string }> {
+  const skills = session.resourceLoader?.getSkills?.().skills ?? [];
+  return skills.map((skill) => ({
+    filePath: skill.filePath,
+    scope: skill.sourceInfo?.scope,
+  }));
 }
 
 async function sendCommandReply(openId: string, text: string): Promise<void> {

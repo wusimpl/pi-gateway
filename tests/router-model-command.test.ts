@@ -159,6 +159,82 @@ describe("handleFeishuMessage 模型命令", () => {
     expect(replyText).toContain("2 个");
   });
 
+  it("`/context` 会返回当前 session 实际加载的 context 文件", async () => {
+    const piSession = {
+      resourceLoader: {
+        getAgentsFiles: () => ({
+          agentsFiles: [
+            { path: "/Users/williamsandy/.pi/agent/AGENTS.md" },
+            { path: "/Users/williamsandy/code/pi-gateway/AGENTS.md" },
+          ],
+        }),
+      },
+    };
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/context"}',
+      text: "/context",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+    const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
+    expect(replyText).toContain("[Context]");
+    expect(replyText).toContain("~/.pi/agent/AGENTS.md");
+    expect(replyText).toContain("~/code/pi-gateway/AGENTS.md");
+  });
+
+  it("`/skills` 会返回当前 session 实际加载的 skills", async () => {
+    const piSession = {
+      resourceLoader: {
+        getSkills: () => ({
+          skills: [
+            {
+              filePath: "/Users/williamsandy/.agents/skills/exa-search/SKILL.md",
+              sourceInfo: { scope: "user" },
+            },
+            {
+              filePath: "/Users/williamsandy/code/pi-gateway/.agents/skills/local/SKILL.md",
+              sourceInfo: { scope: "project" },
+            },
+          ],
+        }),
+      },
+    };
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/skills"}',
+      text: "/skills",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+    const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
+    expect(replyText).toContain("[Skills]");
+    expect(replyText).toContain("  user");
+    expect(replyText).toContain("~/.agents/skills/exa-search/SKILL.md");
+    expect(replyText).toContain("  project");
+    expect(replyText).toContain("~/code/pi-gateway/.agents/skills/local/SKILL.md");
+  });
+
   it("`/model provider/model` 会切到指定的可用模型", async () => {
     const piSession = {
       model: { provider: "zen2api", id: "minimax-m2.5-free" },

@@ -14,6 +14,14 @@ describe("parseBridgeCommand", () => {
     expect(parseBridgeCommand("/status")).toEqual({ name: "status", args: "" });
   });
 
+  it("should parse /context", () => {
+    expect(parseBridgeCommand("/context")).toEqual({ name: "context", args: "" });
+  });
+
+  it("should parse /skills", () => {
+    expect(parseBridgeCommand("/skills")).toEqual({ name: "skills", args: "" });
+  });
+
   it("should parse /model with args", () => {
     expect(parseBridgeCommand("/model openai/gpt-4o")).toEqual({
       name: "model",
@@ -98,6 +106,38 @@ describe("handleBridgeCommand", () => {
     expect(result).toContain("已切到模型");
     expect(result).toContain("openai/gpt-4o");
     expect(result).toContain("anthropic/claude-sonnet-4-6");
+  });
+
+  it("should render loaded context files for /context", () => {
+    const result = handleBridgeCommand(
+      { name: "context", args: "" },
+      {
+        contextFiles: [
+          { path: "/Users/williamsandy/.pi/agent/AGENTS.md" },
+          { path: "/Users/williamsandy/code/pi-gateway/AGENTS.md" },
+        ],
+      },
+    );
+    expect(result).toContain("[Context]");
+    expect(result).toContain("~/.pi/agent/AGENTS.md");
+    expect(result).toContain("~/code/pi-gateway/AGENTS.md");
+  });
+
+  it("should render loaded skills grouped by scope for /skills", () => {
+    const result = handleBridgeCommand(
+      { name: "skills", args: "" },
+      {
+        skills: [
+          { filePath: "/Users/williamsandy/.agents/skills/exa-search/SKILL.md", scope: "user" },
+          { filePath: "/Users/williamsandy/code/pi-gateway/.agents/skills/local/SKILL.md", scope: "project" },
+        ],
+      },
+    );
+    expect(result).toContain("[Skills]");
+    expect(result).toContain("  user");
+    expect(result).toContain("~/.agents/skills/exa-search/SKILL.md");
+    expect(result).toContain("  project");
+    expect(result).toContain("~/code/pi-gateway/.agents/skills/local/SKILL.md");
   });
 
   it("should render only available models for /models", () => {

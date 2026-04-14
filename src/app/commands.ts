@@ -1,9 +1,19 @@
+import { homedir } from "node:os";
 import type { AvailableModelInfo } from "../pi/models.js";
 import { logger } from "./logger.js";
 
 /** 桥接层命令列表（不含斜杠） */
-const BRIDGE_COMMANDS = ["new", "reset", "status", "model", "models"] as const;
+const BRIDGE_COMMANDS = ["new", "reset", "status", "context", "skills", "model", "models"] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];
+
+interface BridgeContextFile {
+  path: string;
+}
+
+interface BridgeSkillInfo {
+  filePath: string;
+  scope?: string;
+}
 
 export interface BridgeCommand {
   name: BridgeCommandName;
@@ -21,6 +31,8 @@ interface BridgeCommandContext {
   availableModelCount?: number;
   availableModels?: Array<Pick<AvailableModelInfo, "id" | "label" | "name">>;
   requestedProvider?: string;
+  contextFiles?: BridgeContextFile[];
+  skills?: BridgeSkillInfo[];
 }
 
 /**
@@ -98,6 +110,10 @@ export function handleBridgeCommand(
       lines.push("", "查看当前模型：/model", "查看可用模型：/models");
       return lines.join("\n");
     }
+    case "context":
+      return formatContextReply(context.contextFiles ?? []);
+    case "skills":
+      return formatSkillsReply(context.skills ?? []);
     case "models": {
       const models = context.availableModels ?? [];
       const provider = context.requestedProvider?.trim();
@@ -132,4 +148,67 @@ export function handleBridgeCommand(
 function formatAvailableModelLine(model: Pick<AvailableModelInfo, "id" | "label" | "name">): string {
   const suffix = model.name && model.name !== model.id ? ` · ${model.name}` : "";
   return `- ${model.label}${suffix}`;
+}
+
+function formatContextReply(contextFiles: BridgeContextFile[]): string {
+  const lines = ["[Context]"];
+  if (contextFiles.length === 0) {
+    lines.push("  (none)");
+    return lines.join("\n");
+  }
+
+  lines.push(...contextFiles.map((file) => `  ${formatDisplayPath(file.path)}`));
+  return lines.join("\n");
+}
+
+function formatSkillsReply(skills: BridgeSkillInfo[]): string {
+  const lines = ["[Skills]"];
+  if (skills.length === 0) {
+    lines.push("  (none)");
+    return lines.join("\n");
+  }
+
+  const groupedSkills = groupSkillsByScope(skills);
+  for (const [scope, items] of groupedSkills) {
+    lines.push(`  ${scope}`);
+    lines.push(...items.map((skill) => `    ${formatDisplayPath(skill.filePath)}`));
+  }
+  return lines.join("\n");
+}
+
+function groupSkillsByScope(skills: BridgeSkillInfo[]): Array<[string, BridgeSkillInfo[]]> {
+  const scopeOrder = new Map([
+    ["user", 0],
+    ["project", 1],
+    ["temporary", 2],
+  ]);
+  const grouped = new Map<string, BridgeSkillInfo[]>();
+
+  for (const skill of skills) {
+    const scope = skill.scope?.trim() || "unknown";
+    const items = grouped.get(scope) ?? [];
+    items.push(skill);
+    grouped.set(scope, items);
+  }
+
+  return Array.from(grouped.entries()).sort(([left], [right]) => {
+    const leftOrder = scopeOrder.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = scopeOrder.get(right) ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return left.localeCompare(right);
+  });
+}
+
+function formatDisplayPath(filePath: string): string {
+  const normalizedPath = filePath.replace(/\\/g, "/");
+  const normalizedHome = homedir().replace(/\\/g, "/");
+  if (normalizedPath === normalizedHome) {
+    return "~";
+  }
+  if (normalizedPath.startsWith(`${normalizedHome}/`)) {
+    return `~${normalizedPath.slice(normalizedHome.length)}`;
+  }
+  return normalizedPath;
 }
