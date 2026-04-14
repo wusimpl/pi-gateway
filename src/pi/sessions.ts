@@ -1,9 +1,8 @@
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
-import { createPiSession, continueRecentPiSession } from "./runtime.js";
+import { createPiSession, continueRecentPiSession, openPiSession } from "./runtime.js";
 import {
   readUserState,
   createUserState,
-  switchActiveSession,
   touchUserState,
 } from "../storage/users.js";
 import { logger } from "../app/logger.js";
@@ -33,26 +32,46 @@ export async function getOrCreateActiveSession(openId: string): Promise<SessionR
     };
   }
 
-  // 2. 检查持久化状态，尝试恢复
+  // 2. 检查持久化状态，优先恢复该用户绑定的 session 文件
   const state = await readUserState(openId);
   if (state?.activeSessionId && state.piSessionFile) {
     try {
-      // 使用 Pi SDK 的 continueRecent 恢复最近的 session
+      const session = await openPiSession(state.piSessionFile, process.cwd());
+      sessionCache.set(openId, session);
+      logger.info("Pi session 从指定文件恢复", {
+        openId,
+        sessionId: state.activeSessionId,
+        sessionFile: state.piSessionFile,
+      });
+      return { activeSessionId: state.activeSessionId, piSession: session };
+    } catch (err) {
+      logger.warn("Pi session 指定文件恢复失败，尝试最近会话兜底", {
+        openId,
+        sessionFile: state.piSessionFile,
+        error: String(err),
+      });
+    }
+  }
+
+  // 3. 如果没有绑定文件或指定文件恢复失败，再尝试最近会话兜底
+  if (state?.activeSessionId) {
+    try {
       const result = await continueRecentPiSession(process.cwd());
       if (result) {
         sessionCache.set(openId, result.session);
-        logger.info("Pi session 从持久化恢复", {
+        logger.info("Pi session 从最近会话恢复", {
           openId,
           sessionId: state.activeSessionId,
+          sessionFile: result.session.sessionFile,
         });
         return { activeSessionId: state.activeSessionId, piSession: result.session };
       }
     } catch (err) {
-      logger.warn("Pi session 恢复失败，将创建新 session", { openId, error: String(err) });
+      logger.warn("Pi session 最近会话恢复失败，将创建新 session", { openId, error: String(err) });
     }
   }
 
-  // 3. 创建全新 session
+  // 4. 创建全新 session
   return await doCreateNewSession(openId);
 }
 
