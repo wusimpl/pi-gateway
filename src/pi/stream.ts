@@ -105,7 +105,9 @@ export async function promptSession(
   const displayText = lastError && fullText
     ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
     : fullText;
-  await finalizeMessage(openId, stripLeadingBlankLines(displayText), textChunkLimit);
+  const contextUsageFooter = formatContextUsageFooter(session.getContextUsage());
+  const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), contextUsageFooter);
+  await finalizeMessage(openId, finalText, textChunkLimit);
 
   return {
     text: fullText,
@@ -125,4 +127,31 @@ async function finalizeMessage(
 
 function stripLeadingBlankLines(text: string): string {
   return text.replace(/^(?:[ \t]*\r?\n)+/, "");
+}
+
+function appendMessageFooter(text: string, footer?: string): string {
+  if (!footer) return text;
+  return text ? `${text}\n\n${footer}` : footer;
+}
+
+function formatContextUsageFooter(
+  contextUsage: ReturnType<AgentSession["getContextUsage"]>
+): string | undefined {
+  if (!contextUsage || contextUsage.percent === null) {
+    return undefined;
+  }
+
+  if (!Number.isFinite(contextUsage.percent) || contextUsage.contextWindow <= 0) {
+    return undefined;
+  }
+
+  return `${contextUsage.percent.toFixed(1)}%/${formatCompactTokenCount(contextUsage.contextWindow)}`;
+}
+
+function formatCompactTokenCount(count: number): string {
+  if (count < 1000) return count.toString();
+  if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+  if (count < 1000000) return `${Math.round(count / 1000)}k`;
+  if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+  return `${Math.round(count / 1000000)}M`;
 }

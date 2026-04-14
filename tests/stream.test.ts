@@ -16,7 +16,11 @@ type StreamEvent =
   | { type: "message_end" }
   | { type: "agent_end" };
 
-function createSession(events: StreamEvent[], promptImpl?: () => Promise<void>) {
+function createSession(
+  events: StreamEvent[],
+  promptImpl?: () => Promise<void>,
+  contextUsage?: { percent: number | null; contextWindow: number },
+) {
   let subscriber: ((event: StreamEvent) => void) | undefined;
 
   return {
@@ -35,6 +39,7 @@ function createSession(events: StreamEvent[], promptImpl?: () => Promise<void>) 
         subscriber = undefined;
       };
     },
+    getContextUsage: vi.fn().mockReturnValue(contextUsage),
     abort: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -55,7 +60,7 @@ describe("promptSession", () => {
       { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello" } },
       { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " world" } },
       { type: "message_end" },
-    ]);
+    ], undefined, { percent: 4.1, contextWindow: 200000 });
 
     const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE");
 
@@ -63,7 +68,7 @@ describe("promptSession", () => {
     expect(mockAddProcessingReaction).toHaveBeenCalledWith("om_source_1", "SMILE");
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
     expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
-    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello world", 2000);
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello world\n\n4.1%/200k", 2000);
   });
 
   it("reaction 添加失败时，仍应继续处理并发送回复", async () => {
@@ -92,6 +97,18 @@ describe("promptSession", () => {
     await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, true, 2000);
 
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", longText, 2000);
+  });
+
+  it("拿不到上下文占用率时不应追加尾巴", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "done" } },
+      { type: "message_end" },
+    ], undefined, { percent: null, contextWindow: 200000 });
+
+    await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "done", 2000);
   });
 
   it("prompt 失败但已有部分输出时，应追加中断提示", async () => {

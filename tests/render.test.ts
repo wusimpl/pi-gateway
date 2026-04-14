@@ -54,6 +54,19 @@ describe("renderAssistantMessage", () => {
     });
   });
 
+  it("Markdown 内容后面追加尾巴后仍应保持卡片渲染", () => {
+    const markdown = "# Title\n\n- item1\n\n4.1%/200k";
+    const messages = renderAssistantMessage(markdown, 2000);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].msgType).toBe("interactive");
+
+    const elements = ((messages[0].content.body as any).elements ?? []) as any[];
+    expect(elements).toHaveLength(1);
+    expect(elements[0].tag).toBe("markdown");
+    expect(elements[0].content).toContain("4.1%/200k");
+  });
+
   it("超长纯文本应继续按 text 分块", () => {
     const messages = renderAssistantMessage("a".repeat(4005), 2000);
 
