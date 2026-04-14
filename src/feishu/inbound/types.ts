@@ -44,8 +44,12 @@ export interface FeishuMediaProcessingOptions {
   workspaceDir: string;
   ollamaBaseUrl: string;
   ocrModel: string;
+  audioTranscribeProvider: "whisper" | "sensevoice";
   audioTranscribeScript: string;
   audioLanguage: string;
+  audioTranscribeSenseVoicePython: string;
+  audioTranscribeSenseVoiceModel: string;
+  audioTranscribeSenseVoiceDevice: string;
 }
 
 export interface PreparedPromptInput {

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { FeishuInboundMessage, FeishuMediaProcessingOptions, PreparedPromptInput } from "./types.js";
@@ -8,6 +9,9 @@ import { downloadFeishuResource } from "./resource.js";
 const execFileAsync = promisify(execFile);
 const OCR_PROMPT = "请提取这张图片里的全部文字，按阅读顺序输出；如果没有可读文字，就简短描述主要内容。";
 const EXTERNAL_PROCESS_TIMEOUT_MS = 10 * 60 * 1000;
+const SENSEVOICE_TRANSCRIBE_SCRIPT = fileURLToPath(
+  new URL("../../../scripts/sensevoice_transcribe.py", import.meta.url),
+);
 
 interface TransformDeps {
   downloadResource?: typeof downloadFeishuResource;
@@ -116,6 +120,25 @@ export async function runImageOcr(
 
 export async function transcribeAudioFile(
   audioPath: string,
+  options: Pick<
+    FeishuMediaProcessingOptions,
+    | "audioTranscribeProvider"
+    | "audioTranscribeScript"
+    | "audioLanguage"
+    | "audioTranscribeSenseVoicePython"
+    | "audioTranscribeSenseVoiceModel"
+    | "audioTranscribeSenseVoiceDevice"
+  >,
+): Promise<string> {
+  if (options.audioTranscribeProvider === "sensevoice") {
+    return transcribeAudioWithSenseVoice(audioPath, options);
+  }
+
+  return transcribeAudioWithScript(audioPath, options);
+}
+
+async function transcribeAudioWithScript(
+  audioPath: string,
   options: Pick<FeishuMediaProcessingOptions, "audioTranscribeScript" | "audioLanguage">,
 ): Promise<string> {
   const result = await execFileAsync(
@@ -131,6 +154,48 @@ export async function transcribeAudioFile(
   const transcript = result.stdout.trim();
   if (!transcript) {
     throw new Error("语音转写没有产出文本");
+  }
+
+  return transcript;
+}
+
+async function transcribeAudioWithSenseVoice(
+  audioPath: string,
+  options: Pick<
+    FeishuMediaProcessingOptions,
+    | "audioLanguage"
+    | "audioTranscribeSenseVoicePython"
+    | "audioTranscribeSenseVoiceModel"
+    | "audioTranscribeSenseVoiceDevice"
+  >,
+): Promise<string> {
+  const result = await execFileAsync(
+    options.audioTranscribeSenseVoicePython,
+    [
+      SENSEVOICE_TRANSCRIBE_SCRIPT,
+      "--audio",
+      audioPath,
+      "--language",
+      options.audioLanguage,
+      "--model",
+      options.audioTranscribeSenseVoiceModel,
+      "--device",
+      options.audioTranscribeSenseVoiceDevice,
+    ],
+    {
+      encoding: "utf8",
+      timeout: EXTERNAL_PROCESS_TIMEOUT_MS,
+      maxBuffer: 10 * 1024 * 1024,
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+      },
+    },
+  );
+
+  const transcript = result.stdout.trim();
+  if (!transcript) {
+    throw new Error("SenseVoice 语音转写没有产出文本");
   }
 
   return transcript;

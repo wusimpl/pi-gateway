@@ -20,8 +20,12 @@ interface PromptServiceDeps {
     Config,
     | "FEISHU_MEDIA_OLLAMA_BASE_URL"
     | "FEISHU_MEDIA_OCR_MODEL"
+    | "FEISHU_AUDIO_TRANSCRIBE_PROVIDER"
     | "FEISHU_AUDIO_TRANSCRIBE_SCRIPT"
     | "FEISHU_AUDIO_TRANSCRIBE_LANGUAGE"
+    | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON"
+    | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL"
+    | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE"
     | "FEISHU_PROCESSING_REACTION_TYPE"
     | "STREAMING_ENABLED"
     | "TEXT_CHUNK_LIMIT"
@@ -55,8 +59,12 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
         ollamaBaseUrl: deps.config.FEISHU_MEDIA_OLLAMA_BASE_URL,
         ocrModel: deps.config.FEISHU_MEDIA_OCR_MODEL,
+        audioTranscribeProvider: deps.config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER,
         audioTranscribeScript: deps.config.FEISHU_AUDIO_TRANSCRIBE_SCRIPT,
         audioLanguage: deps.config.FEISHU_AUDIO_TRANSCRIBE_LANGUAGE,
+        audioTranscribeSenseVoicePython: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON,
+        audioTranscribeSenseVoiceModel: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL,
+        audioTranscribeSenseVoiceDevice: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE,
       }, {
         downloadResource: deps.downloadResource,
       });

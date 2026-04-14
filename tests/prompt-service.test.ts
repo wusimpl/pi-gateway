@@ -39,8 +39,12 @@ describe("createPromptService", () => {
       config: {
         FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
         FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
         FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
         FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
         TEXT_CHUNK_LIMIT: 2000,
@@ -89,7 +93,9 @@ describe("createPromptService", () => {
       { model: { input: ["text"] } },
       expect.objectContaining({
         workspaceDir: "/tmp/workspace",
+        audioTranscribeProvider: "sensevoice",
         audioTranscribeScript: "/tmp/transcribe.sh",
+        audioTranscribeSenseVoicePython: "/tmp/.venv-sensevoice/bin/python",
       }),
       {
         downloadResource,

@@ -42,4 +42,23 @@ describe("loadConfig", () => {
       "/tmp/test-home/.openclaw/skills/audio-transcribe/transcribe.sh",
     );
   });
+
+  it("SenseVoice Python 和模型路径里的 ~ 应展开成 home 目录", async () => {
+    applyBaseEnv({
+      HOME: "/tmp/test-home",
+      FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+      FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "~/.venv-sensevoice/bin/python",
+      FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "~/.cache/modelscope/iic/SenseVoiceSmall",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER).toBe("sensevoice");
+    expect(config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON).toBe(
+      "/tmp/test-home/.venv-sensevoice/bin/python",
+    );
+    expect(config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL).toBe(
+      "/tmp/test-home/.cache/modelscope/iic/SenseVoiceSmall",
+    );
+  });
 });

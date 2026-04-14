@@ -66,8 +66,12 @@ describe("handleFeishuMessage 多模态消息", () => {
       TEXT_CHUNK_LIMIT: 2000,
       FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
       FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+      FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "whisper",
       FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
       FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+      FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+      FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+      FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
     } as any);
 
     mocks.parseMessageEvent.mockReturnValue({

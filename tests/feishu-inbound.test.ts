@@ -6,8 +6,12 @@ const baseOptions = {
   workspaceDir: "/tmp/pi-workspace/user",
   ollamaBaseUrl: "http://127.0.0.1:11434",
   ocrModel: "glm-ocr:latest",
+  audioTranscribeProvider: "whisper" as const,
   audioTranscribeScript: "/tmp/transcribe.sh",
   audioLanguage: "zh",
+  audioTranscribeSenseVoicePython: "/tmp/.venv-sensevoice/bin/python",
+  audioTranscribeSenseVoiceModel: "iic/SenseVoiceSmall",
+  audioTranscribeSenseVoiceDevice: "cpu",
 };
 
 describe("normalizeFeishuInboundMessage", () => {
