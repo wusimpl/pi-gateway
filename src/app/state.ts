@@ -8,6 +8,13 @@ export interface RuntimeStateStore {
   acquireLock(openId: string, messageId: string): boolean;
   releaseLock(openId: string): void;
   isLocked(openId: string): boolean;
+  setAbortHandler(
+    openId: string,
+    messageId: string,
+    abortHandler: () => Promise<void>,
+  ): Promise<boolean>;
+  requestStop(openId: string): Promise<"not_running" | "requested" | "already_requested">;
+  isStopRequested(openId: string, messageId?: string): boolean;
   isDuplicate(messageId: string): boolean;
   clearAllState(): void;
 }
@@ -17,6 +24,8 @@ interface LockEntry {
   lockedAt: number;
   messageId: string;
   timer: NodeJS.Timeout;
+  abortHandler?: () => Promise<void>;
+  stopRequested: boolean;
 }
 
 export function createRuntimeStateStore(options?: {
@@ -67,7 +76,12 @@ export function createRuntimeStateStore(options?: {
     }, lockTimeoutMs);
     timer.unref();
 
-    userLocks.set(openId, { lockedAt, messageId, timer });
+    userLocks.set(openId, {
+      lockedAt,
+      messageId,
+      timer,
+      stopRequested: false,
+    });
     logger.debug("锁已获取", { openId, messageId });
     return true;
   }
@@ -84,6 +98,79 @@ export function createRuntimeStateStore(options?: {
   function isLocked(openId: string): boolean {
     cleanupExpiredLock(openId);
     return userLocks.has(openId);
+  }
+
+  async function setAbortHandler(
+    openId: string,
+    messageId: string,
+    abortHandler: () => Promise<void>,
+  ): Promise<boolean> {
+    cleanupExpiredLock(openId);
+    const lock = userLocks.get(openId);
+    if (!lock || lock.messageId !== messageId) {
+      return false;
+    }
+
+    lock.abortHandler = abortHandler;
+    if (!lock.stopRequested) {
+      return false;
+    }
+
+    try {
+      await abortHandler();
+    } catch (err) {
+      logger.warn("补挂中断处理器后停止任务失败", {
+        openId,
+        messageId,
+        error: String(err),
+      });
+    }
+    return true;
+  }
+
+  async function requestStop(openId: string): Promise<"not_running" | "requested" | "already_requested"> {
+    cleanupExpiredLock(openId);
+    const lock = userLocks.get(openId);
+    if (!lock) {
+      return "not_running";
+    }
+
+    if (lock.stopRequested) {
+      return "already_requested";
+    }
+
+    lock.stopRequested = true;
+    if (!lock.abortHandler) {
+      logger.info("已登记停止请求，等待任务挂载中断处理器", {
+        openId,
+        messageId: lock.messageId,
+      });
+      return "requested";
+    }
+
+    try {
+      await lock.abortHandler();
+    } catch (err) {
+      logger.warn("停止当前任务失败", {
+        openId,
+        messageId: lock.messageId,
+        error: String(err),
+      });
+    }
+
+    return "requested";
+  }
+
+  function isStopRequested(openId: string, messageId?: string): boolean {
+    cleanupExpiredLock(openId);
+    const lock = userLocks.get(openId);
+    if (!lock) {
+      return false;
+    }
+    if (messageId && lock.messageId !== messageId) {
+      return false;
+    }
+    return lock.stopRequested;
   }
 
   function isDuplicate(messageId: string): boolean {
@@ -109,6 +196,9 @@ export function createRuntimeStateStore(options?: {
     acquireLock,
     releaseLock,
     isLocked,
+    setAbortHandler,
+    requestStop,
+    isStopRequested,
     isDuplicate,
     clearAllState,
   };
@@ -126,6 +216,22 @@ export function releaseLock(openId: string): void {
 
 export function isLocked(openId: string): boolean {
   return defaultRuntimeStateStore.isLocked(openId);
+}
+
+export async function setAbortHandler(
+  openId: string,
+  messageId: string,
+  abortHandler: () => Promise<void>,
+): Promise<boolean> {
+  return defaultRuntimeStateStore.setAbortHandler(openId, messageId, abortHandler);
+}
+
+export async function requestStop(openId: string): Promise<"not_running" | "requested" | "already_requested"> {
+  return defaultRuntimeStateStore.requestStop(openId);
+}
+
+export function isStopRequested(openId: string, messageId?: string): boolean {
+  return defaultRuntimeStateStore.isStopRequested(openId, messageId);
 }
 
 export function isDuplicate(messageId: string): boolean {

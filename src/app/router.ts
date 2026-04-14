@@ -25,7 +25,10 @@ import {
   acquireLock,
   isDuplicate,
   isLocked,
+  isStopRequested,
   releaseLock,
+  requestStop,
+  setAbortHandler,
   type RuntimeStateStore,
 } from "./state.js";
 
@@ -114,6 +117,7 @@ export function initRouter(cfg: Config): void {
     },
     runtimeState: {
       isLocked: (...args) => isLocked(...args),
+      requestStop: (...args) => requestStop(...args),
     },
     listAvailableModels: () => listAvailableModels(),
     findAvailableModel: (rawRef: string) => findAvailableModel(rawRef),
@@ -124,6 +128,8 @@ export function initRouter(cfg: Config): void {
     runtimeState: {
       acquireLock: (...args) => acquireLock(...args),
       releaseLock: (...args) => releaseLock(...args),
+      setAbortHandler: (...args) => setAbortHandler(...args),
+      isStopRequested: (...args) => isStopRequested(...args),
     },
     sessionService: {
       getOrCreateActiveSession: (...args) => getOrCreateActiveSession(...args),

@@ -31,7 +31,10 @@ interface PromptServiceDeps {
     | "STREAMING_ENABLED"
     | "TEXT_CHUNK_LIMIT"
   >;
-  runtimeState: Pick<RuntimeStateStore, "acquireLock" | "releaseLock">;
+  runtimeState: Pick<
+    RuntimeStateStore,
+    "acquireLock" | "releaseLock" | "setAbortHandler" | "isStopRequested"
+  >;
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "touchSession">;
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
   promptRunner: Pick<PromptRunner, "promptSession">;
@@ -58,6 +61,18 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
     try {
       const { activeSessionId, piSession } = await deps.sessionService.getOrCreateActiveSession(identity);
+      const stoppedBeforePrompt = await deps.runtimeState.setAbortHandler(
+        openId,
+        messageId,
+        async () => {
+          await piSession.abort();
+        },
+      );
+      if (stoppedBeforePrompt) {
+        logger.info("任务启动前收到停止请求，已跳过 prompt", { openId, messageId });
+        return;
+      }
+
       const enrichedMessage = await attachQuotedMessage(message, readQuotedMessage);
       const promptInput = await preparePromptInput(enrichedMessage, piSession, {
         workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
@@ -72,6 +87,10 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       }, {
         downloadResource: deps.downloadResource,
       });
+      if (deps.runtimeState.isStopRequested(openId, messageId)) {
+        logger.info("prompt 输入准备完成前收到停止请求，已跳过 prompt", { openId, messageId });
+        return;
+      }
 
       const logCtx = { openId, sessionId: activeSessionId, messageId };
       const result = await deps.promptRunner.promptSession(
@@ -82,9 +101,11 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         deps.config.FEISHU_PROCESSING_REACTION_TYPE,
         deps.config.STREAMING_ENABLED,
         deps.config.TEXT_CHUNK_LIMIT,
+        undefined,
+        () => deps.runtimeState.isStopRequested(openId, messageId),
       );
 
-      if (result.error && !result.text) {
+      if (result.error && !result.text && !result.aborted) {
         await deps.messenger.sendTextMessage(openId, formatError(result.error));
       }
 

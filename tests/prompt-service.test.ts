@@ -9,6 +9,8 @@ describe("createPromptService", () => {
   const touchSession = vi.fn();
   const acquireLock = vi.fn();
   const releaseLock = vi.fn();
+  const setAbortHandler = vi.fn();
+  const isStopRequested = vi.fn();
   const downloadResource = vi.fn();
   const readQuotedMessage = vi.fn();
 
@@ -20,13 +22,20 @@ describe("createPromptService", () => {
     touchSession.mockReset();
     acquireLock.mockReset();
     releaseLock.mockReset();
+    setAbortHandler.mockReset();
+    isStopRequested.mockReset();
     downloadResource.mockReset();
     readQuotedMessage.mockReset();
 
     acquireLock.mockReturnValue(true);
+    setAbortHandler.mockResolvedValue(false);
+    isStopRequested.mockReturnValue(false);
     getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
-      piSession: { model: { input: ["text"] } },
+      piSession: {
+        model: { input: ["text"] },
+        abort: vi.fn().mockResolvedValue(undefined),
+      },
     });
     preparePromptInput.mockResolvedValue({
       text: "转写后的文本",
@@ -59,6 +68,8 @@ describe("createPromptService", () => {
       runtimeState: {
         acquireLock,
         releaseLock,
+        setAbortHandler,
+        isStopRequested,
       },
       sessionService: {
         getOrCreateActiveSession,
@@ -98,7 +109,10 @@ describe("createPromptService", () => {
         messageId: "om_1",
         fileKey: "file_123",
       }),
-      { model: { input: ["text"] } },
+      expect.objectContaining({
+        model: { input: ["text"] },
+        abort: expect.any(Function),
+      }),
       expect.objectContaining({
         workspaceDir: "/tmp/workspace",
         audioTranscribeProvider: "sensevoice",
@@ -132,6 +146,8 @@ describe("createPromptService", () => {
       runtimeState: {
         acquireLock,
         releaseLock,
+        setAbortHandler,
+        isStopRequested,
       },
       sessionService: {
         getOrCreateActiveSession,
@@ -176,7 +192,10 @@ describe("createPromptService", () => {
           text: "上一条消息内容",
         },
       }),
-      { model: { input: ["text"] } },
+      expect.objectContaining({
+        model: { input: ["text"] },
+        abort: expect.any(Function),
+      }),
       expect.objectContaining({
         workspaceDir: "/tmp/workspace",
       }),
@@ -184,5 +203,65 @@ describe("createPromptService", () => {
         downloadResource,
       }),
     );
+  });
+
+  it("收到停止请求后，不应继续执行 prompt，也不该回错误消息", async () => {
+    setAbortHandler.mockResolvedValue(true);
+
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        STREAMING_ENABLED: true,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_stop_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"hello"}',
+        text: "hello",
+      },
+    );
+
+    expect(preparePromptInput).not.toHaveBeenCalled();
+    expect(promptSession).not.toHaveBeenCalled();
+    expect(sendTextMessage).not.toHaveBeenCalled();
+    expect(releaseLock).toHaveBeenCalledWith("ou_1");
   });
 });

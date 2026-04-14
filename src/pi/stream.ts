@@ -16,6 +16,8 @@ export interface PromptResult {
   text: string;
   /** 错误信息（如有） */
   error?: string;
+  /** 是否为用户主动停止 */
+  aborted?: boolean;
 }
 
 export interface PromptInput {
@@ -42,6 +44,7 @@ export interface PromptRunner {
     streamingEnabled?: boolean,
     textChunkLimit?: number,
     timeoutMs?: number,
+    isAbortRequested?: () => boolean,
   ): Promise<PromptResult>;
 }
 
@@ -55,11 +58,13 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       processingReactionType?: string,
       streamingEnabled: boolean = false,
       textChunkLimit: number = 2000,
-      timeoutMs: number = PROMPT_TIMEOUT_MS
+      timeoutMs: number = PROMPT_TIMEOUT_MS,
+      isAbortRequested?: () => boolean,
     ): Promise<PromptResult> {
       const normalizedPrompt = typeof promptInput === "string" ? { text: promptInput } : promptInput;
       let fullText = "";
       let lastError: string | undefined;
+      let abortedByUser = false;
       let reactionId: string | null = null;
       let streamingMessage: FeishuStreamingMessage | null = null;
       let streamingBroken = false;
@@ -185,6 +190,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           } catch {
             // abort 也可能失败
           }
+        } else if (isAbortRequested?.()) {
+          abortedByUser = true;
+          logger.info("Pi prompt 已按用户请求停止", { openId, sourceMessageId });
         } else {
           lastError = err instanceof Error ? err.message : String(err);
           logger.error("Pi prompt 执行失败", { error: lastError });
@@ -207,13 +215,16 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         }
       }
 
-      const displayText = lastError && hasVisibleAssistantText(fullText)
-        ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
-        : fullText;
+      const displayText =
+        lastError && !abortedByUser && hasVisibleAssistantText(fullText)
+          ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
+          : fullText;
       const contextUsageFooter = formatContextUsageFooter(session.getContextUsage());
       const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), contextUsageFooter);
-      const finalOutputText = finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
-      if (!lastError || hasVisibleAssistantText(fullText)) {
+      const finalOutputText = abortedByUser
+        ? finalText
+        : finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
+      if ((!lastError || hasVisibleAssistantText(fullText) || abortedByUser) && finalOutputText) {
         await finalizeMessage(
           messenger,
           openId,
@@ -226,7 +237,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       return {
         text: fullText,
-        error: lastError,
+        error: abortedByUser ? undefined : lastError,
+        ...(abortedByUser ? { aborted: true } : {}),
       };
     },
   };
@@ -247,7 +259,8 @@ export async function promptSession(
   processingReactionType?: string,
   streamingEnabled: boolean = false,
   textChunkLimit: number = 2000,
-  timeoutMs: number = PROMPT_TIMEOUT_MS
+  timeoutMs: number = PROMPT_TIMEOUT_MS,
+  isAbortRequested?: () => boolean,
 ): Promise<PromptResult> {
   return defaultPromptRunner.promptSession(
     session,
@@ -258,6 +271,7 @@ export async function promptSession(
     streamingEnabled,
     textChunkLimit,
     timeoutMs,
+    isAbortRequested,
   );
 }
 

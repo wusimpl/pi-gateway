@@ -106,7 +106,9 @@ describe("handleFeishuMessage 多模态消息", () => {
 
     expect(mocks.prepareFeishuPromptInput).toHaveBeenCalledTimes(1);
     expect(mocks.promptSession).toHaveBeenCalledWith(
-      { model: { input: ["text", "image"] } },
+      expect.objectContaining({
+        model: { input: ["text", "image"] },
+      }),
       {
         text: "用户发来了一张图片",
         images: [{ type: "image", data: "ZmFrZQ==", mimeType: "image/png" }],
@@ -117,6 +119,8 @@ describe("handleFeishuMessage 多模态消息", () => {
       "SMILE",
       true,
       2000,
+      undefined,
+      expect.any(Function),
     );
   });
 });

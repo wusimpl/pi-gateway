@@ -36,6 +36,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /stop", () => {
+    expect(parseBridgeCommand("/stop")).toEqual({
+      name: "stop",
+      args: "",
+    });
+  });
+
   it("should return null for plain text", () => {
     expect(parseBridgeCommand("hello")).toBeNull();
   });
@@ -155,5 +162,21 @@ describe("handleBridgeCommand", () => {
     expect(result).toContain("1. openai/gpt-4o");
     expect(result).toContain("2. rightcodes/gpt-5.4-high");
     expect(result).toContain("/model <序号>");
+  });
+
+  it("should render stop message for /stop when stopping active task", () => {
+    const result = handleBridgeCommand(
+      { name: "stop", args: "" },
+      { stopState: "requested" },
+    );
+    expect(result).toContain("正在停止当前任务");
+  });
+
+  it("should render no-running-task message for /stop when idle", () => {
+    const result = handleBridgeCommand(
+      { name: "stop", args: "" },
+      { stopState: "not_running" },
+    );
+    expect(result).toContain("当前没有在跑的任务");
   });
 });

@@ -177,6 +177,41 @@ describe("promptSession", () => {
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "partial\n\n⚠️ 回复中断: boom", 2000);
   });
 
+  it("用户主动停止时，不应再追加报错提示", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    let aborted = false;
+    const session = createSession([], async () => {
+      session.subscribeHandler?.({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "partial" },
+      });
+      aborted = true;
+      throw new Error("aborted");
+    }) as any;
+
+    session.subscribe = (callback: (event: StreamEvent) => void) => {
+      (session as any).subscribeHandler = callback;
+      return () => {
+        (session as any).subscribeHandler = undefined;
+      };
+    };
+
+    const result = await promptSession(
+      session,
+      "hi",
+      "ou_1",
+      "om_source_1",
+      undefined,
+      false,
+      2000,
+      5 * 60 * 1000,
+      () => aborted,
+    );
+
+    expect(result).toEqual({ text: "partial", error: undefined, aborted: true });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "partial", 2000);
+  });
+
   it("prompt 在产出正文前失败时，不应先发一条流式卡片错误消息", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([], async () => {
@@ -210,6 +245,31 @@ describe("promptSession", () => {
     const result = await promptSession(session, "hi", "ou_1", "om_source_1", undefined, true);
 
     expect(result).toEqual({ text: "\n\n", error: "boom" });
+    expect(mockStartStreamingMessage).not.toHaveBeenCalled();
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("用户主动停止且没有正文时，不应补发占位消息", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    let aborted = false;
+    const session = createSession([], async () => {
+      aborted = true;
+      throw new Error("aborted");
+    });
+
+    const result = await promptSession(
+      session as any,
+      "hi",
+      "ou_1",
+      "om_source_1",
+      undefined,
+      true,
+      2000,
+      5 * 60 * 1000,
+      () => aborted,
+    );
+
+    expect(result).toEqual({ text: "", error: undefined, aborted: true });
     expect(mockStartStreamingMessage).not.toHaveBeenCalled();
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
   });

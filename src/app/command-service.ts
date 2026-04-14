@@ -24,7 +24,7 @@ interface CommandServiceDeps {
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession">;
   userStateStore: Pick<UserStateStore, "readUserState">;
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
-  runtimeState: Pick<RuntimeStateStore, "isLocked">;
+  runtimeState: Pick<RuntimeStateStore, "isLocked" | "requestStop">;
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
 }
@@ -76,11 +76,23 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await sendCommandReply(openId, reply);
       } else if (command.name === "model") {
         await handleModelCommand(identity, command);
+      } else if (command.name === "stop") {
+        await handleStopCommand(identity, command);
       }
     } catch (err) {
       logger.error("桥接层命令处理失败", { openId, command: command.name, args: command.args, error: String(err) });
       await deps.messenger.sendTextMessage(openId, formatError("命令处理失败，请稍后重试"));
     }
+  }
+
+  async function handleStopCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    const stopState = await deps.runtimeState.requestStop(openId);
+    const reply = handleBridgeCommand(command, {
+      openId,
+      stopState,
+    });
+    await sendCommandReply(openId, reply);
   }
 
   async function handleModelCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
