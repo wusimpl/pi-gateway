@@ -28,16 +28,20 @@ export function parseBridgeCommand(text: string): BridgeCommand | null {
 /** 处理桥接层命令，返回回复文本 */
 export function handleBridgeCommand(
   command: BridgeCommand,
-  context: { openId: string; sessionId: string }
+  context: { openId: string; sessionId: string; createdAt?: string; piSessionFile?: string }
 ): string {
-  logger.info("桥接层命令", { command, openId: context.openId });
+  logger.info("桥接层命令", { command, openId: context.openId, sessionId: context.sessionId });
   switch (command) {
     case "new":
       return "✅ 已创建新会话";
     case "reset":
       return "✅ 已重置会话";
-    case "status":
-      return `📋 当前会话: ${context.sessionId}`;
+    case "status": {
+      const lines = [`📋 当前会话: ${context.sessionId}`];
+      if (context.createdAt) lines.push(`🕐 创建时间: ${context.createdAt}`);
+      if (context.piSessionFile) lines.push(`📁 Session: ${context.piSessionFile}`);
+      return lines.join("\n");
+    }
     default:
       return "";
   }

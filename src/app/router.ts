@@ -6,6 +6,7 @@ import { parseMessageEvent, isP2PTextMessage, extractTextContent } from "../feis
 import { sendTextMessage } from "../feishu/send.js";
 import { formatError } from "../feishu/format.js";
 import { getOrCreateActiveSession, createNewSession, touchSession } from "../pi/sessions.js";
+import { readUserState } from "../storage/users.js";
 import { promptSession } from "../pi/stream.js";
 import type { Config } from "../config.js";
 
@@ -59,13 +60,21 @@ async function handleBridgeCommandFlow(
 ): Promise<void> {
   try {
     if (command === "new" || command === "reset") {
-      // 创建新 session
       const sessionState = await createNewSession(openId);
-      await sendTextMessage(openId, "✅ 已创建新会话");
-      logger.info("桥接层命令: 创建新会话", { openId, command });
+      const reply = handleBridgeCommand(command, {
+        openId,
+        sessionId: sessionState.activeSessionId,
+      });
+      await sendTextMessage(openId, reply);
     } else if (command === "status") {
       const sessionState = await getOrCreateActiveSession(openId);
-      const reply = `📋 当前会话: ${sessionState.activeSessionId}`;
+      const userState = await readUserState(openId);
+      const reply = handleBridgeCommand(command, {
+        openId,
+        sessionId: sessionState.activeSessionId,
+        createdAt: userState?.createdAt,
+        piSessionFile: userState?.piSessionFile,
+      });
       await sendTextMessage(openId, reply);
     }
   } catch (err) {
@@ -90,6 +99,8 @@ async function handleUserPrompt(
     // 获取或创建 session
     const { activeSessionId, piSession } = await getOrCreateActiveSession(openId);
 
+    const logCtx = { openId, sessionId: activeSessionId, messageId };
+
     // 调用 Pi prompt（内部会发送"正在思考..."占位消息并流式更新）
     const result = await promptSession(
       piSession,
@@ -106,10 +117,12 @@ async function handleUserPrompt(
         ? `\n\n⚠️ 回复中断: ${result.error}`
         : formatError(result.error);
       await sendTextMessage(openId, interruptMsg);
+      logger.warn("Pi 流式中断", { ...logCtx, error: result.error });
     }
 
     // 更新活跃时间
     await touchSession(openId, messageId);
+    logger.info("Pi prompt 完成", logCtx);
   } catch (err) {
     logger.error("Pi prompt 处理失败", { openId, messageId, error: String(err) });
     await sendTextMessage(openId, formatError("处理失败，请稍后重试或使用 /new 新建会话"));

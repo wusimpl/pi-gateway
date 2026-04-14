@@ -289,92 +289,120 @@ TEXT_CHUNK_LIMIT=2000
 
 ## 实现步骤
 
-## 第 1 步：初始化项目骨架
+### 总体进度：约 98%
 
-- 创建 `package.json`
-- 创建 `tsconfig.json`
-- 创建 `src/` 目录结构
-- 创建 `.env.example`
-- 创建基础日志与配置加载
+| 步骤 | 状态 | 完成度 | 关键遗留 |
+|------|------|--------|----------|
+| 第1步：项目骨架 | ✅ 完成 | 100% | - |
+| 第2步：飞书 WebSocket 与发送 | ✅ 完成 | 100% | - |
+| 第3步：Pi SDK 运行时 | ✅ 完成 | 100% | - |
+| 第4步：用户 session 存储 | ✅ 完成 | 100% | - |
+| 第5步：消息桥接主链路 | ✅ 完成 | 100% | - |
+| 第6步：流式回复和分块 | ✅ 完成 | 100% | - |
+| 第7步：稳定性保护 | ✅ 完成 | 100% | - |
+| 第8步：命令/可观测性/关停 | ✅ 完成 | 95% | 需端到端验证 |
 
-产出：项目可启动，配置可读取
+## 第 1 步：初始化项目骨架 ✅ 已完成
 
-## 第 2 步：接入飞书 WebSocket 与发送能力验证
+- [x] 创建 `package.json`
+- [x] 创建 `tsconfig.json`
+- [x] 创建 `src/` 目录结构
+- [x] 创建 `.env.example`
+- [x] 创建基础日志与配置加载
 
-- 创建飞书 `Client`
-- 创建 `WSClient`
-- 注册 `im.message.receive_v1`
-- 过滤非私聊消息
-- 输出入站事件日志
-- 顺手验证 `send message`、`update message`、长文本发送限制
-- 根据验证结果确定第一版回复策略是“更新同一条消息”还是“完成后一次性发送”
+产出：项目可启动，配置可读取 ✅
+
+## 第 2 步：接入飞书 WebSocket 与发送能力验证 ✅ 已完成
+
+- [x] 创建飞书 `Client`
+- [x] 创建 `WSClient`
+- [x] 注册 `im.message.receive_v1`
+- [x] 过滤非私聊消息
+- [x] 输出入站事件日志
+- [x] 顺手验证 `send message`、`update message`、长文本发送限制
+- [x] 根据验证结果确定第一版回复策略是“更新同一条消息”还是“完成后一次性发送”
 
 产出：能稳定收到飞书私聊文本事件，并明确第一版回复路径
 
-## 第 3 步：预研并接入 Pi SDK 运行时
+## 第 3 步：预研并接入 Pi SDK 运行时 ✅ 已完成（90%）
 
-- 先阅读 Pi SDK 文档与 examples，确认实际可用入口与 API 签名
-- 确认 `@mariozechner/pi-coding-agent` 是否直接提供所需 SDK 能力，避免按推测实现
-- 初始化 `AuthStorage`
-- 初始化 `ModelRegistry`
-- 初始化 session 工厂
-- 确认可创建持久 session
-- 确认 session 恢复、取消、超时相关能力
-- 建立 session 事件订阅封装
+- [x] 先阅读 Pi SDK 文档与 examples，确认实际可用入口与 API 签名
+- [x] 确认 `@mariozechner/pi-coding-agent` 是否直接提供所需 SDK 能力，避免按推测实现
+- [x] 初始化 `AuthStorage`
+- [x] 初始化 `ModelRegistry`
+- [x] 初始化 session 工厂
+- [x] 确认可创建持久 session
+- [x] 确认 session 恢复、取消、超时相关能力
+- [x] 建立 session 事件订阅封装
 
-产出：代码中可创建并驱动 Pi session，且关键 API 已被验证
+产出：代码中可创建并驱动 Pi session，且关键 API 已被验证 ✅
 
-## 第 4 步：实现用户 session 存储
+⚠️ ~~遗留问题：`continueRecentPiSession` 未传入用户专属 `sessionDir`~~ ✅ 已修复：使用用户专属 `sessionDir` + `openPiSession()` 精确恢复
 
-- 建立 `data/users/<open_id>/state.json`
-- 在状态中写入 `createdAt`、`updatedAt`、`lastActiveAt`、`lastMessageId`
-- 实现 `getOrCreateActiveSession()`
-- 实现 `createNewSessionForUser()`
-- 实现 session 恢复失败时的降级路径
-- 实现 `/new`、`/reset` 的 session 切换
+## 第 4 步：实现用户 session 存储 ✅ 已完成（90%）
 
-产出：一人一个持久 session 可用，且具备基础生命周期元数据
+- [x] 建立 `data/users/<open_id>/state.json`
+- [x] 在状态中写入 `createdAt`、`updatedAt`、`lastActiveAt`、`lastMessageId`
+- [x] 实现 `getOrCreateActiveSession()`
+- [x] 实现 `createNewSessionForUser()`
+- [x] 实现 session 恢复失败时的降级路径（精确恢复用 `openPiSession()`，兜底用用户专属目录的 `continueRecent`，最终降级为新建）
+- [x] 实现 `/new`、`/reset` 的 session 切换
 
-## 第 5 步：实现消息桥接主链路
+产出：一人一个持久 session 可用，且具备基础生命周期元数据 ✅
 
-- 飞书消息进入 router
-- 命令分流
-- 普通消息调用 `session.prompt()`
-- 订阅 Pi 输出事件
-- 聚合 assistant 文本
-- 完成后发送飞书回复
+⚠️ ~~遗留问题~~ ✅ 已修复：恢复逻辑改为优先 `openPiSession(sessionFile)` → 兜底 `continueRecent(userSessionDir)` → 新建
 
-产出：用户可在飞书中完成基本对话
+## 第 5 步：实现消息桥接主链路 ✅ 已完成
 
-## 第 6 步：实现流式回复和分块
+- [x] 飞书消息进入 router
+- [x] 命令分流
+- [x] 普通消息调用 `session.prompt()`
+- [x] 订阅 Pi 输出事件
+- [x] 聚合 assistant 文本
+- [x] 完成后发送飞书回复
 
-- 增量文本 buffer
-- 按第 2 步确认的策略做文本节流发送或一次性发送
-- 超长文本分块
-- `session.prompt()` 超时保护
-- Pi 流式中断时尽量发送已聚合的部分内容
+产出：用户可在飞书中完成基本对话 ✅
 
-产出：回复体验达到可用水平
+⚠️ ~~遗留问题~~ ✅ 已修复：router 现在调用 `handleBridgeCommand()`；`writeUserState` 已改为顶部静态导入
 
-## 第 7 步：实现稳定性保护
+## 第 6 步：实现流式回复和分块 ✅ 已完成
 
-- 单用户运行锁
-- 重复消息去重
-- 基础错误兜底
-- 服务启动自检
-- 错误分类与统一处理矩阵
+- [x] 增量文本 buffer
+- [x] 按第 2 步确认的策略做文本节流发送或一次性发送
+- [x] 超长文本分块
+- [x] `session.prompt()` 超时保护
+- [x] Pi 流式中断时尽量发送已聚合的部分内容
 
-产出：服务可长期运行
+产出：回复体验达到可用水平 ✅
 
-## 第 8 步：补充命令、可观测性与优雅关停
+策略实现：先发送占位消息 "正在思考..." → 按节流间隔（1.5s）更新同一条消息 → 完成后最终更新；`update` 失败时退化为一次性发送
 
-- `/status`
-- 日志上下文字段：`open_id`、`sessionId`、`messageId`
-- 启动日志与错误日志
-- 监听 `SIGINT` / `SIGTERM`
-- 关停时停止接收新请求，尽力取消运行中的 `session.prompt()`，并清理运行锁
+## 第 7 步：实现稳定性保护 ✅ 已完成（90%）
 
-产出：便于调试和运维，且服务具备基础优雅关停能力
+- [x] 单用户运行锁
+- [x] 重复消息去重
+- [x] 基础错误兜底
+- [x] 服务启动自检
+- [x] 错误分类与统一处理矩阵
+
+产出：服务可长期运行 ✅
+
+⚠️ ~~遗留问题~~ ✅ 已修复：运行锁增加 10 分钟超时自动释放 + 获取时检查过期强制释放
+
+## 第 8 步：补充命令、可观测性与优雅关停 ⚠️ 部分完成（70%）
+
+- [x] `/status`（基础实现，仅返回当前 session ID）
+- [x] 日志上下文字段：`openId`（已实现）
+- [ ] 日志上下文字段：`sessionId`、`messageId`（router 中未统一传递）
+- [x] 启动日志与错误日志
+- [x] 监听 `SIGINT` / `SIGTERM`
+- [x] 关停时停止接收新请求，尽力取消运行中的 `session.prompt()`，并清理运行锁
+
+产出：便于调试和运维，且服务具备基础优雅关停能力 ⚠️
+
+✅ 已完善：
+- `/status` 增加创建时间和 session 文件路径
+- 日志上下文中已统一传递 `sessionId` 和 `messageId`
 
 ---
 
@@ -444,7 +472,18 @@ TEXT_CHUNK_LIMIT=2000
 
 ## 建议的立即下一步
 
-1. 搭项目骨架与配置加载
-2. 先打通飞书 WebSocket，并同时验证消息发送与更新接口
-3. 阅读 Pi SDK 文档和 examples，确认实际可用 API 后再接 session 创建与单轮 prompt
-4. 最后补 `/new`、`/reset`、持久化、去重与优雅关停
+1. ~~搭项目骨架与配置加载~~ ✅
+2. ~~先打通飞书 WebSocket，并同时验证消息发送与更新接口~~ ✅
+3. ~~阅读 Pi SDK 文档和 examples，确认实际可用 API 后再接 session 创建与单轮 prompt~~ ✅
+4. ~~最后补 `/new`、`/reset`、持久化、去重与优雅关停~~ ✅
+
+### 当前待修复项
+
+1. ~~修复 session 恢复逻辑~~ ✅
+2. ~~清理死代码~~ ✅
+3. ~~统一 `writeUserState` 导入方式~~ ✅
+4. ~~增强 `/status` 命令~~ ✅
+5. ~~补充日志上下文~~ ✅
+6. ~~运行锁超时自动释放~~ ✅
+7. ~~清理临时文件~~ ✅
+8. **端到端验证** — 实际运行 `npm run dev` 确认飞书消息链路畅通（需真实环境）

@@ -2,8 +2,10 @@ import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import { createPiSession, continueRecentPiSession, openPiSession } from "./runtime.js";
 import {
   readUserState,
+  writeUserState,
   createUserState,
   touchUserState,
+  userSessionsDir,
 } from "../storage/users.js";
 import { logger } from "../app/logger.js";
 
@@ -53,13 +55,17 @@ export async function getOrCreateActiveSession(openId: string): Promise<SessionR
     }
   }
 
-  // 3. 如果没有绑定文件或指定文件恢复失败，再尝试最近会话兜底
+  // 3. 如果指定文件恢复失败，尝试在用户专属目录下恢复最近会话
   if (state?.activeSessionId) {
     try {
-      const result = await continueRecentPiSession(process.cwd());
+      const sessionDir = userSessionsDir(openId);
+      const result = await continueRecentPiSession(process.cwd(), sessionDir);
       if (result) {
         sessionCache.set(openId, result.session);
-        logger.info("Pi session 从最近会话恢复", {
+        // 恢复成功后更新 piSessionFile
+        state.piSessionFile = result.session.sessionFile ?? undefined;
+        await writeUserState(openId, state);
+        logger.info("Pi session 从用户目录最近会话恢复", {
           openId,
           sessionId: state.activeSessionId,
           sessionFile: result.session.sessionFile,
@@ -67,7 +73,7 @@ export async function getOrCreateActiveSession(openId: string): Promise<SessionR
         return { activeSessionId: state.activeSessionId, piSession: result.session };
       }
     } catch (err) {
-      logger.warn("Pi session 最近会话恢复失败，将创建新 session", { openId, error: String(err) });
+      logger.warn("Pi session 用户目录恢复失败，将创建新 session", { openId, error: String(err) });
     }
   }
 
@@ -95,23 +101,20 @@ export async function createNewSession(openId: string): Promise<SessionResult> {
 
 /** 内部：创建全新 session 并更新存储 */
 async function doCreateNewSession(openId: string): Promise<SessionResult> {
-  const piSession = await createPiSession(process.cwd());
+  const sessionDir = userSessionsDir(openId);
+  const piSession = await createPiSession(process.cwd(), sessionDir);
   const newSessionId = generateSessionId();
 
-  // 在用户状态中记录 Pi session 文件路径
   const existing = await readUserState(openId);
   if (existing) {
     existing.activeSessionId = newSessionId;
     existing.piSessionFile = piSession.sessionFile ?? undefined;
     existing.updatedAt = new Date().toISOString();
     existing.lastActiveAt = new Date().toISOString();
-    const { writeUserState } = await import("../storage/users.js");
     await writeUserState(openId, existing);
   } else {
     const state = await createUserState(openId, newSessionId);
-    // 追加 piSessionFile
     state.piSessionFile = piSession.sessionFile ?? undefined;
-    const { writeUserState } = await import("../storage/users.js");
     await writeUserState(openId, state);
   }
 

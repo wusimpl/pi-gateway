@@ -21,6 +21,11 @@ function sessionsDir(openId: string): string {
   return join(userDir(openId), "sessions");
 }
 
+/** 获取用户 session 存储目录路径（供外部模块使用） */
+export function userSessionsDir(openId: string): string {
+  return sessionsDir(openId);
+}
+
 /** 确保目录存在 */
 async function ensureDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
