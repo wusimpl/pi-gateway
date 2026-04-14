@@ -101,7 +101,7 @@ function formatQuotedMessageText(
       return fileName ? `【文件消息：${fileName}】` : "【文件消息】";
     }
     case "interactive":
-      return flattenGenericTextPayload(rawContent) || "【卡片消息】";
+      return flattenInteractiveMessage(rawContent) || "【卡片消息】";
     case "share_chat":
       return "【分享群名片】";
     case "share_user":
@@ -120,7 +120,7 @@ function extractTextValue(content: string): string {
 }
 
 function flattenPostMessage(rawContent: string, mentions: FeishuMessageMention[]): string {
-  const payload = parseContentObject(rawContent);
+  const payload = unwrapLocalizedPostPayload(parseContentObject(rawContent));
   const title = asString(payload.title);
   const paragraphs = Array.isArray(payload.content) ? payload.content : [];
   const lines = paragraphs
@@ -128,6 +128,33 @@ function flattenPostMessage(rawContent: string, mentions: FeishuMessageMention[]
     .filter((line): line is string => Boolean(line));
 
   return [title, ...lines].filter(Boolean).join("\n").trim();
+}
+
+function unwrapLocalizedPostPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  if (looksLikePostPayload(payload)) {
+    return payload;
+  }
+
+  const preferredLocales = ["zh_cn", "zh_hk", "zh_tw", "en_us", "ja_jp"];
+  for (const locale of preferredLocales) {
+    const localized = asRecord(payload[locale]);
+    if (localized && looksLikePostPayload(localized)) {
+      return localized;
+    }
+  }
+
+  for (const value of Object.values(payload)) {
+    const localized = asRecord(value);
+    if (localized && looksLikePostPayload(localized)) {
+      return localized;
+    }
+  }
+
+  return payload;
+}
+
+function looksLikePostPayload(payload: Record<string, unknown>): boolean {
+  return typeof payload.title === "string" || Array.isArray(payload.content);
 }
 
 function flattenPostParagraph(paragraph: unknown, mentions: FeishuMessageMention[]): string {
@@ -171,6 +198,67 @@ function flattenPostParagraph(paragraph: unknown, mentions: FeishuMessageMention
   });
 
   return parts.join("").trim();
+}
+
+function flattenInteractiveMessage(rawContent: string): string {
+  const payload = parseContentObject(rawContent);
+  const body = asRecord(payload.body);
+  const elements = Array.isArray(body?.elements) ? body.elements : [];
+  const lines = elements.flatMap((element) => flattenInteractiveElement(element));
+  return lines.map((line) => line.trim()).filter(Boolean).join("\n").trim();
+}
+
+function flattenInteractiveElement(element: unknown): string[] {
+  const record = asRecord(element);
+  const tag = asString(record?.tag);
+
+  switch (tag) {
+    case "markdown":
+    case "plain_text":
+    case "lark_md": {
+      const content = asString(record?.content ?? record?.text);
+      return content ? [content] : [];
+    }
+    case "table":
+      return flattenInteractiveTable(record);
+    case "img":
+      return ["【图片】"];
+    case "hr":
+      return ["---"];
+    default:
+      return [];
+  }
+}
+
+function flattenInteractiveTable(table: Record<string, unknown> | null): string[] {
+  const columns = Array.isArray(table?.columns) ? table.columns.map((column) => asRecord(column)) : [];
+  const rows = Array.isArray(table?.rows) ? table.rows.map((row) => asRecord(row)) : [];
+  const columnKeys = columns.map((column, index) => asString(column?.name) || `col_${index}`);
+  const headers = columns.map((column, index) => asString(column?.display_name) || asString(column?.name) || `列${index + 1}`);
+  const lines: string[] = [];
+
+  if (headers.some(Boolean)) {
+    lines.push(headers.join(" | "));
+  }
+
+  for (const row of rows) {
+    if (!row) continue;
+    const cells = columnKeys.map((key) => stringifyInteractiveTableCell(row[key]));
+    if (cells.some(Boolean)) {
+      lines.push(cells.join(" | "));
+    }
+  }
+
+  return lines;
+}
+
+function stringifyInteractiveTableCell(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => stringifyInteractiveTableCell(item)).filter(Boolean).join(", ");
+  }
+  return "";
 }
 
 function flattenGenericTextPayload(rawContent: string): string {
