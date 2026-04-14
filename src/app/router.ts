@@ -9,6 +9,7 @@ import { getOrCreateActiveSession, createNewSession, touchSession } from "../pi/
 import { readUserState } from "../storage/users.js";
 import { promptSession } from "../pi/stream.js";
 import type { Config } from "../config.js";
+import { getUserWorkspaceDir } from "../pi/workspace.js";
 
 let config: Config;
 
@@ -27,7 +28,11 @@ export async function handleFeishuMessage(data: Record<string, unknown>): Promis
   // 2. 过滤：仅私聊文本
   if (!isP2PTextMessage(event)) return;
 
-  const openId = event.sender.senderId.openId;
+  const identity = {
+    openId: event.sender.senderId.openId,
+    userId: event.sender.senderId.userId,
+  };
+  const openId = identity.openId;
   const messageId = event.message.messageId;
   const text = extractTextContent(event.message.content).trim();
 
@@ -45,35 +50,38 @@ export async function handleFeishuMessage(data: Record<string, unknown>): Promis
   // 4. 命令分流
   const bridgeCommand = parseBridgeCommand(text);
   if (bridgeCommand) {
-    await handleBridgeCommandFlow(openId, bridgeCommand);
+    await handleBridgeCommandFlow(identity, bridgeCommand);
     return;
   }
 
   // 5. 普通消息 -> Pi
-  await handleUserPrompt(openId, messageId, text);
+  await handleUserPrompt(identity, messageId, text);
 }
 
 /** 处理桥接层命令 */
 async function handleBridgeCommandFlow(
-  openId: string,
+  identity: { openId: string; userId?: string },
   command: "new" | "reset" | "status"
 ): Promise<void> {
+  const openId = identity.openId;
   try {
     if (command === "new" || command === "reset") {
-      const sessionState = await createNewSession(openId);
+      const sessionState = await createNewSession(identity);
       const reply = handleBridgeCommand(command, {
         openId,
         sessionId: sessionState.activeSessionId,
+        workspaceDir: getUserWorkspaceDir(identity),
       });
       await sendTextMessage(openId, reply);
     } else if (command === "status") {
-      const sessionState = await getOrCreateActiveSession(openId);
+      const sessionState = await getOrCreateActiveSession(identity);
       const userState = await readUserState(openId);
       const reply = handleBridgeCommand(command, {
         openId,
         sessionId: sessionState.activeSessionId,
         createdAt: userState?.createdAt,
         piSessionFile: userState?.piSessionFile,
+        workspaceDir: getUserWorkspaceDir(identity),
       });
       await sendTextMessage(openId, reply);
     }
@@ -85,27 +93,30 @@ async function handleBridgeCommandFlow(
 
 /** 处理普通用户消息 -> Pi prompt */
 async function handleUserPrompt(
-  openId: string,
+  identity: { openId: string; userId?: string },
   messageId: string,
   text: string
 ): Promise<void> {
+  const openId = identity.openId;
   // 获取运行锁
   if (!acquireLock(openId, messageId)) {
-    await sendTextMessage(openId, "⏳ 上一条消息仍在处理中，请稍后或使用 /new 新建会话");
+    logger.info("用户消息因已有处理中任务被忽略", { openId, messageId });
     return;
   }
 
   try {
     // 获取或创建 session
-    const { activeSessionId, piSession } = await getOrCreateActiveSession(openId);
+    const { activeSessionId, piSession } = await getOrCreateActiveSession(identity);
 
     const logCtx = { openId, sessionId: activeSessionId, messageId };
 
-    // 调用 Pi prompt（内部会发送"正在思考..."占位消息并流式更新）
+    // 调用 Pi prompt（可选添加 reaction 表示处理中，完成后发送最终回复）
     const result = await promptSession(
       piSession,
       text,
       openId,
+      messageId,
+      config.FEISHU_PROCESSING_REACTION_TYPE,
       config.STREAMING_ENABLED,
       config.TEXT_CHUNK_LIMIT
     );
