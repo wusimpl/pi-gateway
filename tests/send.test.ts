@@ -276,4 +276,21 @@ describe("send helpers", () => {
     });
     expect(mockCardSettings).not.toHaveBeenCalled();
   });
+
+  it("startStreamingMessage: 第二个参数应直接作为正文，而不是被错当成状态文本丢掉", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_2" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_2" } });
+    const { startStreamingMessage } = await import("../src/feishu/send.js");
+
+    await startStreamingMessage("ou_2", "stream body");
+
+    const cardPayload = mockCardCreate.mock.calls[0][0];
+    const cardJson = JSON.parse(cardPayload.data.data);
+    expect(cardJson.body.elements).toEqual([
+      expect.objectContaining({
+        element_id: "stream_body",
+        content: "stream body",
+      }),
+    ]);
+  });
 });

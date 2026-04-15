@@ -67,6 +67,6 @@ describe("transcribeAudioFile", () => {
       expect.any(Function),
     );
     const args = execFileMock.mock.calls[0]?.[1];
-    expect(args[0]).toMatch(/scripts\/sensevoice_transcribe\.py$/);
+    expect(String(args[0]).replace(/\\/g, "/")).toMatch(/scripts\/sensevoice_transcribe\.py$/);
   });
 });

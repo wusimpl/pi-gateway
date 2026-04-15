@@ -1,0 +1,40 @@
+{
+  "task_summary": "审查并修复 pi-gateway 中的关键/高优先级缺陷，补齐回归测试，迭代直到无 critical bug",
+  "workspace": "C:/Users/Administrator/code/pi-gateway/.autoloop/review-fix",
+  "artifacts": [
+    "C:/Users/Administrator/code/pi-gateway/.autoloop/review-fix/autoloop.json",
+    "C:/Users/Administrator/code/pi-gateway/.autoloop/review-fix/progress.md",
+    "代码修复",
+    "新增或更新的测试"
+  ],
+  "evaluation_criteria": [
+    {
+      "name": "critical_bug_elimination",
+      "weight": 0.45,
+      "description": "是否发现并消除了 critical 级缺陷，且无明显新 critical 回归"
+    },
+    {
+      "name": "behavioral_correctness",
+      "weight": 0.25,
+      "description": "修复后行为是否与 README/预期一致，关键链路是否正确"
+    },
+    {
+      "name": "regression_prevention",
+      "weight": 0.2,
+      "description": "是否为修复补上稳定的回归测试，覆盖高风险路径"
+    },
+    {
+      "name": "change_safety",
+      "weight": 0.1,
+      "description": "改动范围是否克制，是否避免引入新的高风险问题"
+    }
+  ],
+  "initial_instructions": "先建立测试基线并对高风险模块做定向 code review，优先检查路由、状态锁、会话隔离、命令处理、飞书发送与流式桥接。列出 critical/high 问题后，先修 critical，再修 high。每个修复必须绑定至少一个能复现原问题的回归测试，最后运行 npm test 并复审剩余风险。",
+  "iteration_strategy": "每轮只处理一组强相关高风险问题：审查 -> 修复 -> 补测试 -> 跑全测 -> 复审。若本轮已无 critical，则再做一次 targeted review 确认没有遗漏，然后结束。",
+  "parameters": {
+    "max_iterations": 5,
+    "convergence_score": 9,
+    "planner_model": "rightcode/gpt-5.4",
+    "reviewer_model": "google-antigravity/gemini-3-flash"
+  }
+}

@@ -359,10 +359,9 @@ export async function sendRenderedMessage(
 
 export async function startStreamingMessage(
   openId: string,
-  statusText: string,
   bodyText: string = "",
 ): Promise<FeishuStreamingMessage | null> {
-  return getDefaultFeishuMessenger().startStreamingMessage(openId, statusText, bodyText);
+  return getDefaultFeishuMessenger().startStreamingMessage(openId, bodyText);
 }
 
 export async function addProcessingReaction(

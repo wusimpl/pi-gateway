@@ -9,7 +9,6 @@ import {
   type FeishuStreamingMessage,
   type FeishuMessenger,
 } from "../feishu/send.js";
-import { BridgeError, withTimeout } from "../app/errors.js";
 
 export interface PromptResult {
   /** 聚合的 assistant 文本 */
@@ -150,12 +149,38 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         }
       }
 
+      // ---- 空闲超时（idle timeout）机制 ----
+      // 每次收到 text_delta 就重置计时器；只有连续 idle 超过 timeoutMs 才触发超时
+      let idleTimer: NodeJS.Timeout | null = null;
+      let idleTimedOut = false;
+
+      function resetIdleTimer(): void {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          idleTimedOut = true;
+          try { session.abort(); } catch { /* abort 可能失败 */ }
+        }, timeoutMs);
+        idleTimer.unref();
+      }
+
+      function clearIdleTimer(): void {
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+      }
+
+      // 启动初始空闲计时器
+      resetIdleTimer();
+
       const unsubscribe = session.subscribe((event) => {
         switch (event.type) {
           case "message_update":
             if (event.assistantMessageEvent.type === "text_delta") {
               fullText += event.assistantMessageEvent.delta;
               queueStreamingFlush();
+              // 收到新 token，重置空闲计时器
+              resetIdleTimer();
             }
             break;
           case "message_end":
@@ -166,12 +191,16 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             break;
           case "tool_execution_start":
             logger.debug("Pi tool_execution_start", { toolName: event.toolName });
+            // 工具调用开始也说明模型在活跃，重置空闲计时器
+            resetIdleTimer();
             break;
           case "tool_execution_end":
             logger.debug("Pi tool_execution_end", {
               toolName: event.toolName,
               isError: event.isError,
             });
+            // 工具调用结束也说明模型在活跃，重置空闲计时器
+            resetIdleTimer();
             break;
           default:
             logger.debug("Pi event", { type: event.type });
@@ -180,16 +209,11 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       try {
         const promptOptions = normalizedPrompt.images?.length ? { images: normalizedPrompt.images } : undefined;
-        await withTimeout(session.prompt(normalizedPrompt.text, promptOptions), timeoutMs, "Pi prompt 超时");
+        await session.prompt(normalizedPrompt.text, promptOptions);
       } catch (err) {
-        if (err instanceof BridgeError && err.category === "pi_prompt_timeout") {
-          lastError = err.message;
-          logger.error("Pi prompt 超时", { openId, timeoutMs });
-          try {
-            await session.abort();
-          } catch {
-            // abort 也可能失败
-          }
+        if (idleTimedOut) {
+          lastError = "回复生成超时（长时间无响应）";
+          logger.error("Pi prompt 空闲超时", { openId, timeoutMs });
         } else if (isAbortRequested?.()) {
           abortedByUser = true;
           logger.info("Pi prompt 已按用户请求停止", { openId, sourceMessageId });
@@ -198,6 +222,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           logger.error("Pi prompt 执行失败", { error: lastError });
         }
       } finally {
+        clearIdleTimer();
         unsubscribe();
         if (pendingTimer) {
           clearTimeout(pendingTimer);

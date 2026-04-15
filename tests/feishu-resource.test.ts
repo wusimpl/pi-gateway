@@ -56,7 +56,7 @@ describe("downloadFeishuResource", () => {
       params: { type: "image" },
       path: { message_id: "om:1", file_key: "img_123" },
     });
-    expect(result.filePath).toContain(".feishu-inbox/om_1/");
+    expect(result.filePath.replace(/\\/g, "/")).toContain(".feishu-inbox/om_1/");
     expect(result.fileName.endsWith(".png")).toBe(true);
     expect(await readFile(result.filePath, "utf8")).toBe("image-binary");
   });

@@ -127,8 +127,8 @@ describe("handleBridgeCommand", () => {
       },
     );
     expect(result).toContain("[Context]");
-    expect(result).toContain("~/.pi/agent/AGENTS.md");
-    expect(result).toContain("~/code/pi-gateway/AGENTS.md");
+    expect(result).toContain("/Users/williamsandy/.pi/agent/AGENTS.md");
+    expect(result).toContain("/Users/williamsandy/code/pi-gateway/AGENTS.md");
   });
 
   it("should render loaded skills grouped by scope for /skills", () => {
@@ -143,9 +143,9 @@ describe("handleBridgeCommand", () => {
     );
     expect(result).toContain("[Skills]");
     expect(result).toContain("  user");
-    expect(result).toContain("~/.agents/skills/exa-search/SKILL.md");
+    expect(result).toContain("/Users/williamsandy/.agents/skills/exa-search/SKILL.md");
     expect(result).toContain("  project");
-    expect(result).toContain("~/code/pi-gateway/.agents/skills/local/SKILL.md");
+    expect(result).toContain("/Users/williamsandy/code/pi-gateway/.agents/skills/local/SKILL.md");
   });
 
   it("should render only available models for /models", () => {

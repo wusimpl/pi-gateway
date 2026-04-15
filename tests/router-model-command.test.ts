@@ -195,8 +195,8 @@ describe("handleFeishuMessage 模型命令", () => {
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
     const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
     expect(replyText).toContain("[Context]");
-    expect(replyText).toContain("~/.pi/agent/AGENTS.md");
-    expect(replyText).toContain("~/code/pi-gateway/AGENTS.md");
+    expect(replyText).toContain("/Users/williamsandy/.pi/agent/AGENTS.md");
+    expect(replyText).toContain("/Users/williamsandy/code/pi-gateway/AGENTS.md");
   });
 
   it("`/skills` 会返回当前 session 实际加载的 skills", async () => {
@@ -236,9 +236,9 @@ describe("handleFeishuMessage 模型命令", () => {
     const [, replyText] = mocks.sendRenderedMessage.mock.calls[0];
     expect(replyText).toContain("[Skills]");
     expect(replyText).toContain("  user");
-    expect(replyText).toContain("~/.agents/skills/exa-search/SKILL.md");
+    expect(replyText).toContain("/Users/williamsandy/.agents/skills/exa-search/SKILL.md");
     expect(replyText).toContain("  project");
-    expect(replyText).toContain("~/code/pi-gateway/.agents/skills/local/SKILL.md");
+    expect(replyText).toContain("/Users/williamsandy/code/pi-gateway/.agents/skills/local/SKILL.md");
   });
 
   it("`/model provider/model` 会切到指定的可用模型", async () => {

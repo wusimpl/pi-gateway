@@ -1,4 +1,4 @@
-import { basename, extname, join } from "node:path";
+import { basename, extname, join, posix, sep } from "node:path";
 import { ensureDir } from "../../storage/files.js";
 import { getLarkClient } from "../client.js";
 import type { DownloadedFeishuResource } from "./types.js";
@@ -95,7 +95,7 @@ export async function downloadFeishuResource(
 }
 
 export function getFeishuInboxDir(workspaceDir: string, messageId: string): string {
-  return join(workspaceDir, ".feishu-inbox", sanitizePathSegment(messageId));
+  return joinPreserveStyle(workspaceDir, ".feishu-inbox", sanitizePathSegment(messageId));
 }
 
 export function resolveDownloadType(resourceType: DownloadedFeishuResource["resourceType"]): "image" | "file" {
@@ -182,4 +182,9 @@ function safeDecodeURIComponent(value: string): string {
   } catch {
     return value;
   }
+}
+
+function joinPreserveStyle(baseDir: string, ...segments: string[]): string {
+  const usePosix = baseDir.includes("/") || !baseDir.includes(sep);
+  return usePosix ? posix.join(baseDir, ...segments) : join(baseDir, ...segments);
 }

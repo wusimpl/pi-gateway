@@ -165,11 +165,14 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   };
 }
 
-/** 生成 session ID: YYYYMMDD-HHMMSS 格式 */
+/**
+ * 生成 session ID，附带毫秒和随机后缀，避免同一秒内 /new 连点时覆盖旧会话状态。
+ */
 function generateSessionId(): string {
   const now = new Date();
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const pad = (n: number, width = 2) => n.toString().padStart(width, "0");
+  const randomSuffix = Math.random().toString(36).slice(2, 8);
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${pad(now.getMilliseconds(), 3)}-${randomSuffix}`;
 }
 
 function getDefaultSessionService(): SessionService {
