@@ -87,11 +87,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
 
   async function handleStopCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
     const openId = identity.openId;
-    const stopState = await deps.runtimeState.requestStop(openId);
-    const reply = handleBridgeCommand(command, {
-      openId,
-      stopState,
-    });
+    await deps.runtimeState.requestStop(openId);
+    const reply = handleBridgeCommand(command, { openId });
     await sendCommandReply(openId, reply);
   }
 

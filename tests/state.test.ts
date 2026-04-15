@@ -116,4 +116,38 @@ describe("停止当前任务", () => {
     await expect(requestStop("ou_user1")).resolves.toBe("already_requested");
     expect(abortHandler).toHaveBeenCalledTimes(1);
   });
+
+  it("停止请求不该等中断逻辑跑完", async () => {
+    let releaseAbort: (() => void) | undefined;
+    const abortHandler = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseAbort = resolve;
+        }),
+    );
+    acquireLock("ou_user1", "msg_1");
+    await setAbortHandler("ou_user1", "msg_1", abortHandler);
+
+    await expect(requestStop("ou_user1")).resolves.toBe("requested");
+    expect(abortHandler).toHaveBeenCalledTimes(1);
+
+    releaseAbort?.();
+  });
+
+  it("先收到停止，再补挂中断处理器时，也不该等中断逻辑跑完", async () => {
+    let releaseAbort: (() => void) | undefined;
+    const abortHandler = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseAbort = resolve;
+        }),
+    );
+    acquireLock("ou_user1", "msg_1");
+
+    await expect(requestStop("ou_user1")).resolves.toBe("requested");
+    await expect(setAbortHandler("ou_user1", "msg_1", abortHandler)).resolves.toBe(true);
+    expect(abortHandler).toHaveBeenCalledTimes(1);
+
+    releaseAbort?.();
+  });
 });

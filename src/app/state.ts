@@ -28,6 +28,19 @@ interface LockEntry {
   stopRequested: boolean;
 }
 
+function triggerAbort(
+  abortHandler: () => Promise<void>,
+  logContext: Record<string, unknown>,
+  logLabel: string,
+): void {
+  void abortHandler().catch((err) => {
+    logger.warn(logLabel, {
+      ...logContext,
+      error: String(err),
+    });
+  });
+}
+
 export function createRuntimeStateStore(options?: {
   lockTimeoutMs?: number;
   dedupTtlMs?: number;
@@ -116,15 +129,11 @@ export function createRuntimeStateStore(options?: {
       return false;
     }
 
-    try {
-      await abortHandler();
-    } catch (err) {
-      logger.warn("补挂中断处理器后停止任务失败", {
-        openId,
-        messageId,
-        error: String(err),
-      });
-    }
+    triggerAbort(
+      abortHandler,
+      { openId, messageId },
+      "补挂中断处理器后停止任务失败",
+    );
     return true;
   }
 
@@ -148,15 +157,11 @@ export function createRuntimeStateStore(options?: {
       return "requested";
     }
 
-    try {
-      await lock.abortHandler();
-    } catch (err) {
-      logger.warn("停止当前任务失败", {
-        openId,
-        messageId: lock.messageId,
-        error: String(err),
-      });
-    }
+    triggerAbort(
+      lock.abortHandler,
+      { openId, messageId: lock.messageId },
+      "停止当前任务失败",
+    );
 
     return "requested";
   }

@@ -10,6 +10,7 @@ import {
   type FeishuStreamingMessage,
   type FeishuMessenger,
 } from "../feishu/send.js";
+import { STOP_MESSAGE } from "../app/stop.js";
 
 export interface PromptResult {
   /** 聚合的 assistant 文本 */
@@ -268,7 +269,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const contextUsageFooter = formatContextUsageFooter(session.getContextUsage());
       const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), contextUsageFooter);
       const finalOutputText = abortedByUser
-        ? finalText
+        ? (streamingMessage ? STOP_MESSAGE : "")
         : finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
       if ((!lastError || hasVisibleAssistantText(fullText) || abortedByUser) && finalOutputText) {
         await finalizeMessage(

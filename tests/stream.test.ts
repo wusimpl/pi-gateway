@@ -209,7 +209,49 @@ describe("promptSession", () => {
     );
 
     expect(result).toEqual({ text: "partial", error: undefined, aborted: true });
-    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "partial", 2000);
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("用户主动停止且已经有流式卡片时，应直接收口当前卡片", async () => {
+    const mockStreamingMessage = {
+      updateBody: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+    };
+    mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
+    const { promptSession } = await import("../src/pi/stream.js");
+    let aborted = false;
+    const session = createSession([], async () => {
+      session.subscribeHandler?.({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "partial" },
+      });
+      aborted = true;
+      throw new Error("aborted");
+    }) as any;
+
+    session.subscribe = (callback: (event: StreamEvent) => void) => {
+      (session as any).subscribeHandler = callback;
+      return () => {
+        (session as any).subscribeHandler = undefined;
+      };
+    };
+
+    const result = await promptSession(
+      session,
+      "hi",
+      "ou_1",
+      "om_source_1",
+      undefined,
+      true,
+      2000,
+      5 * 60 * 1000,
+      () => aborted,
+    );
+
+    expect(result).toEqual({ text: "partial", error: undefined, aborted: true });
+    expect(mockStartStreamingMessage).toHaveBeenCalledTimes(1);
+    expect(mockStreamingMessage.finish).toHaveBeenCalledTimes(1);
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
   });
 
   it("prompt 在产出正文前失败时，不应先发一条流式卡片错误消息", async () => {

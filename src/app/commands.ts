@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import type { AvailableModelInfo } from "../pi/models.js";
 import { logger } from "./logger.js";
+import { STOP_MESSAGE } from "./stop.js";
 
 /** 桥接层命令列表（不含斜杠） */
 const BRIDGE_COMMANDS = ["new", "reset", "status", "context", "skills", "model", "models", "stop"] as const;
@@ -33,7 +34,6 @@ interface BridgeCommandContext {
   requestedProvider?: string;
   contextFiles?: BridgeContextFile[];
   skills?: BridgeSkillInfo[];
-  stopState?: "not_running" | "requested" | "already_requested";
 }
 
 /**
@@ -143,15 +143,7 @@ export function handleBridgeCommand(
       return lines.join("\n");
     }
     case "stop":
-      switch (context.stopState) {
-        case "requested":
-          return "🛑 正在停止当前任务，等它收尾一下。";
-        case "already_requested":
-          return "🛑 已经在停止当前任务了，等一下。";
-        case "not_running":
-        default:
-          return "当前没有在跑的任务。";
-      }
+      return STOP_MESSAGE;
     default:
       return "";
   }
