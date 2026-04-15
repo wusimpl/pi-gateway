@@ -2,6 +2,7 @@ import { loadConfig } from "./config.js";
 import { setLogLevel, logger } from "./app/logger.js";
 import { createCommandService } from "./app/command-service.js";
 import { createPromptService } from "./app/prompt-service.js";
+import { createRestartService } from "./app/restart.js";
 import { createMessageRouter } from "./app/router.js";
 import { createRuntimeStateStore, type RuntimeStateStore } from "./app/state.js";
 import { ensureDir } from "./storage/files.js";
@@ -109,6 +110,7 @@ async function main() {
     userStateStore,
     workspaceService,
     runtimeState,
+    restartService: createRestartService(),
     listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
     findAvailableModel: (rawRef: string) => findAvailableModel(rawRef, piRuntime.getModelRegistry()),
   });

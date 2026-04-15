@@ -43,6 +43,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /restart", () => {
+    expect(parseBridgeCommand("/restart")).toEqual({
+      name: "restart",
+      args: "",
+    });
+  });
+
   it("should return null for plain text", () => {
     expect(parseBridgeCommand("hello")).toBeNull();
   });
@@ -71,5 +78,9 @@ describe("handleBridgeCommand", () => {
 
   it("模型拿不到时，`/new` 仍返回原文案", () => {
     expect(handleBridgeCommand("new", {})).toBe("✅ 已创建新会话");
+  });
+
+  it("`/restart` 应返回重启提示", () => {
+    expect(handleBridgeCommand("restart", {})).toBe("🔄 正在重启网关...");
   });
 });

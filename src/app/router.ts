@@ -21,8 +21,10 @@ import { parseBridgeCommand } from "./commands.js";
 import { createCommandService, type CommandService } from "./command-service.js";
 import { logger } from "./logger.js";
 import { createPromptService, type PromptService } from "./prompt-service.js";
+import { createRestartService } from "./restart.js";
 import {
   acquireLock,
+  hasActiveLocks,
   isDuplicate,
   isLocked,
   isStopRequested,
@@ -117,8 +119,10 @@ export function initRouter(cfg: Config): void {
     },
     runtimeState: {
       isLocked: (...args) => isLocked(...args),
+      hasActiveLocks: () => hasActiveLocks(),
       requestStop: (...args) => requestStop(...args),
     },
+    restartService: createRestartService(),
     listAvailableModels: () => listAvailableModels(),
     findAvailableModel: (rawRef: string) => findAvailableModel(rawRef),
   });

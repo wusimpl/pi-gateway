@@ -1,10 +1,11 @@
 import { homedir } from "node:os";
 import type { AvailableModelInfo } from "../pi/models.js";
 import { logger } from "./logger.js";
+import { RESTART_MESSAGE } from "./restart.js";
 import { STOP_MESSAGE } from "./stop.js";
 
 /** 桥接层命令列表（不含斜杠） */
-const BRIDGE_COMMANDS = ["new", "reset", "status", "context", "skills", "model", "models", "stop"] as const;
+const BRIDGE_COMMANDS = ["new", "reset", "status", "context", "skills", "model", "models", "stop", "restart"] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];
 
 interface BridgeContextFile {
@@ -144,6 +145,8 @@ export function handleBridgeCommand(
     }
     case "stop":
       return STOP_MESSAGE;
+    case "restart":
+      return RESTART_MESSAGE;
     default:
       return "";
   }

@@ -12,6 +12,7 @@ import type { UserStateStore } from "../storage/users.js";
 import type { UserIdentity } from "../types.js";
 import { handleBridgeCommand, type BridgeCommand } from "./commands.js";
 import { logger } from "./logger.js";
+import type { RestartService } from "./restart.js";
 import type { RuntimeStateStore } from "./state.js";
 
 export interface CommandService {
@@ -24,7 +25,8 @@ interface CommandServiceDeps {
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession">;
   userStateStore: Pick<UserStateStore, "readUserState">;
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
-  runtimeState: Pick<RuntimeStateStore, "isLocked" | "requestStop">;
+  runtimeState: Pick<RuntimeStateStore, "isLocked" | "hasActiveLocks" | "requestStop">;
+  restartService: Pick<RestartService, "restartGateway">;
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
 }
@@ -78,6 +80,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleModelCommand(identity, command);
       } else if (command.name === "stop") {
         await handleStopCommand(identity, command);
+      } else if (command.name === "restart") {
+        await handleRestartCommand(identity, command);
       }
     } catch (err) {
       logger.error("桥接层命令处理失败", { openId, command: command.name, args: command.args, error: String(err) });
@@ -90,6 +94,18 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await deps.runtimeState.requestStop(openId);
     const reply = handleBridgeCommand(command, { openId });
     await sendCommandReply(openId, reply);
+  }
+
+  async function handleRestartCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    if (deps.runtimeState.hasActiveLocks()) {
+      await deps.messenger.sendTextMessage(openId, "当前还有任务在跑，等这条回复结束后再重启网关。");
+      return;
+    }
+
+    const reply = handleBridgeCommand(command, { openId });
+    await sendCommandReply(openId, reply);
+    await deps.restartService.restartGateway();
   }
 
   async function handleModelCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {

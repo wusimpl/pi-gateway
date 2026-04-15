@@ -8,6 +8,7 @@ export interface RuntimeStateStore {
   acquireLock(openId: string, messageId: string): boolean;
   releaseLock(openId: string): void;
   isLocked(openId: string): boolean;
+  hasActiveLocks(): boolean;
   setAbortHandler(
     openId: string,
     messageId: string,
@@ -62,6 +63,12 @@ export function createRuntimeStateStore(options?: {
     }
   }
 
+  function cleanupAllExpiredLocks(): void {
+    for (const openId of userLocks.keys()) {
+      cleanupExpiredLock(openId);
+    }
+  }
+
   function cleanupExpiredDedup(now: number): void {
     for (const [id, ts] of dedupMap) {
       if (now - ts > dedupTtlMs) {
@@ -111,6 +118,11 @@ export function createRuntimeStateStore(options?: {
   function isLocked(openId: string): boolean {
     cleanupExpiredLock(openId);
     return userLocks.has(openId);
+  }
+
+  function hasActiveLocks(): boolean {
+    cleanupAllExpiredLocks();
+    return userLocks.size > 0;
   }
 
   async function setAbortHandler(
@@ -201,6 +213,7 @@ export function createRuntimeStateStore(options?: {
     acquireLock,
     releaseLock,
     isLocked,
+    hasActiveLocks,
     setAbortHandler,
     requestStop,
     isStopRequested,
@@ -221,6 +234,10 @@ export function releaseLock(openId: string): void {
 
 export function isLocked(openId: string): boolean {
   return defaultRuntimeStateStore.isLocked(openId);
+}
+
+export function hasActiveLocks(): boolean {
+  return defaultRuntimeStateStore.hasActiveLocks();
 }
 
 export async function setAbortHandler(

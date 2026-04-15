@@ -3,6 +3,7 @@ import {
   acquireLock,
   releaseLock,
   isLocked,
+  hasActiveLocks,
   isDuplicate,
   clearAllState,
   requestStop,
@@ -45,6 +46,14 @@ describe("运行锁", () => {
     expect(isLocked("ou_user1")).toBe(true);
     releaseLock("ou_user1");
     expect(isLocked("ou_user1")).toBe(false);
+  });
+
+  it("hasActiveLocks 应反映全局是否仍有任务在跑", () => {
+    expect(hasActiveLocks()).toBe(false);
+    acquireLock("ou_user1", "msg_1");
+    expect(hasActiveLocks()).toBe(true);
+    releaseLock("ou_user1");
+    expect(hasActiveLocks()).toBe(false);
   });
 
   it("clearAllState 应清理所有锁和定时器", () => {
