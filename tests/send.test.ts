@@ -122,6 +122,51 @@ describe("send helpers", () => {
     });
   });
 
+  it("sendDocPreviewCard: 应发送带打开按钮的飞书文档卡片", async () => {
+    mockCreate.mockResolvedValue({ data: { message_id: "om_doc_1" } });
+    const { sendDocPreviewCard } = await import("../src/feishu/send.js");
+
+    await expect(
+      sendDocPreviewCard("ou_1", {
+        documentId: "doxcn_card_1",
+        title: "项目周报",
+        operation: "created",
+      }),
+    ).resolves.toBe("om_doc_1");
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.data.msg_type).toBe("interactive");
+    const cardJson = JSON.parse(payload.data.content);
+    expect(cardJson.header).toMatchObject({
+      title: {
+        tag: "plain_text",
+        content: "项目周报",
+      },
+      subtitle: {
+        tag: "plain_text",
+        content: "文档已创建",
+      },
+      template: "green",
+    });
+    expect(cardJson.card_link).toMatchObject({
+      url: "https://feishu.cn/docx/doxcn_card_1",
+    });
+    expect(cardJson.body.elements[1]).toMatchObject({
+      tag: "button",
+      text: {
+        tag: "plain_text",
+        content: "打开文档",
+      },
+    });
+    expect(cardJson.body.elements[1].behaviors).toEqual([
+      expect.objectContaining({
+        type: "open_url",
+        default_url: "https://feishu.cn/docx/doxcn_card_1",
+      }),
+    ]);
+  });
+
   it("addProcessingReaction: 应添加指定 reaction 并返回 reaction_id", async () => {
     mockReactionCreate.mockResolvedValue({ data: { reaction_id: "reaction_1" } });
     const { addProcessingReaction } = await import("../src/feishu/send.js");

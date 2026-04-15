@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSendRenderedMessage = vi.fn();
+const mockSendDocPreviewCard = vi.fn();
 const mockStartStreamingMessage = vi.fn();
 const mockAddProcessingReaction = vi.fn();
 const mockRemoveReaction = vi.fn();
 
 vi.mock("../src/feishu/send.js", () => ({
   sendRenderedMessage: mockSendRenderedMessage,
+  sendDocPreviewCard: mockSendDocPreviewCard,
   startStreamingMessage: mockStartStreamingMessage,
   addProcessingReaction: mockAddProcessingReaction,
   removeReaction: mockRemoveReaction,
@@ -49,10 +51,12 @@ function createSession(
 describe("promptSession", () => {
   beforeEach(() => {
     mockSendRenderedMessage.mockReset();
+    mockSendDocPreviewCard.mockReset();
     mockStartStreamingMessage.mockReset();
     mockAddProcessingReaction.mockReset();
     mockRemoveReaction.mockReset();
     mockSendRenderedMessage.mockResolvedValue(undefined);
+    mockSendDocPreviewCard.mockResolvedValue("om_doc_1");
     mockStartStreamingMessage.mockResolvedValue(null);
     mockAddProcessingReaction.mockResolvedValue("reaction_1");
     mockRemoveReaction.mockResolvedValue(true);
@@ -74,6 +78,61 @@ describe("promptSession", () => {
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
     expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello world\n\n4.1%/200k", 2000);
+  });
+
+  it("文档工具创建成功后，应在正文后补发飞书文档卡片", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_end",
+        toolName: "feishu_doc_create",
+        isError: false,
+        result: {
+          details: {
+            document_id: "doxcn_card_1",
+            document_url: "https://feishu.cn/docx/doxcn_card_1",
+            title: "项目周报",
+          },
+        },
+      } as any,
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "已帮你建好文档" } },
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(result).toEqual({ text: "已帮你建好文档", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "已帮你建好文档", 2000);
+    expect(mockSendDocPreviewCard).toHaveBeenCalledWith("ou_1", {
+      documentId: "doxcn_card_1",
+      documentUrl: "https://feishu.cn/docx/doxcn_card_1",
+      title: "项目周报",
+      operation: "created",
+    });
+  });
+
+  it("只读文档工具不应额外补发文档卡片", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_end",
+        toolName: "feishu_doc_read",
+        isError: false,
+        result: {
+          details: {
+            document_id: "doxcn_read_1",
+            document_url: "https://feishu.cn/docx/doxcn_read_1",
+            title: "只读文档",
+          },
+        },
+      } as any,
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "我先看了一眼文档" } },
+      { type: "message_end" },
+    ]);
+
+    await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(mockSendDocPreviewCard).not.toHaveBeenCalled();
   });
 
   it("启用流式卡片时，应持续更新并最终收口到同一条消息", async () => {

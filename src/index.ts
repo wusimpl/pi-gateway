@@ -54,6 +54,7 @@ async function main() {
 
   const feishuDocsService = createFeishuDocsService(
     feishuConnection.client as unknown as FeishuDocsClient,
+    { feishuDomain: config.FEISHU_DOMAIN },
   );
 
   let piRuntime: PiRuntime;
@@ -79,7 +80,10 @@ async function main() {
     process.exit(1);
   }
 
-  const feishuMessenger = createFeishuMessenger(feishuConnection.client as unknown as FeishuApiClient);
+  const feishuMessenger = createFeishuMessenger(
+    feishuConnection.client as unknown as FeishuApiClient,
+    { feishuDomain: config.FEISHU_DOMAIN },
+  );
   const feishuMessageReader = createFeishuMessageReader(
     feishuConnection.client as unknown as FeishuMessageClient,
   );

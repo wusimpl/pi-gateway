@@ -10,6 +10,12 @@ import {
   buildStreamingSummary,
   getStreamingBodyElementId,
 } from "./streaming-card.js";
+import {
+  buildFeishuDocPreviewCardContent,
+  resolveFeishuDocPreviewCardInput,
+  type FeishuDocPreviewCardInput,
+} from "./doc-preview-card.js";
+import type { FeishuWebDomain } from "./doc-links.js";
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
@@ -88,10 +94,13 @@ export interface FeishuStreamingMessage {
   finish(bodyText: string, textChunkLimit: number): Promise<void>;
 }
 
+export type { FeishuDocPreviewCardInput } from "./doc-preview-card.js";
+
 export interface FeishuMessenger {
   sendFeishuMessage(openId: string, msgType: FeishuMessageType, content: Record<string, unknown>): Promise<string | null>;
   sendTextMessage(openId: string, text: string): Promise<string | null>;
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
+  sendDocPreviewCard(openId: string, input: FeishuDocPreviewCardInput): Promise<string | null>;
   startStreamingMessage(openId: string, bodyText?: string): Promise<FeishuStreamingMessage | null>;
   addProcessingReaction(messageId: string, reactionType?: string): Promise<string | null>;
   removeReaction(messageId: string, reactionId: string): Promise<boolean>;
@@ -130,7 +139,14 @@ async function retryRequest<T>(
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-export function createFeishuMessenger(client: FeishuApiClient): FeishuMessenger {
+export function createFeishuMessenger(
+  client: FeishuApiClient,
+  options?: {
+    feishuDomain?: FeishuWebDomain;
+  },
+): FeishuMessenger {
+  const feishuDomain = options?.feishuDomain ?? "feishu";
+
   async function sendFeishuMessage(
     openId: string,
     msgType: FeishuMessageType,
@@ -169,6 +185,23 @@ export function createFeishuMessenger(client: FeishuApiClient): FeishuMessenger 
     for (const message of messages) {
       await sendFeishuMessage(openId, message.msgType, message.content);
     }
+  }
+
+  async function sendDocPreviewCard(
+    openId: string,
+    input: FeishuDocPreviewCardInput,
+  ): Promise<string | null> {
+    const resolved = resolveFeishuDocPreviewCardInput(input, feishuDomain);
+    if (!resolved) {
+      logger.warn("飞书文档卡片跳过：缺少可用文档链接", { openId, input });
+      return null;
+    }
+
+    return sendFeishuMessage(
+      openId,
+      "interactive",
+      buildFeishuDocPreviewCardContent(resolved),
+    );
   }
 
   async function startStreamingMessage(
@@ -324,6 +357,7 @@ export function createFeishuMessenger(client: FeishuApiClient): FeishuMessenger 
     sendFeishuMessage,
     sendTextMessage,
     sendRenderedMessage,
+    sendDocPreviewCard,
     startStreamingMessage,
     addProcessingReaction,
     removeReaction,
@@ -355,6 +389,13 @@ export async function sendRenderedMessage(
   textChunkLimit: number
 ): Promise<void> {
   return getDefaultFeishuMessenger().sendRenderedMessage(openId, text, textChunkLimit);
+}
+
+export async function sendDocPreviewCard(
+  openId: string,
+  input: FeishuDocPreviewCardInput,
+): Promise<string | null> {
+  return getDefaultFeishuMessenger().sendDocPreviewCard(openId, input);
 }
 
 export async function startStreamingMessage(

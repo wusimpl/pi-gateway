@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { basename, extname } from "node:path";
 import { marked } from "marked";
 import { logger } from "../app/logger.js";
+import {
+  buildFeishuDocUrl,
+  type FeishuWebDomain,
+} from "./doc-links.js";
 
 export type FeishuDocFormat = "markdown" | "html";
 
@@ -220,6 +224,7 @@ export interface FeishuDocsClient {
 
 export interface FeishuDocMeta {
   document_id: string;
+  document_url: string;
   title?: string;
   revision_id?: number;
 }
@@ -263,6 +268,7 @@ export interface FeishuDocDeleteBlocksResult extends FeishuDocMeta {
 
 export interface FeishuDocDeleteDocumentResult {
   document_id: string;
+  document_url: string;
   task_id?: string;
 }
 
@@ -317,7 +323,14 @@ interface BlockInsertResult {
   inserted_block_ids: string[];
 }
 
-export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsService {
+export function createFeishuDocsService(
+  client: FeishuDocsClient,
+  options?: {
+    feishuDomain?: FeishuWebDomain;
+  },
+): FeishuDocsService {
+  const feishuDomain = options?.feishuDomain ?? "feishu";
+
   function resolveDocumentId(input: FeishuDocRefInput | string): string {
     if (typeof input === "string") {
       return resolveDocumentIdFromValue(input);
@@ -370,6 +383,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
 
     return {
       document_id: documentId,
+      document_url: buildDocumentUrl(documentId),
       title: document.title ?? input.title?.trim() ?? undefined,
       revision_id: revisionId,
       inserted_block_ids: insertedBlockIds,
@@ -411,6 +425,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
 
     return {
       document_id: documentId,
+      document_url: buildDocumentUrl(documentId),
       title: meta.title,
       revision_id: result.revision_id ?? meta.revision_id,
       inserted_block_ids: result.inserted_block_ids,
@@ -451,6 +466,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
 
     return {
       document_id: documentId,
+      document_url: buildDocumentUrl(documentId),
       title: meta.title,
       revision_id: revisionId,
       deleted_block_count: children.length,
@@ -469,6 +485,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
     if (input.start_index === input.end_index) {
       return {
         document_id: documentId,
+        document_url: buildDocumentUrl(documentId),
         title: meta.title,
         revision_id: meta.revision_id,
         deleted_block_count: 0,
@@ -492,6 +509,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
 
     return {
       document_id: documentId,
+      document_url: buildDocumentUrl(documentId),
       title: meta.title,
       revision_id: response.data?.document_revision_id ?? meta.revision_id,
       deleted_block_count: input.end_index - input.start_index,
@@ -515,6 +533,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
 
     return {
       document_id: documentId,
+      document_url: buildDocumentUrl(documentId),
       task_id: response.data?.task_id,
     };
   }
@@ -548,6 +567,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
 
     return {
       document_id: document.document_id,
+      document_url: buildDocumentUrl(document.document_id),
       title: document.title,
       revision_id: document.revision_id,
     };
@@ -586,6 +606,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
     if (!hasContent(args.content)) {
       return {
         document_id: args.documentId,
+        document_url: buildDocumentUrl(args.documentId),
         revision_id: args.documentRevisionId,
         inserted_block_ids: [],
       };
@@ -604,6 +625,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
     if (firstLevelBlockIds.length === 0 || descendants.length === 0) {
       return {
         document_id: args.documentId,
+        document_url: buildDocumentUrl(args.documentId),
         revision_id: args.documentRevisionId,
         inserted_block_ids: [],
       };
@@ -643,6 +665,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
 
       return {
         document_id: args.documentId,
+        document_url: buildDocumentUrl(args.documentId),
         revision_id: revisionId,
         inserted_block_ids: insertedBlockIds,
       };
@@ -902,6 +925,10 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
     deleteDocument,
     createFolder,
   };
+
+  function buildDocumentUrl(documentId: string): string {
+    return buildFeishuDocUrl(documentId, feishuDomain);
+  }
 }
 
 function resolveDocumentIdFromValue(value: string): string {

@@ -137,6 +137,7 @@ describe("FeishuDocsService", () => {
     expect(JSON.stringify(insertedPayload)).not.toContain("merge_info");
     expect(result).toEqual({
       document_id: "doxcn_new_1",
+      document_url: "https://feishu.cn/docx/doxcn_new_1",
       title: "周报",
       revision_id: 12,
       inserted_block_ids: ["real-block-1"],
@@ -216,6 +217,7 @@ describe("FeishuDocsService", () => {
     );
     expect(result).toEqual({
       document_id: "doxcn_existing_1",
+      document_url: "https://feishu.cn/docx/doxcn_existing_1",
       title: "旧文档",
       revision_id: 8,
       deleted_block_count: 2,
@@ -345,6 +347,7 @@ describe("FeishuDocsService", () => {
     });
     expect(result).toEqual({
       document_id: "doxcn_img_1",
+      document_url: "https://feishu.cn/docx/doxcn_img_1",
       title: "图文",
       revision_id: 13,
       inserted_block_ids: ["img-real-1"],
@@ -437,6 +440,7 @@ describe("FeishuDocsService", () => {
     );
     expect(result).toEqual({
       document_id: "doxcn_big_1",
+      document_url: "https://feishu.cn/docx/doxcn_big_1",
       title: "长文档",
       revision_id: 22,
       inserted_block_ids: ["real-root"],
@@ -466,6 +470,7 @@ describe("FeishuDocsService", () => {
     });
     expect(result).toEqual({
       document_id: "doxcnDelete1",
+      document_url: "https://feishu.cn/docx/doxcnDelete1",
       task_id: "task-1",
     });
   });

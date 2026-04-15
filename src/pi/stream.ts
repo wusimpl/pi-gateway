@@ -4,9 +4,11 @@ import { logger } from "../app/logger.js";
 import { BridgeError, withTimeout } from "../app/errors.js";
 import {
   sendRenderedMessage,
+  sendDocPreviewCard,
   startStreamingMessage,
   addProcessingReaction,
   removeReaction,
+  type FeishuDocPreviewCardInput,
   type FeishuStreamingMessage,
   type FeishuMessenger,
 } from "../feishu/send.js";
@@ -34,7 +36,11 @@ const STREAMING_UPDATE_INTERVAL_MS = 300;
 
 type PromptMessenger = Pick<
   FeishuMessenger,
-  "sendRenderedMessage" | "startStreamingMessage" | "addProcessingReaction" | "removeReaction"
+  | "sendRenderedMessage"
+  | "sendDocPreviewCard"
+  | "startStreamingMessage"
+  | "addProcessingReaction"
+  | "removeReaction"
 >;
 
 export interface PromptRunner {
@@ -75,6 +81,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let pendingTimer: NodeJS.Timeout | null = null;
       let flushChain: Promise<void> = Promise.resolve();
       let streamingInitAttempted = false;
+      const docPreviewMap = new Map<string, FeishuDocPreviewCardInput>();
 
       try {
         reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
@@ -209,6 +216,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               toolName: event.toolName,
               isError: event.isError,
             });
+            collectDocPreviewCardInput(docPreviewMap, event.toolName, event.result, event.isError);
             // 工具调用结束也说明模型在活跃，重置空闲计时器
             resetIdleTimer();
             break;
@@ -281,6 +289,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           streamingBroken,
         );
       }
+      await sendCollectedDocPreviewCards(messenger, openId, docPreviewMap);
 
       return {
         text: fullText,
@@ -293,6 +302,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
 const defaultPromptRunner = createPromptRunner({
   sendRenderedMessage,
+  sendDocPreviewCard,
   startStreamingMessage,
   addProcessingReaction,
   removeReaction,
@@ -344,6 +354,108 @@ async function finalizeMessage(
   }
   if (!fullText) return;
   await messenger.sendRenderedMessage(openId, fullText, textChunkLimit);
+}
+
+async function sendCollectedDocPreviewCards(
+  messenger: Pick<FeishuMessenger, "sendDocPreviewCard">,
+  openId: string,
+  docPreviewMap: ReadonlyMap<string, FeishuDocPreviewCardInput>,
+): Promise<void> {
+  for (const preview of docPreviewMap.values()) {
+    try {
+      await messenger.sendDocPreviewCard(openId, preview);
+    } catch (error) {
+      logger.warn("飞书文档卡片发送失败，已跳过", {
+        openId,
+        preview,
+        error: String(error),
+      });
+    }
+  }
+}
+
+function collectDocPreviewCardInput(
+  docPreviewMap: Map<string, FeishuDocPreviewCardInput>,
+  toolName: string,
+  result: unknown,
+  isError: boolean,
+): void {
+  if (isError) {
+    return;
+  }
+
+  const operation = resolveDocPreviewOperation(toolName);
+  if (!operation) {
+    return;
+  }
+
+  const details = extractToolResultDetails(result);
+  const documentId = readStringField(details, "document_id");
+  const documentUrl = readStringField(details, "document_url");
+  if (!documentId && !documentUrl) {
+    return;
+  }
+
+  const mapKey = documentId ?? documentUrl!;
+  const existing = docPreviewMap.get(mapKey);
+  docPreviewMap.set(mapKey, {
+    documentId: documentId ?? existing?.documentId,
+    documentUrl: documentUrl ?? existing?.documentUrl,
+    title: readStringField(details, "title") ?? existing?.title,
+    operation: mergeDocPreviewOperation(existing?.operation, operation),
+  });
+}
+
+function resolveDocPreviewOperation(
+  toolName: string,
+): FeishuDocPreviewCardInput["operation"] | undefined {
+  switch (toolName) {
+    case "feishu_doc_create":
+      return "created";
+    case "feishu_doc_append":
+    case "feishu_doc_replace":
+    case "feishu_doc_delete_blocks":
+      return "updated";
+    default:
+      return undefined;
+  }
+}
+
+function mergeDocPreviewOperation(
+  existing: FeishuDocPreviewCardInput["operation"] | undefined,
+  incoming: FeishuDocPreviewCardInput["operation"] | undefined,
+): FeishuDocPreviewCardInput["operation"] | undefined {
+  if (existing === "created" || incoming === "created") {
+    return "created";
+  }
+  return incoming ?? existing;
+}
+
+function extractToolResultDetails(result: unknown): Record<string, unknown> | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return undefined;
+  }
+
+  const raw = result as Record<string, unknown>;
+  const details = raw.details;
+  if (details && typeof details === "object" && !Array.isArray(details)) {
+    return details as Record<string, unknown>;
+  }
+
+  return raw;
+}
+
+function readStringField(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const raw = value?.[key];
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+
+  const trimmed = raw.trim();
+  return trimmed || undefined;
 }
 
 function stripLeadingBlankLines(text: string): string {
