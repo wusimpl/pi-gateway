@@ -63,6 +63,7 @@ cp .env.example .env
 | `FEISHU_DOMAIN` | 否 | `feishu` | 飞书域名：`feishu`（国内）或 `larksuite`（海外） |
 | `DATA_DIR` | 否 | `./data` | 数据存储目录 |
 | `PI_WORKSPACE_ROOT` | 否 | `~/code/pi-workspace` | 每用户独立工作目录根路径，支持 `~` |
+| `PI_DISABLE_GLOBAL_AGENTS` | 否 | `false` | 设为 `true` 后，不再加载全局 `~/.pi/agent/AGENTS.md` 和 `~/.pi/agent/CLAUDE.md`，只保留项目目录链上的规则文件 |
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug`/`info`/`warn`/`error` |
 | `STREAMING_ENABLED` | 否 | `false` | 是否启用飞书流式卡片回复；默认关闭，打开后只建议给 7.20+ 客户端使用 |
 | `TEXT_CHUNK_LIMIT` | 否 | `2000` | 单条消息文本上限（字符数） |

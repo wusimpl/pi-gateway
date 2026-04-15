@@ -82,6 +82,7 @@ vi.mock("../src/config.js", () => ({
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
     DATA_DIR: "/tmp/pi-gateway-data",
     PI_WORKSPACE_ROOT: "/tmp/pi-gateway-workspace",
+    PI_DISABLE_GLOBAL_AGENTS: true,
     LOG_LEVEL: "info",
   }),
 }));
@@ -188,6 +189,7 @@ describe("index wiring", () => {
     expect(mocks.createFeishuResourceDownloader).toHaveBeenCalledWith(mocks.client);
     expect(mocks.createPiRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
+        disableGlobalAgents: true,
         extensionFactories: expect.any(Array),
       }),
     );

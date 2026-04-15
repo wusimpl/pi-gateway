@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
     authStorage: { tag: "auth-storage" },
     modelRegistry: { tag: "model-registry" },
     sessionManager: { tag: "session-manager" },
+    getAgentDir: vi.fn(() => "/Users/test/.pi/agent"),
     loaderReload: vi.fn().mockResolvedValue(undefined),
     createAgentSession: vi.fn().mockResolvedValue({
       session: {
@@ -45,6 +46,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     return instance;
   }),
   createAgentSession: mocks.createAgentSession,
+  getAgentDir: mocks.getAgentDir,
 }));
 
 vi.mock("../src/app/logger.js", () => ({
@@ -58,6 +60,7 @@ describe("pi runtime", () => {
     mocks.loaderInstances.length = 0;
     mocks.loaderReload.mockClear();
     mocks.createAgentSession.mockClear();
+    mocks.getAgentDir.mockClear();
     mocks.logger.info.mockClear();
     mocks.logger.warn.mockClear();
     mocks.logger.error.mockClear();
@@ -89,5 +92,30 @@ describe("pi runtime", () => {
       sessionId: "session-1",
       sessionFile: "/tmp/session-1.json",
     });
+  });
+
+  it("开启 disableGlobalAgents 时会过滤全局 AGENTS.md 和 CLAUDE.md", async () => {
+    const runtime = createPiRuntime({
+      disableGlobalAgents: true,
+    });
+
+    await runtime.createPiSession("/tmp/workspace/ou_1", "/tmp/sessions/ou_1");
+
+    const agentsFilesOverride = mocks.loaderInstances[0]?.options.agentsFilesOverride as
+      | ((base: { agentsFiles: Array<{ path: string; content: string }> }) => { agentsFiles: Array<{ path: string; content: string }> })
+      | undefined;
+
+    expect(agentsFilesOverride).toBeTypeOf("function");
+    expect(
+      agentsFilesOverride?.({
+        agentsFiles: [
+          { path: "/Users/test/.pi/agent/AGENTS.md", content: "global agents" },
+          { path: "/Users/test/.pi/agent/CLAUDE.md", content: "global claude" },
+          { path: "/tmp/workspace/AGENTS.md", content: "project agents" },
+        ],
+      }).agentsFiles,
+    ).toEqual([
+      { path: "/tmp/workspace/AGENTS.md", content: "project agents" },
+    ]);
   });
 });

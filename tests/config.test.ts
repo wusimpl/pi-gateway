@@ -38,6 +38,20 @@ describe("loadConfig", () => {
     expect(loadConfig().STREAMING_ENABLED).toBe(false);
   });
 
+  it("PI_DISABLE_GLOBAL_AGENTS 默认应为 false", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().PI_DISABLE_GLOBAL_AGENTS).toBe(false);
+  });
+
+  it("PI_DISABLE_GLOBAL_AGENTS=true 时应禁用全局 context 文件", async () => {
+    applyBaseEnv({ PI_DISABLE_GLOBAL_AGENTS: "true" });
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().PI_DISABLE_GLOBAL_AGENTS).toBe(true);
+  });
+
   it("音频转写脚本路径里的 ~ 应展开成 home 目录", async () => {
     applyBaseEnv({
       HOME: "/tmp/test-home",

@@ -29,6 +29,7 @@ async function main() {
     feishuDomain: config.FEISHU_DOMAIN,
     dataDir: config.DATA_DIR,
     workspaceRoot: config.PI_WORKSPACE_ROOT,
+    disableGlobalAgents: config.PI_DISABLE_GLOBAL_AGENTS,
     logLevel: config.LOG_LEVEL,
     processingReactionEnabled: Boolean(config.FEISHU_PROCESSING_REACTION_TYPE),
   });
@@ -60,6 +61,7 @@ async function main() {
   let piRuntime: PiRuntime;
   try {
     piRuntime = createPiRuntime({
+      disableGlobalAgents: config.PI_DISABLE_GLOBAL_AGENTS,
       extensionFactories: [createFeishuDocsExtension(feishuDocsService)],
     });
     logger.info("Pi 运行时就绪");

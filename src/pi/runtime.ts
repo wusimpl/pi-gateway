@@ -4,9 +4,11 @@ import {
   ModelRegistry,
   SessionManager,
   createAgentSession,
+  getAgentDir,
   type AgentSession,
   type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
+import { resolve, join } from "node:path";
 import { logger } from "../app/logger.js";
 
 export interface PiRuntime {
@@ -22,17 +24,20 @@ export interface PiRuntime {
 
 export interface CreatePiRuntimeOptions {
   extensionFactories?: ExtensionFactory[];
+  disableGlobalAgents?: boolean;
 }
 
 export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
   const extensionFactories = options.extensionFactories ?? [];
+  const agentsFilesOverride = createAgentsFilesOverride(options.disableGlobalAgents === true);
 
   async function createResourceLoader(cwd: string) {
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       extensionFactories,
+      agentsFilesOverride,
     });
     await resourceLoader.reload();
     return resourceLoader;
@@ -108,6 +113,22 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
     continueRecentPiSession,
     openPiSession,
   };
+}
+
+function createAgentsFilesOverride(disableGlobalAgents: boolean) {
+  if (!disableGlobalAgents) {
+    return undefined;
+  }
+
+  const agentDir = getAgentDir();
+  const globalContextFiles = new Set([
+    resolve(join(agentDir, "AGENTS.md")),
+    resolve(join(agentDir, "CLAUDE.md")),
+  ]);
+
+  return (base: { agentsFiles: Array<{ path: string; content: string }> }) => ({
+    agentsFiles: base.agentsFiles.filter((file) => !globalContextFiles.has(resolve(file.path))),
+  });
 }
 
 let defaultPiRuntime: PiRuntime | null = null;

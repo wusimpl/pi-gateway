@@ -17,6 +17,10 @@ const envSchema = z.object({
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: z.string().default("cpu"),
   DATA_DIR: z.string().default("./data"),
   PI_WORKSPACE_ROOT: z.string().default("~/code/pi-workspace"),
+  PI_DISABLE_GLOBAL_AGENTS: z
+    .string()
+    .transform((v) => v === "true")
+    .default("false"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   STREAMING_ENABLED: z
     .string()
