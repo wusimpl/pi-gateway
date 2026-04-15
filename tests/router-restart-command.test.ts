@@ -153,4 +153,36 @@ describe("handleFeishuMessage /restart", () => {
     expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
     expect(mocks.restartGateway).not.toHaveBeenCalled();
   });
+
+  it("开始重启后应拒绝新的普通消息任务", async () => {
+    mocks.normalizeFeishuInboundMessage
+      .mockReturnValueOnce({
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_restart",
+        messageType: "text",
+        createTime: "125",
+        rawContent: '{"text":"/restart"}',
+        text: "/restart",
+      })
+      .mockReturnValueOnce({
+        kind: "text",
+        identity: { openId: "ou_other", userId: "u_2" },
+        messageId: "om_prompt",
+        messageType: "text",
+        createTime: "126",
+        rawContent: '{"text":"hello"}',
+        text: "hello",
+      });
+
+    await handleFeishuMessage({});
+    await handleFeishuMessage({});
+
+    expect(mocks.restartGateway).toHaveBeenCalledTimes(1);
+    expect(mocks.sendTextMessage).toHaveBeenCalledWith(
+      "ou_other",
+      "网关正在重启，暂时不接新任务，请稍后再试。",
+    );
+    expect(mocks.promptSession).not.toHaveBeenCalled();
+  });
 });

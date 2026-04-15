@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
   acquireLock,
+  beginRestartDrain,
+  cancelRestartDrain,
   releaseLock,
   isLocked,
   hasActiveLocks,
   isDuplicate,
   clearAllState,
+  isDraining,
   requestStop,
   setAbortHandler,
   isStopRequested,
@@ -64,6 +67,25 @@ describe("运行锁", () => {
     expect(isLocked("ou_user2")).toBe(false);
     // 清理后应可重新获取锁
     expect(acquireLock("ou_user1", "msg_3")).toBe(true);
+  });
+
+  it("进入排空后不应再接收新任务", () => {
+    expect(beginRestartDrain()).toBe("started");
+    expect(isDraining()).toBe(true);
+    expect(acquireLock("ou_user1", "msg_1")).toBe(false);
+  });
+
+  it("排空开始前如果还有任务在跑，应拒绝进入排空", () => {
+    acquireLock("ou_user1", "msg_1");
+    expect(beginRestartDrain()).toBe("busy");
+    expect(isDraining()).toBe(false);
+  });
+
+  it("取消排空后应恢复接收新任务", () => {
+    expect(beginRestartDrain()).toBe("started");
+    cancelRestartDrain();
+    expect(isDraining()).toBe(false);
+    expect(acquireLock("ou_user1", "msg_1")).toBe(true);
   });
 });
 

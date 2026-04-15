@@ -11,6 +11,7 @@ describe("createPromptService", () => {
   const releaseLock = vi.fn();
   const setAbortHandler = vi.fn();
   const isStopRequested = vi.fn();
+  const isDraining = vi.fn();
   const downloadResource = vi.fn();
   const readQuotedMessage = vi.fn();
 
@@ -24,12 +25,14 @@ describe("createPromptService", () => {
     releaseLock.mockReset();
     setAbortHandler.mockReset();
     isStopRequested.mockReset();
+    isDraining.mockReset();
     downloadResource.mockReset();
     readQuotedMessage.mockReset();
 
     acquireLock.mockReturnValue(true);
     setAbortHandler.mockResolvedValue(false);
     isStopRequested.mockReturnValue(false);
+    isDraining.mockReturnValue(false);
     getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
       piSession: {
@@ -70,6 +73,7 @@ describe("createPromptService", () => {
         releaseLock,
         setAbortHandler,
         isStopRequested,
+        isDraining,
       },
       sessionService: {
         getOrCreateActiveSession,
@@ -148,6 +152,7 @@ describe("createPromptService", () => {
         releaseLock,
         setAbortHandler,
         isStopRequested,
+        isDraining,
       },
       sessionService: {
         getOrCreateActiveSession,
@@ -227,6 +232,7 @@ describe("createPromptService", () => {
         releaseLock,
         setAbortHandler,
         isStopRequested,
+        isDraining,
       },
       sessionService: {
         getOrCreateActiveSession,
@@ -263,5 +269,66 @@ describe("createPromptService", () => {
     expect(promptSession).not.toHaveBeenCalled();
     expect(sendTextMessage).not.toHaveBeenCalled();
     expect(releaseLock).toHaveBeenCalledWith("ou_1");
+  });
+
+  it("排空期间应拒绝启动新任务并提示稍后再试", async () => {
+    isDraining.mockReturnValue(true);
+
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        STREAMING_ENABLED: true,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_restart_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"hello"}',
+        text: "hello",
+      },
+    );
+
+    expect(acquireLock).not.toHaveBeenCalled();
+    expect(promptSession).not.toHaveBeenCalled();
+    expect(sendTextMessage).toHaveBeenCalledWith("ou_1", "网关正在重启，暂时不接新任务，请稍后再试。");
+    expect(releaseLock).not.toHaveBeenCalled();
   });
 });

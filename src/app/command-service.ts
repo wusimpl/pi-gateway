@@ -25,7 +25,10 @@ interface CommandServiceDeps {
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession">;
   userStateStore: Pick<UserStateStore, "readUserState">;
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
-  runtimeState: Pick<RuntimeStateStore, "isLocked" | "hasActiveLocks" | "requestStop">;
+  runtimeState: Pick<
+    RuntimeStateStore,
+    "isLocked" | "hasActiveLocks" | "beginRestartDrain" | "cancelRestartDrain" | "requestStop"
+  >;
   restartService: Pick<RestartService, "restartGateway">;
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
@@ -98,14 +101,24 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
 
   async function handleRestartCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
     const openId = identity.openId;
-    if (deps.runtimeState.hasActiveLocks()) {
+    const drainState = deps.runtimeState.beginRestartDrain();
+    if (drainState === "busy") {
       await deps.messenger.sendTextMessage(openId, "当前还有任务在跑，等这条回复结束后再重启网关。");
       return;
     }
+    if (drainState === "already_draining") {
+      await deps.messenger.sendTextMessage(openId, "网关正在重启，暂时不接新任务，请稍后再试。");
+      return;
+    }
 
-    const reply = handleBridgeCommand(command, { openId });
-    await sendCommandReply(openId, reply);
-    await deps.restartService.restartGateway();
+    try {
+      const reply = handleBridgeCommand(command, { openId });
+      await sendCommandReply(openId, reply);
+      await deps.restartService.restartGateway();
+    } catch (error) {
+      deps.runtimeState.cancelRestartDrain();
+      throw error;
+    }
   }
 
   async function handleModelCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {

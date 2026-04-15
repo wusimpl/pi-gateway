@@ -33,7 +33,7 @@ interface PromptServiceDeps {
   >;
   runtimeState: Pick<
     RuntimeStateStore,
-    "acquireLock" | "releaseLock" | "setAbortHandler" | "isStopRequested"
+    "acquireLock" | "releaseLock" | "setAbortHandler" | "isStopRequested" | "isDraining"
   >;
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "touchSession">;
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
@@ -54,7 +54,16 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
   ): Promise<void> {
     const openId = identity.openId;
     const messageId = message.messageId;
+    if (deps.runtimeState.isDraining()) {
+      await deps.messenger.sendTextMessage(openId, "网关正在重启，暂时不接新任务，请稍后再试。");
+      return;
+    }
+
     if (!deps.runtimeState.acquireLock(openId, messageId)) {
+      if (deps.runtimeState.isDraining()) {
+        await deps.messenger.sendTextMessage(openId, "网关正在重启，暂时不接新任务，请稍后再试。");
+        return;
+      }
       logger.info("用户消息因已有处理中任务被忽略", { openId, messageId });
       return;
     }

@@ -9,6 +9,9 @@ export interface RuntimeStateStore {
   releaseLock(openId: string): void;
   isLocked(openId: string): boolean;
   hasActiveLocks(): boolean;
+  beginRestartDrain(): "started" | "busy" | "already_draining";
+  cancelRestartDrain(): void;
+  isDraining(): boolean;
   setAbortHandler(
     openId: string,
     messageId: string,
@@ -53,6 +56,7 @@ export function createRuntimeStateStore(options?: {
   const userLocks = new Map<string, LockEntry>();
   /** 消息去重窗口 */
   const dedupMap = new Map<string, number>();
+  let draining = false;
 
   function cleanupExpiredLock(openId: string): void {
     const lock = userLocks.get(openId);
@@ -78,6 +82,10 @@ export function createRuntimeStateStore(options?: {
   }
 
   function acquireLock(openId: string, messageId: string): boolean {
+    if (draining) {
+      return false;
+    }
+
     cleanupExpiredLock(openId);
 
     if (userLocks.has(openId)) {
@@ -123,6 +131,34 @@ export function createRuntimeStateStore(options?: {
   function hasActiveLocks(): boolean {
     cleanupAllExpiredLocks();
     return userLocks.size > 0;
+  }
+
+  function beginRestartDrain(): "started" | "busy" | "already_draining" {
+    if (draining) {
+      return "already_draining";
+    }
+
+    cleanupAllExpiredLocks();
+    if (userLocks.size > 0) {
+      return "busy";
+    }
+
+    draining = true;
+    logger.info("网关已进入排空状态，拒绝新的任务");
+    return "started";
+  }
+
+  function cancelRestartDrain(): void {
+    if (!draining) {
+      return;
+    }
+
+    draining = false;
+    logger.warn("网关排空状态已取消，恢复接收新任务");
+  }
+
+  function isDraining(): boolean {
+    return draining;
   }
 
   async function setAbortHandler(
@@ -206,6 +242,7 @@ export function createRuntimeStateStore(options?: {
     }
     userLocks.clear();
     dedupMap.clear();
+    draining = false;
     logger.info("所有运行时状态已清理");
   }
 
@@ -214,6 +251,9 @@ export function createRuntimeStateStore(options?: {
     releaseLock,
     isLocked,
     hasActiveLocks,
+    beginRestartDrain,
+    cancelRestartDrain,
+    isDraining,
     setAbortHandler,
     requestStop,
     isStopRequested,
@@ -238,6 +278,18 @@ export function isLocked(openId: string): boolean {
 
 export function hasActiveLocks(): boolean {
   return defaultRuntimeStateStore.hasActiveLocks();
+}
+
+export function beginRestartDrain(): "started" | "busy" | "already_draining" {
+  return defaultRuntimeStateStore.beginRestartDrain();
+}
+
+export function cancelRestartDrain(): void {
+  defaultRuntimeStateStore.cancelRestartDrain();
+}
+
+export function isDraining(): boolean {
+  return defaultRuntimeStateStore.isDraining();
 }
 
 export async function setAbortHandler(

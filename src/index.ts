@@ -2,7 +2,7 @@ import { loadConfig } from "./config.js";
 import { setLogLevel, logger } from "./app/logger.js";
 import { createCommandService } from "./app/command-service.js";
 import { createPromptService } from "./app/prompt-service.js";
-import { createRestartService } from "./app/restart.js";
+import { createRestartService, signalRestartReadyIfNeeded } from "./app/restart.js";
 import { createMessageRouter } from "./app/router.js";
 import { createRuntimeStateStore, type RuntimeStateStore } from "./app/state.js";
 import { ensureDir } from "./storage/files.js";
@@ -135,6 +135,7 @@ async function main() {
 
   try {
     await feishuConnection.startMessageConnection(router.handleFeishuMessage);
+    await signalRestartReadyIfNeeded();
     logger.info("🚀 pi-gateway 服务已启动，等待飞书消息...");
   } catch (err) {
     logger.error("飞书 WebSocket 连接失败", { error: String(err) });

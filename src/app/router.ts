@@ -24,8 +24,11 @@ import { createPromptService, type PromptService } from "./prompt-service.js";
 import { createRestartService } from "./restart.js";
 import {
   acquireLock,
+  beginRestartDrain,
+  cancelRestartDrain,
   hasActiveLocks,
   isDuplicate,
+  isDraining,
   isLocked,
   isStopRequested,
   releaseLock,
@@ -120,6 +123,8 @@ export function initRouter(cfg: Config): void {
     runtimeState: {
       isLocked: (...args) => isLocked(...args),
       hasActiveLocks: () => hasActiveLocks(),
+      beginRestartDrain: () => beginRestartDrain(),
+      cancelRestartDrain: () => cancelRestartDrain(),
       requestStop: (...args) => requestStop(...args),
     },
     restartService: createRestartService(),
@@ -134,6 +139,7 @@ export function initRouter(cfg: Config): void {
       releaseLock: (...args) => releaseLock(...args),
       setAbortHandler: (...args) => setAbortHandler(...args),
       isStopRequested: (...args) => isStopRequested(...args),
+      isDraining: () => isDraining(),
     },
     sessionService: {
       getOrCreateActiveSession: (...args) => getOrCreateActiveSession(...args),
