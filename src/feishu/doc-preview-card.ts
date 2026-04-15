@@ -56,7 +56,6 @@ export function buildFeishuDocPreviewCardContent(
       update_multi: true,
       width_mode: "fill",
     },
-    card_link: buildCardLinkConfig(input.documentUrl),
     header: {
       title: {
         tag: "plain_text",
@@ -75,7 +74,7 @@ export function buildFeishuDocPreviewCardContent(
       elements: [
         {
           tag: "markdown",
-          content: `${summaryText}\n\n[打开文档](${input.documentUrl})`,
+          content: summaryText,
           text_align: "left",
         },
         {
@@ -96,15 +95,6 @@ export function buildFeishuDocPreviewCardContent(
         },
       ],
     },
-  };
-}
-
-function buildCardLinkConfig(url: string): Record<string, string> {
-  return {
-    url,
-    pc_url: url,
-    ios_url: url,
-    android_url: url,
   };
 }
 

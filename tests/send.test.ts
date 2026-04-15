@@ -149,8 +149,10 @@ describe("send helpers", () => {
       },
       template: "green",
     });
-    expect(cardJson.card_link).toMatchObject({
-      url: "https://feishu.cn/docx/doxcn_card_1",
+    expect(cardJson.card_link).toBeUndefined();
+    expect(cardJson.body.elements[0]).toMatchObject({
+      tag: "markdown",
+      content: "新文档已经准备好了，点下面按钮直接打开。",
     });
     expect(cardJson.body.elements[1]).toMatchObject({
       tag: "button",
