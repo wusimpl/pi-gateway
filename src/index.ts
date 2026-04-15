@@ -14,6 +14,7 @@ import { createFeishuMessageReader, type FeishuMessageClient } from "./feishu/in
 import { createFeishuResourceDownloader, type FeishuResourceClient } from "./feishu/inbound/resource.js";
 import { createFeishuMessenger, type FeishuApiClient } from "./feishu/send.js";
 import { createFeishuDocsExtension } from "./pi/extensions/feishu-docs.js";
+import { createFeishuFilesExtension } from "./pi/extensions/feishu-files.js";
 import { findAvailableModel, listAvailableModels } from "./pi/models.js";
 import { createPiRuntime, type PiRuntime } from "./pi/runtime.js";
 import { createSessionService, type SessionService } from "./pi/sessions.js";
@@ -57,12 +58,19 @@ async function main() {
     feishuConnection.client as unknown as FeishuDocsClient,
     { feishuDomain: config.FEISHU_DOMAIN },
   );
+  const feishuMessenger = createFeishuMessenger(
+    feishuConnection.client as unknown as FeishuApiClient,
+    { feishuDomain: config.FEISHU_DOMAIN },
+  );
 
   let piRuntime: PiRuntime;
   try {
     piRuntime = createPiRuntime({
       disableGlobalAgents: config.PI_DISABLE_GLOBAL_AGENTS,
-      extensionFactories: [createFeishuDocsExtension(feishuDocsService)],
+      extensionFactories: [
+        createFeishuDocsExtension(feishuDocsService),
+        createFeishuFilesExtension(feishuMessenger),
+      ],
     });
     logger.info("Pi 运行时就绪");
   } catch (err) {
@@ -82,10 +90,6 @@ async function main() {
     process.exit(1);
   }
 
-  const feishuMessenger = createFeishuMessenger(
-    feishuConnection.client as unknown as FeishuApiClient,
-    { feishuDomain: config.FEISHU_DOMAIN },
-  );
   const feishuMessageReader = createFeishuMessageReader(
     feishuConnection.client as unknown as FeishuMessageClient,
   );

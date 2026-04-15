@@ -11,6 +11,7 @@ import {
 } from "../storage/users.js";
 import { logger } from "../app/logger.js";
 import { ensureUserWorkspace, type WorkspaceService } from "./workspace.js";
+import { bindWorkspaceIdentity, clearWorkspaceIdentities } from "./workspace-identity.js";
 import type { UserIdentity } from "../types.js";
 
 interface SessionResult {
@@ -38,6 +39,12 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   /** 内存中缓存的 Pi session 实例（open_id -> session） */
   const sessionCache = new Map<string, AgentSession>();
 
+  async function ensureWorkspaceForIdentity(identity: UserIdentity): Promise<string> {
+    const workspaceDir = await deps.workspaceService.ensureUserWorkspace(identity);
+    bindWorkspaceIdentity(workspaceDir, identity);
+    return workspaceDir;
+  }
+
   async function getOrCreateActiveSession(identity: UserIdentity): Promise<SessionResult> {
     const openId = identity.openId;
 
@@ -53,7 +60,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const state = await deps.userStateStore.readUserState(openId);
     if (state?.activeSessionId && state.piSessionFile) {
       try {
-        const workspaceDir = await deps.workspaceService.ensureUserWorkspace(identity);
+        const workspaceDir = await ensureWorkspaceForIdentity(identity);
         const session = await deps.runtime.openPiSession(state.piSessionFile, workspaceDir);
         sessionCache.set(openId, session);
         logger.info("Pi session 从指定文件恢复", {
@@ -74,7 +81,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     if (state?.activeSessionId) {
       try {
         const sessionDir = deps.userStateStore.userSessionsDir(openId);
-        const workspaceDir = await deps.workspaceService.ensureUserWorkspace(identity);
+        const workspaceDir = await ensureWorkspaceForIdentity(identity);
         const result = await deps.runtime.continueRecentPiSession(workspaceDir, sessionDir);
         if (result) {
           sessionCache.set(openId, result.session);
@@ -114,7 +121,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   async function doCreateNewSession(identity: UserIdentity): Promise<SessionResult> {
     const openId = identity.openId;
     const sessionDir = deps.userStateStore.userSessionsDir(openId);
-    const workspaceDir = await deps.workspaceService.ensureUserWorkspace(identity);
+    const workspaceDir = await ensureWorkspaceForIdentity(identity);
     const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir);
     const newSessionId = generateSessionId();
 
@@ -154,6 +161,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       }
     }
     sessionCache.clear();
+    clearWorkspaceIdentities();
     logger.info("所有 Pi session 已清理");
   }
 

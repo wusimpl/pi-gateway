@@ -1,3 +1,6 @@
+import { createReadStream, type ReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { basename, extname } from "node:path";
 import { getLarkClient } from "./client.js";
 import { logger } from "../app/logger.js";
 import { renderAssistantMessage } from "./render.js";
@@ -19,13 +22,37 @@ import type { FeishuWebDomain } from "./doc-links.js";
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
+const MAX_FEISHU_FILE_SIZE_BYTES = 30 * 1024 * 1024;
 
 export { chunkText } from "./text.js";
 
-export type FeishuMessageType = "text" | "post" | "interactive";
+export type FeishuMessageType = "text" | "post" | "interactive" | "file";
+export type FeishuUploadFileType = "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream";
+
+export interface SendLocalFileInput {
+  path: string;
+  fileName?: string;
+}
+
+export interface SentFeishuFile {
+  fileKey: string;
+  fileName: string;
+  fileType: FeishuUploadFileType;
+  messageId: string | null;
+}
 
 export interface FeishuApiClient {
   im: {
+    file: {
+      create(args: {
+        data: {
+          file_type: FeishuUploadFileType;
+          file_name: string;
+          duration?: number;
+          file: Buffer | ReadStream;
+        };
+      }): Promise<{ file_key?: string | null } | null>;
+    };
     message: {
       create(args: {
         params: { receive_id_type: "open_id" };
@@ -100,6 +127,7 @@ export interface FeishuMessenger {
   sendFeishuMessage(openId: string, msgType: FeishuMessageType, content: Record<string, unknown>): Promise<string | null>;
   sendTextMessage(openId: string, text: string): Promise<string | null>;
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
+  sendLocalFileMessage(openId: string, input: SendLocalFileInput): Promise<SentFeishuFile>;
   sendDocPreviewCard(openId: string, input: FeishuDocPreviewCardInput): Promise<string | null>;
   startStreamingMessage(openId: string, bodyText?: string): Promise<FeishuStreamingMessage | null>;
   addProcessingReaction(messageId: string, reactionType?: string): Promise<string | null>;
@@ -185,6 +213,54 @@ export function createFeishuMessenger(
     for (const message of messages) {
       await sendFeishuMessage(openId, message.msgType, message.content);
     }
+  }
+
+  async function sendLocalFileMessage(
+    openId: string,
+    input: SendLocalFileInput,
+  ): Promise<SentFeishuFile> {
+    const fileStats = await stat(input.path);
+    if (!fileStats.isFile()) {
+      throw new Error(`要发送的路径不是文件: ${input.path}`);
+    }
+    if (fileStats.size <= 0) {
+      throw new Error(`飞书不允许发送空文件: ${input.path}`);
+    }
+    if (fileStats.size > MAX_FEISHU_FILE_SIZE_BYTES) {
+      throw new Error(`文件超过飞书 30MB 限制: ${input.path}`);
+    }
+
+    const fileName = input.fileName?.trim() || basename(input.path);
+    if (!fileName) {
+      throw new Error(`无法确定文件名: ${input.path}`);
+    }
+
+    const fileType = inferFeishuUploadFileType(fileName);
+    const uploadResp = await retryRequest("飞书文件上传", { openId, path: input.path, fileName, fileType }, () =>
+      client.im.file.create({
+        data: {
+          file_type: fileType,
+          file_name: fileName,
+          file: createReadStream(input.path),
+        },
+      }));
+    const fileKey = uploadResp?.file_key?.trim();
+    if (!fileKey) {
+      throw new Error(`飞书文件上传成功但未返回 file_key: ${input.path}`);
+    }
+
+    const messageId = await sendFeishuMessage(openId, "file", { file_key: fileKey });
+    if (!messageId) {
+      throw new Error(`飞书文件消息发送失败: ${fileName}`);
+    }
+
+    logger.debug("飞书文件已发送", { openId, path: input.path, fileName, fileKey, messageId });
+    return {
+      fileKey,
+      fileName,
+      fileType,
+      messageId,
+    };
   }
 
   async function sendDocPreviewCard(
@@ -357,6 +433,7 @@ export function createFeishuMessenger(
     sendFeishuMessage,
     sendTextMessage,
     sendRenderedMessage,
+    sendLocalFileMessage,
     sendDocPreviewCard,
     startStreamingMessage,
     addProcessingReaction,
@@ -391,6 +468,13 @@ export async function sendRenderedMessage(
   return getDefaultFeishuMessenger().sendRenderedMessage(openId, text, textChunkLimit);
 }
 
+export async function sendLocalFileMessage(
+  openId: string,
+  input: SendLocalFileInput,
+): Promise<SentFeishuFile> {
+  return getDefaultFeishuMessenger().sendLocalFileMessage(openId, input);
+}
+
 export async function sendDocPreviewCard(
   openId: string,
   input: FeishuDocPreviewCardInput,
@@ -414,4 +498,27 @@ export async function addProcessingReaction(
 
 export async function removeReaction(messageId: string, reactionId: string): Promise<boolean> {
   return getDefaultFeishuMessenger().removeReaction(messageId, reactionId);
+}
+
+function inferFeishuUploadFileType(fileName: string): FeishuUploadFileType {
+  switch (extname(fileName).toLowerCase()) {
+    case ".opus":
+      return "opus";
+    case ".mp4":
+      return "mp4";
+    case ".pdf":
+      return "pdf";
+    case ".doc":
+    case ".docx":
+      return "doc";
+    case ".xls":
+    case ".xlsx":
+    case ".csv":
+      return "xls";
+    case ".ppt":
+    case ".pptx":
+      return "ppt";
+    default:
+      return "stream";
+  }
 }

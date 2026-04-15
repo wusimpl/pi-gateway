@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+const mockFileCreate = vi.fn();
 const mockCreate = vi.fn();
 const mockReactionCreate = vi.fn();
 const mockReactionDelete = vi.fn();
@@ -11,6 +15,9 @@ const mockCardContent = vi.fn();
 vi.mock("../src/feishu/client.js", () => ({
   getLarkClient: () => ({
     im: {
+      file: {
+        create: mockFileCreate,
+      },
       message: {
         create: mockCreate,
       },
@@ -35,8 +42,11 @@ vi.mock("../src/feishu/client.js", () => ({
 }));
 
 describe("send helpers", () => {
+  const tempDirs: string[] = [];
+
   beforeEach(() => {
     vi.resetModules();
+    mockFileCreate.mockReset();
     mockCreate.mockReset();
     mockReactionCreate.mockReset();
     mockReactionDelete.mockReset();
@@ -44,6 +54,10 @@ describe("send helpers", () => {
     mockCardUpdate.mockReset();
     mockCardSettings.mockReset();
     mockCardContent.mockReset();
+  });
+
+  afterEach(async () => {
+    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
   it("chunkText: 短文本不分块", async () => {
@@ -118,6 +132,39 @@ describe("send helpers", () => {
         receive_id: "ou_1",
         msg_type: "interactive",
         content: JSON.stringify(content),
+      },
+    });
+  });
+
+  it("sendLocalFileMessage: 应先上传文件，再发送 file 消息", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-gateway-send-file-"));
+    tempDirs.push(dir);
+    const filePath = join(dir, "report.txt");
+    await writeFile(filePath, "hello file", "utf-8");
+
+    mockFileCreate.mockResolvedValue({ file_key: "file_v2_1" });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_file_1" } });
+    const { sendLocalFileMessage } = await import("../src/feishu/send.js");
+
+    await expect(sendLocalFileMessage("ou_1", { path: filePath })).resolves.toEqual({
+      fileKey: "file_v2_1",
+      fileName: "report.txt",
+      fileType: "stream",
+      messageId: "om_file_1",
+    });
+    expect(mockFileCreate).toHaveBeenCalledWith({
+      data: {
+        file_type: "stream",
+        file_name: "report.txt",
+        file: expect.anything(),
+      },
+    });
+    expect(mockCreate).toHaveBeenCalledWith({
+      params: { receive_id_type: "open_id" },
+      data: {
+        receive_id: "ou_1",
+        msg_type: "file",
+        content: JSON.stringify({ file_key: "file_v2_1" }),
       },
     });
   });
