@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseBridgeCommand } from "../src/app/commands.js";
+import { handleBridgeCommand, parseBridgeCommand } from "../src/app/commands.js";
 
 describe("parseBridgeCommand", () => {
   it("should parse /new", () => {
@@ -57,5 +57,19 @@ describe("parseBridgeCommand", () => {
 
   it("should not match partial text like /newday", () => {
     expect(parseBridgeCommand("/newday")).toBeNull();
+  });
+});
+
+describe("handleBridgeCommand", () => {
+  it("`/new` 应带上当前模型", () => {
+    expect(
+      handleBridgeCommand("new", {
+        currentModel: "rightcodes/gpt-5.4-high",
+      }),
+    ).toBe("✅ 已创建新会话\n🤖 当前模型: rightcodes/gpt-5.4-high");
+  });
+
+  it("模型拿不到时，`/new` 仍返回原文案", () => {
+    expect(handleBridgeCommand("new", {})).toBe("✅ 已创建新会话");
   });
 });

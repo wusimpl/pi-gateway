@@ -161,6 +161,34 @@ describe("handleFeishuMessage 模型命令", () => {
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("`/new` 会返回新会话和当前模型", async () => {
+    const piSession = {
+      model: { provider: "rightcodes", id: "gpt-5.4-high" },
+    };
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/new"}',
+      text: "/new",
+    });
+    mocks.createNewSession.mockResolvedValue({
+      activeSessionId: "session_2",
+      piSession,
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.createNewSession).toHaveBeenCalledTimes(1);
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "✅ 已创建新会话\n🤖 当前模型: rightcodes/gpt-5.4-high",
+      2000,
+    );
+  });
+
   it("`/context` 会返回当前 session 实际加载的 context 文件", async () => {
     const piSession = {
       resourceLoader: {

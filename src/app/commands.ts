@@ -76,9 +76,9 @@ export function handleBridgeCommand(
 
   switch (normalized.name) {
     case "new":
-      return "✅ 已创建新会话";
+      return formatSessionCommandReply("✅ 已创建新会话", context.currentModel);
     case "reset":
-      return "✅ 已重置会话";
+      return formatSessionCommandReply("✅ 已重置会话", context.currentModel);
     case "status": {
       const lines = [`📋 当前会话: ${context.sessionId ?? "unknown"}`];
       if (context.currentModel) lines.push(`🤖 当前模型: ${context.currentModel}`);
@@ -152,6 +152,13 @@ export function handleBridgeCommand(
 function formatAvailableModelLine(model: Pick<AvailableModelInfo, "order" | "id" | "label" | "name">): string {
   const suffix = model.name && model.name !== model.id ? ` · ${model.name}` : "";
   return `${model.order}. ${model.label}${suffix}`;
+}
+
+function formatSessionCommandReply(message: string, currentModel?: string): string {
+  if (!currentModel) {
+    return message;
+  }
+  return `${message}\n🤖 当前模型: ${currentModel}`;
 }
 
 function formatContextReply(contextFiles: BridgeContextFile[]): string {
