@@ -131,8 +131,8 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
     name: "feishu_doc_replace",
     label: "Feishu Doc Replace",
     description:
-      "整篇替换飞书新版文档 docx 的正文内容。实现方式是删掉根级正文块再重建。只支持 docx，不支持 wiki。",
-    promptSnippet: "feishu_doc_replace: 整篇替换飞书 docx 正文，适合重写整份文档。",
+      "整篇替换飞书新版文档 docx 的正文内容。会先写入新正文，确认成功后再删旧内容。只支持 docx，不支持 wiki。",
+    promptSnippet: "feishu_doc_replace: 整篇替换飞书 docx 正文，会先写新内容再删旧内容。",
     promptGuidelines: SHARED_DOC_GUIDELINES,
     parameters: Type.Object({
       ...DOCUMENT_REF_FIELDS,
@@ -192,6 +192,7 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
     promptGuidelines: [
       ...SHARED_DOC_GUIDELINES,
       "删除整篇文档前，必须先拿到用户明确确认，再传 confirm=true 调这个工具。",
+      "只有当用户在对话里明确表达“确认删除整篇文档”这类意思时，才允许真的删除。",
     ],
     parameters: Type.Object({
       ...DOCUMENT_REF_FIELDS,
@@ -203,9 +204,14 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
       ),
     }),
     prepareArguments: normalizeArgs as any,
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (params.confirm !== true) {
         throw new Error("删除整篇文档前必须先拿到用户明确确认，并传 confirm=true");
+      }
+      if (!hasExplicitDocumentDeleteConfirmation(ctx)) {
+        throw new Error(
+          "删除整篇文档前，用户必须在对话里明确确认，例如直接回复“确认删除整篇文档”，不能只靠模型自己传 confirm=true",
+        );
       }
 
       const result = await service.deleteDocument({
@@ -249,4 +255,60 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
     pi.registerTool(deleteDocumentTool);
     pi.registerTool(createFolderTool);
   };
+}
+
+function hasExplicitDocumentDeleteConfirmation(ctx: {
+  sessionManager?: {
+    getBranch?: () => Array<{
+      type?: string;
+      message?: {
+        role?: string;
+        content?: unknown;
+      };
+    }>;
+  };
+} | undefined): boolean {
+  const entries = ctx?.sessionManager?.getBranch?.() ?? [];
+
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index];
+    if (entry?.type !== "message" || entry.message?.role !== "user") {
+      continue;
+    }
+
+    const text = extractText(entry.message.content).replace(/\s+/g, "");
+    if (!text) {
+      return false;
+    }
+
+    return isExplicitDeleteConfirmation(text);
+  }
+
+  return false;
+}
+
+function isExplicitDeleteConfirmation(text: string): boolean {
+  const confirmPattern = /(确认|确定|同意|可以|confirm|yes)/i;
+  const deletePattern = /(删除|删掉|移除|delete|remove)/i;
+  const documentPattern = /(整篇|全文|整个|整份|文档|document|docx)/i;
+  return confirmPattern.test(text) && deletePattern.test(text) && documentPattern.test(text);
+}
+
+function extractText(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content.map((item) => extractText(item)).filter(Boolean).join("\n");
+  }
+
+  if (!content || typeof content !== "object") {
+    return "";
+  }
+
+  return Object.values(content as Record<string, unknown>)
+    .map((value) => extractText(value))
+    .filter(Boolean)
+    .join("\n");
 }

@@ -50,6 +50,26 @@ function collectTools(serviceOverrides?: Record<string, unknown>) {
   return { service, tools };
 }
 
+function createToolContext(lastUserText?: string) {
+  const branch = lastUserText
+    ? [
+        {
+          type: "message",
+          message: {
+            role: "user",
+            content: lastUserText,
+          },
+        },
+      ]
+    : [];
+
+  return {
+    sessionManager: {
+      getBranch: () => branch,
+    },
+  };
+}
+
 describe("feishu docs extension", () => {
   it("会注册完整的飞书 docx 工具集", () => {
     const { tools } = collectTools();
@@ -102,5 +122,45 @@ describe("feishu docs extension", () => {
       ),
     ).rejects.toThrow();
     expect(service.deleteDocument).not.toHaveBeenCalled();
+  });
+
+  it("删整篇文档时，就算 confirm=true，没有真实用户确认也会拦住", async () => {
+    const { tools, service } = collectTools();
+    const deleteTool = tools.find((tool) => tool.name === "feishu_doc_delete_document");
+
+    await expect(
+      deleteTool.execute(
+        "call-1",
+        {
+          document_id: "doxcn_1",
+          confirm: true,
+        },
+        undefined,
+        undefined,
+        createToolContext("你先看看这篇文档"),
+      ),
+    ).rejects.toThrow("用户必须在对话里明确确认");
+    expect(service.deleteDocument).not.toHaveBeenCalled();
+  });
+
+  it("删整篇文档时，只有用户明确说确认删除整篇文档才会放行", async () => {
+    const { tools, service } = collectTools();
+    const deleteTool = tools.find((tool) => tool.name === "feishu_doc_delete_document");
+
+    await deleteTool.execute(
+      "call-1",
+      {
+        document_id: "doxcn_1",
+        confirm: true,
+      },
+      undefined,
+      undefined,
+      createToolContext("确认删除整篇文档"),
+    );
+
+    expect(service.deleteDocument).toHaveBeenCalledWith({
+      document_id: "doxcn_1",
+      document_url: undefined,
+    });
   });
 });

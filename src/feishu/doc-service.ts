@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { basename, extname } from "node:path";
+import { marked } from "marked";
 import { logger } from "../app/logger.js";
 
 export type FeishuDocFormat = "markdown" | "html";
@@ -19,6 +21,51 @@ export interface FeishuDocBlock {
 export interface FeishuDocsClient {
   docx: {
     v1: {
+      documentBlock: {
+        get(payload?: {
+          params?: {
+            document_revision_id?: number;
+          };
+          path: {
+            document_id: string;
+            block_id: string;
+          };
+        }): Promise<{
+          data?: {
+            block?: FeishuDocBlock;
+          };
+        }>;
+        batchUpdate(payload?: {
+          data: {
+            requests: Array<{
+              block_id?: string;
+              replace_image?: {
+                token: string;
+                width?: number;
+                height?: number;
+                align?: number;
+                caption?: {
+                  content?: string;
+                };
+                scale?: number;
+              };
+            }>;
+          };
+          params?: {
+            document_revision_id?: number;
+            client_token?: string;
+          };
+          path?: {
+            document_id?: string;
+          };
+        }): Promise<{
+          data?: {
+            blocks?: FeishuDocBlock[];
+            document_revision_id?: number;
+            client_token?: string;
+          };
+        }>;
+      };
       document: {
         create(payload?: {
           data?: {
@@ -128,6 +175,20 @@ export interface FeishuDocsClient {
   };
   drive: {
     v1: {
+      media: {
+        uploadAll(payload?: {
+          data: {
+            file_name: string;
+            parent_type: "docx_image";
+            parent_node: string;
+            size: number;
+            extra?: string;
+            file: Buffer;
+          };
+        }): Promise<{
+          file_token?: string;
+        } | null>;
+      };
       file: {
         delete(payload?: {
           params: {
@@ -229,6 +290,32 @@ export interface FeishuDocsService {
 
 const DOCX_URL_PATTERN = /\/docx\/([A-Za-z0-9]+)(?:[/?#]|$)/i;
 const WIKI_URL_PATTERN = /\/wiki\//i;
+const MAX_BLOCKS_PER_BATCH = 1000;
+const MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024;
+const IMAGE_REPLACE_BATCH_SIZE = 100;
+
+interface PreparedImageAsset {
+  alt?: string;
+  source: string;
+  file_name: string;
+  size: number;
+  file: Buffer;
+}
+
+interface BlockTreeNode {
+  block: FeishuDocBlock;
+  childIds: string[];
+}
+
+interface BlockInsertContinuation {
+  tempBlockId: string;
+  remainingChildIds: string[];
+}
+
+interface BlockInsertResult {
+  revision_id?: number;
+  inserted_block_ids: string[];
+}
 
 export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsService {
   function resolveDocumentId(input: FeishuDocRefInput | string): string {
@@ -270,6 +357,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
         content: input.content ?? "",
         format: normalizeFormat(input.format),
         documentRevisionId: revisionId,
+        initialRootChildCount: 0,
       });
       revisionId = insertResult.revision_id ?? revisionId;
       insertedBlockIds = insertResult.inserted_block_ids;
@@ -309,12 +397,16 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
 
   async function appendContent(input: FeishuDocWriteInput): Promise<FeishuDocWriteResult> {
     const documentId = resolveDocumentId(input);
-    const meta = await getDocumentMetaById(documentId);
+    const [meta, children] = await Promise.all([
+      getDocumentMetaById(documentId),
+      listRootChildrenById(documentId),
+    ]);
     const result = await insertContentBlocks({
       documentId,
       content: input.content,
       format: normalizeFormat(input.format),
       documentRevisionId: meta.revision_id,
+      initialRootChildCount: children.length,
     });
 
     return {
@@ -330,7 +422,15 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
     const meta = await getDocumentMetaById(documentId);
     const children = await listRootChildrenById(documentId);
 
-    let revisionId = meta.revision_id;
+    const insertResult = await insertContentBlocks({
+      documentId,
+      content: input.content,
+      format: normalizeFormat(input.format),
+      documentRevisionId: meta.revision_id,
+      initialRootChildCount: children.length,
+    });
+
+    let revisionId = insertResult.revision_id ?? meta.revision_id;
     if (children.length > 0) {
       const deleteResponse = await client.docx.v1.documentBlockChildren.batchDelete({
         path: {
@@ -349,17 +449,10 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
       revisionId = deleteResponse.data?.document_revision_id ?? revisionId;
     }
 
-    const insertResult = await insertContentBlocks({
-      documentId,
-      content: input.content,
-      format: normalizeFormat(input.format),
-      documentRevisionId: revisionId,
-    });
-
     return {
       document_id: documentId,
       title: meta.title,
-      revision_id: insertResult.revision_id ?? revisionId,
+      revision_id: revisionId,
       deleted_block_count: children.length,
       inserted_block_ids: insertResult.inserted_block_ids,
     };
@@ -488,6 +581,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
     content: string;
     format: FeishuDocFormat;
     documentRevisionId?: number;
+    initialRootChildCount: number;
   }): Promise<FeishuDocWriteResult> {
     if (!hasContent(args.content)) {
       return {
@@ -497,6 +591,7 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
       };
     }
 
+    const imageAssets = await prepareImageAssets(args.content, args.format);
     const converted = await client.docx.v1.document.convert({
       data: {
         content_type: args.format,
@@ -514,7 +609,271 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
       };
     }
 
-    const response = await client.docx.v1.documentBlockDescendant.create({
+    let revisionId = args.documentRevisionId;
+    let insertedBlockIds: string[] = [];
+
+    try {
+      const insertResult = await createDescendantBlocksInBatches({
+        documentId: args.documentId,
+        parentBlockId: args.documentId,
+        childIds: firstLevelBlockIds,
+        descendants,
+        documentRevisionId: revisionId,
+        collectInsertedRootIds: true,
+      });
+
+      revisionId = insertResult.revision_id ?? revisionId;
+      insertedBlockIds = insertResult.inserted_block_ids;
+
+      if (imageAssets.length > 0) {
+        const imageBlockIds = await collectInsertedImageBlockIds(args.documentId, insertedBlockIds);
+        if (imageBlockIds.length !== imageAssets.length) {
+          throw new Error(
+            `图片块数量和原始内容里的图片数量不一致，预期 ${imageAssets.length} 张，实际 ${imageBlockIds.length} 张`,
+          );
+        }
+
+        revisionId = await uploadAndReplaceImages({
+          documentId: args.documentId,
+          documentRevisionId: revisionId,
+          imageBlockIds,
+          images: imageAssets,
+        });
+      }
+
+      return {
+        document_id: args.documentId,
+        revision_id: revisionId,
+        inserted_block_ids: insertedBlockIds,
+      };
+    } catch (error) {
+      if (insertedBlockIds.length > 0) {
+        try {
+          revisionId = await rollbackInsertedRootBlocks({
+            documentId: args.documentId,
+            startIndex: args.initialRootChildCount,
+            insertedRootCount: insertedBlockIds.length,
+            documentRevisionId: revisionId,
+          });
+        } catch (rollbackError) {
+          logger.warn("飞书 docx 内容写入失败，且回滚追加块失败", {
+            documentId: args.documentId,
+            rollbackError,
+          });
+        }
+      }
+      throw error;
+    }
+  }
+
+  async function createDescendantBlocksInBatches(args: {
+    documentId: string;
+    parentBlockId: string;
+    childIds: string[];
+    descendants: FeishuDocBlock[];
+    documentRevisionId?: number;
+    collectInsertedRootIds: boolean;
+  }): Promise<BlockInsertResult> {
+    const tree = buildBlockTree(args.descendants);
+    const subtreeSizes = buildSubtreeSizeMap(args.childIds, tree);
+    let revisionId = args.documentRevisionId;
+    const insertedBlockIds: string[] = [];
+    let cursor = 0;
+
+    while (cursor < args.childIds.length) {
+      let used = 0;
+      const batchChildIds: string[] = [];
+      const batchDescendants: FeishuDocBlock[] = [];
+      const continuations: BlockInsertContinuation[] = [];
+
+      while (cursor < args.childIds.length && used < MAX_BLOCKS_PER_BATCH) {
+        const childId = args.childIds[cursor];
+        const fullSize = subtreeSizes.get(childId);
+        if (!fullSize) {
+          throw new Error(`飞书 convert 返回了缺失的块树节点: ${childId}`);
+        }
+
+        if (fullSize <= MAX_BLOCKS_PER_BATCH - used) {
+          batchChildIds.push(childId);
+          batchDescendants.push(...collectFullSubtree(childId, tree));
+          used += fullSize;
+          cursor += 1;
+          continue;
+        }
+
+        if (used > 0) {
+          break;
+        }
+
+        const partial = collectPartialSubtree(childId, tree);
+        batchChildIds.push(childId);
+        batchDescendants.push(...partial.blocks);
+        used = partial.blocks.length;
+        if (partial.remainingChildIds.length > 0) {
+          continuations.push({
+            tempBlockId: childId,
+            remainingChildIds: partial.remainingChildIds,
+          });
+        }
+        cursor += 1;
+      }
+
+      const response = await client.docx.v1.documentBlockDescendant.create({
+        path: {
+          document_id: args.documentId,
+          block_id: args.parentBlockId,
+        },
+        params: {
+          document_revision_id: revisionId,
+          client_token: randomUUID(),
+        },
+        data: {
+          children_id: batchChildIds,
+          descendants: batchDescendants,
+          index: -1,
+        },
+      });
+
+      revisionId = response.data?.document_revision_id ?? revisionId;
+
+      const insertedChildren = (response.data?.children ?? [])
+        .map((block) => block.block_id)
+        .filter((blockId): blockId is string => Boolean(blockId));
+
+      if (insertedChildren.length !== batchChildIds.length) {
+        throw new Error("飞书创建嵌套块后返回的子块数量不完整");
+      }
+
+      if (args.collectInsertedRootIds) {
+        insertedBlockIds.push(...insertedChildren);
+      }
+
+      const insertedChildMap = new Map<string, string>();
+      for (let index = 0; index < batchChildIds.length; index++) {
+        insertedChildMap.set(batchChildIds[index], insertedChildren[index]);
+      }
+
+      for (const continuation of continuations) {
+        const realBlockId = insertedChildMap.get(continuation.tempBlockId);
+        if (!realBlockId) {
+          throw new Error(`飞书没有返回块 ${continuation.tempBlockId} 的真实 block_id`);
+        }
+
+        const continuationResult = await createDescendantBlocksInBatches({
+          documentId: args.documentId,
+          parentBlockId: realBlockId,
+          childIds: continuation.remainingChildIds,
+          descendants: args.descendants,
+          documentRevisionId: revisionId,
+          collectInsertedRootIds: false,
+        });
+        revisionId = continuationResult.revision_id ?? revisionId;
+      }
+    }
+
+    return {
+      revision_id: revisionId,
+      inserted_block_ids: insertedBlockIds,
+    };
+  }
+
+  async function collectInsertedImageBlockIds(
+    documentId: string,
+    insertedRootBlockIds: string[],
+  ): Promise<string[]> {
+    const imageBlockIds: string[] = [];
+
+    for (const rootBlockId of insertedRootBlockIds) {
+      const [rootBlock, descendants] = await Promise.all([
+        getBlockById(client, documentId, rootBlockId),
+        listDescendantBlocksById(client, documentId, rootBlockId),
+      ]);
+      const blocksById = new Map<string, FeishuDocBlock>();
+      blocksById.set(rootBlockId, rootBlock);
+
+      for (const block of descendants) {
+        if (typeof block.block_id === "string" && block.block_id) {
+          blocksById.set(block.block_id, block);
+        }
+      }
+
+      traverseBlockTree(rootBlockId, blocksById, (blockId, block) => {
+        if (isImageBlock(block)) {
+          imageBlockIds.push(blockId);
+        }
+      });
+    }
+
+    return imageBlockIds;
+  }
+
+  async function uploadAndReplaceImages(args: {
+    documentId: string;
+    documentRevisionId?: number;
+    imageBlockIds: string[];
+    images: PreparedImageAsset[];
+  }): Promise<number | undefined> {
+    let revisionId = args.documentRevisionId;
+    const requests: Array<{
+      block_id: string;
+      replace_image: {
+        token: string;
+      };
+    }> = [];
+
+    for (let index = 0; index < args.imageBlockIds.length; index++) {
+      const imageBlockId = args.imageBlockIds[index];
+      const image = args.images[index];
+      const upload = await client.drive.v1.media.uploadAll({
+        data: {
+          file_name: image.file_name,
+          parent_type: "docx_image",
+          parent_node: imageBlockId,
+          size: image.size,
+          extra: JSON.stringify({ drive_route_token: args.documentId }),
+          file: image.file,
+        },
+      });
+
+      const fileToken = upload?.file_token;
+      if (!fileToken) {
+        throw new Error(`飞书图片上传成功后没返回 file_token: ${image.source}`);
+      }
+
+      requests.push({
+        block_id: imageBlockId,
+        replace_image: {
+          token: fileToken,
+        },
+      });
+    }
+
+    for (let index = 0; index < requests.length; index += IMAGE_REPLACE_BATCH_SIZE) {
+      const response = await client.docx.v1.documentBlock.batchUpdate({
+        path: {
+          document_id: args.documentId,
+        },
+        params: {
+          document_revision_id: revisionId,
+          client_token: randomUUID(),
+        },
+        data: {
+          requests: requests.slice(index, index + IMAGE_REPLACE_BATCH_SIZE),
+        },
+      });
+      revisionId = response.data?.document_revision_id ?? revisionId;
+    }
+
+    return revisionId;
+  }
+
+  async function rollbackInsertedRootBlocks(args: {
+    documentId: string;
+    startIndex: number;
+    insertedRootCount: number;
+    documentRevisionId?: number;
+  }): Promise<number | undefined> {
+    const response = await client.docx.v1.documentBlockChildren.batchDelete({
       path: {
         document_id: args.documentId,
         block_id: args.documentId,
@@ -524,19 +883,12 @@ export function createFeishuDocsService(client: FeishuDocsClient): FeishuDocsSer
         client_token: randomUUID(),
       },
       data: {
-        children_id: firstLevelBlockIds,
-        descendants,
-        index: -1,
+        start_index: args.startIndex,
+        end_index: args.startIndex + args.insertedRootCount,
       },
     });
 
-    return {
-      document_id: args.documentId,
-      revision_id: response.data?.document_revision_id ?? args.documentRevisionId,
-      inserted_block_ids: (response.data?.children ?? [])
-        .map((block) => block.block_id)
-        .filter((blockId): blockId is string => Boolean(blockId)),
-    };
+    return response.data?.document_revision_id ?? args.documentRevisionId;
   }
 
   return {
@@ -624,3 +976,408 @@ function sanitizeValue<T>(value: T): T {
   }
   return output as T;
 }
+
+function buildBlockTree(descendants: FeishuDocBlock[]): Map<string, BlockTreeNode> {
+  const tree = new Map<string, BlockTreeNode>();
+
+  for (const block of descendants) {
+    if (typeof block.block_id !== "string" || !block.block_id) {
+      throw new Error("飞书 convert 返回了没有 block_id 的块");
+    }
+
+    tree.set(block.block_id, {
+      block,
+      childIds: Array.isArray(block.children)
+        ? block.children.filter((childId): childId is string => typeof childId === "string" && childId.length > 0)
+        : [],
+    });
+  }
+
+  return tree;
+}
+
+function buildSubtreeSizeMap(rootIds: string[], tree: Map<string, BlockTreeNode>): Map<string, number> {
+  const cache = new Map<string, number>();
+  for (const rootId of rootIds) {
+    countSubtreeSize(rootId, tree, cache);
+  }
+  return cache;
+}
+
+function countSubtreeSize(
+  blockId: string,
+  tree: Map<string, BlockTreeNode>,
+  cache: Map<string, number>,
+): number {
+  const cached = cache.get(blockId);
+  if (cached) {
+    return cached;
+  }
+
+  const node = tree.get(blockId);
+  if (!node) {
+    throw new Error(`飞书 convert 返回的块树不完整，缺少 block_id=${blockId}`);
+  }
+
+  const total = 1 + node.childIds.reduce((sum, childId) => sum + countSubtreeSize(childId, tree, cache), 0);
+  cache.set(blockId, total);
+  return total;
+}
+
+function collectFullSubtree(blockId: string, tree: Map<string, BlockTreeNode>): FeishuDocBlock[] {
+  const node = tree.get(blockId);
+  if (!node) {
+    throw new Error(`飞书 convert 返回的块树不完整，缺少 block_id=${blockId}`);
+  }
+
+  const current = cloneBlock(node.block);
+  current.children = [...node.childIds];
+
+  const result = [current];
+  for (const childId of node.childIds) {
+    result.push(...collectFullSubtree(childId, tree));
+  }
+  return result;
+}
+
+function collectPartialSubtree(
+  blockId: string,
+  tree: Map<string, BlockTreeNode>,
+): { blocks: FeishuDocBlock[]; remainingChildIds: string[] } {
+  const node = tree.get(blockId);
+  if (!node) {
+    throw new Error(`飞书 convert 返回的块树不完整，缺少 block_id=${blockId}`);
+  }
+
+  let used = 1;
+  const includedChildIds: string[] = [];
+  const blocks: FeishuDocBlock[] = [];
+  const subtreeSizes = buildSubtreeSizeMap(node.childIds, tree);
+
+  for (const childId of node.childIds) {
+    const childSize = subtreeSizes.get(childId);
+    if (!childSize) {
+      throw new Error(`飞书 convert 返回的块树不完整，缺少 block_id=${childId}`);
+    }
+    if (used + childSize > MAX_BLOCKS_PER_BATCH) {
+      break;
+    }
+
+    includedChildIds.push(childId);
+    blocks.push(...collectFullSubtree(childId, tree));
+    used += childSize;
+  }
+
+  const root = cloneBlock(node.block);
+  root.children = includedChildIds;
+
+  return {
+    blocks: [root, ...blocks],
+    remainingChildIds: node.childIds.slice(includedChildIds.length),
+  };
+}
+
+function cloneBlock(block: FeishuDocBlock): FeishuDocBlock {
+  return sanitizeValue(block);
+}
+
+function traverseBlockTree(
+  rootBlockId: string,
+  blocksById: Map<string, FeishuDocBlock>,
+  visit: (blockId: string, block: FeishuDocBlock) => void,
+) {
+  const visited = new Set<string>();
+
+  const walk = (blockId: string) => {
+    if (visited.has(blockId)) {
+      return;
+    }
+    visited.add(blockId);
+
+    const block = blocksById.get(blockId);
+    if (!block) {
+      return;
+    }
+
+    visit(blockId, block);
+    const childIds = Array.isArray(block.children)
+      ? block.children.filter((childId): childId is string => typeof childId === "string" && childId.length > 0)
+      : [];
+    for (const childId of childIds) {
+      walk(childId);
+    }
+  };
+
+  walk(rootBlockId);
+}
+
+function isImageBlock(block: FeishuDocBlock): boolean {
+  return Object.prototype.hasOwnProperty.call(block, "image");
+}
+
+async function prepareImageAssets(
+  content: string,
+  format: FeishuDocFormat,
+): Promise<PreparedImageAsset[]> {
+  const refs = extractImageRefs(content, format);
+  const assets: PreparedImageAsset[] = [];
+
+  for (let index = 0; index < refs.length; index++) {
+    assets.push(await loadImageAsset(refs[index], index));
+  }
+
+  return assets;
+}
+
+function extractImageRefs(content: string, format: FeishuDocFormat): Array<{ alt?: string; source: string }> {
+  if (format === "html") {
+    return parseHtmlImageRefs(content);
+  }
+
+  const refs: Array<{ alt?: string; source: string }> = [];
+  const seen = new WeakSet<object>();
+  collectMarkdownImageRefs(marked.lexer(content, { gfm: true }), refs, seen);
+  return refs;
+}
+
+function collectMarkdownImageRefs(
+  value: unknown,
+  refs: Array<{ alt?: string; source: string }>,
+  seen: WeakSet<object>,
+) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectMarkdownImageRefs(item, refs, seen);
+    }
+    return;
+  }
+
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  if (seen.has(value as object)) {
+    return;
+  }
+  seen.add(value as object);
+
+  const record = value as Record<string, unknown>;
+  if (record.type === "image" && typeof record.href === "string" && record.href.trim()) {
+    refs.push({
+      alt: typeof record.text === "string" ? record.text : undefined,
+      source: record.href.trim(),
+    });
+    return;
+  }
+
+  if (record.type === "html") {
+    const raw = typeof record.raw === "string"
+      ? record.raw
+      : typeof record.text === "string"
+        ? record.text
+        : "";
+    refs.push(...parseHtmlImageRefs(raw));
+  }
+
+  for (const child of Object.values(record)) {
+    collectMarkdownImageRefs(child, refs, seen);
+  }
+}
+
+function parseHtmlImageRefs(fragment: string): Array<{ alt?: string; source: string }> {
+  const refs: Array<{ alt?: string; source: string }> = [];
+  const imgTagPattern = /<img\b[^>]*>/gi;
+
+  for (const match of fragment.matchAll(imgTagPattern)) {
+    const tag = match[0];
+    const src = extractHtmlAttribute(tag, "src");
+    if (!src) {
+      continue;
+    }
+
+    refs.push({
+      alt: extractHtmlAttribute(tag, "alt") ?? undefined,
+      source: src,
+    });
+  }
+
+  return refs;
+}
+
+function extractHtmlAttribute(tag: string, attribute: string): string | undefined {
+  const pattern = new RegExp(`${attribute}\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>\\\`]+))`, "i");
+  const match = tag.match(pattern);
+  return match?.[1] ?? match?.[2] ?? match?.[3];
+}
+
+async function loadImageAsset(
+  ref: { alt?: string; source: string },
+  index: number,
+): Promise<PreparedImageAsset> {
+  if (ref.source.startsWith("data:")) {
+    return loadImageAssetFromDataUri(ref, index);
+  }
+
+  let url: URL;
+  try {
+    url = new URL(ref.source);
+  } catch {
+    throw new Error(`图片地址不是有效的 URL: ${ref.source}`);
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`只支持 http(s) 或 data URL 图片，当前是: ${ref.source}`);
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`下载图片失败 (${response.status} ${response.statusText}): ${ref.source}`);
+  }
+
+  const contentType = normalizeMimeType(response.headers.get("content-type"));
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`图片地址返回的不是图片内容: ${ref.source}`);
+  }
+
+  const file = Buffer.from(await response.arrayBuffer());
+  assertImageUploadSize(file.length, ref.source);
+
+  return {
+    alt: ref.alt,
+    source: ref.source,
+    file_name: buildImageFileName({
+      source: ref.source,
+      alt: ref.alt,
+      mimeType: contentType,
+      index,
+    }),
+    size: file.length,
+    file,
+  };
+}
+
+function loadImageAssetFromDataUri(
+  ref: { alt?: string; source: string },
+  index: number,
+): PreparedImageAsset {
+  const match = ref.source.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?(;base64)?,(.*)$/i);
+  if (!match) {
+    throw new Error("data URL 图片格式不合法");
+  }
+
+  const mimeType = normalizeMimeType(match[1]);
+  if (!mimeType.startsWith("image/")) {
+    throw new Error("data URL 里不是图片内容");
+  }
+
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] ?? "";
+  const file = isBase64
+    ? Buffer.from(payload, "base64")
+    : Buffer.from(decodeURIComponent(payload), "utf-8");
+
+  assertImageUploadSize(file.length, ref.source);
+
+  return {
+    alt: ref.alt,
+    source: ref.source,
+    file_name: buildImageFileName({
+      source: ref.source,
+      alt: ref.alt,
+      mimeType,
+      index,
+    }),
+    size: file.length,
+    file,
+  };
+}
+
+function assertImageUploadSize(size: number, source: string) {
+  if (size > MAX_IMAGE_UPLOAD_BYTES) {
+    throw new Error(`图片超过 20MB，当前不能写入飞书文档: ${source}`);
+  }
+}
+
+function buildImageFileName(args: {
+  source: string;
+  alt?: string;
+  mimeType: string;
+  index: number;
+}): string {
+  const sourceName = args.source.startsWith("data:")
+    ? ""
+    : basename(new URL(args.source).pathname || "");
+  const base = sanitizeFileName(stripExtension(sourceName || args.alt || `image-${args.index + 1}`)) || `image-${args.index + 1}`;
+  const extension = extname(sourceName) || MIME_EXTENSIONS[args.mimeType] || ".png";
+  return `${base}${extension}`;
+}
+
+function stripExtension(fileName: string): string {
+  const extension = extname(fileName);
+  return extension ? fileName.slice(0, -extension.length) : fileName;
+}
+
+function sanitizeFileName(fileName: string): string {
+  return fileName.trim().replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function normalizeMimeType(value: string | null | undefined): string {
+  if (!value) {
+    return "image/png";
+  }
+  return value.split(";")[0]?.trim().toLowerCase() || "image/png";
+}
+
+async function getBlockById(
+  client: FeishuDocsClient,
+  documentId: string,
+  blockId: string,
+): Promise<FeishuDocBlock> {
+  const response = await client.docx.v1.documentBlock.get({
+    path: {
+      document_id: documentId,
+      block_id: blockId,
+    },
+  });
+
+  const block = response.data?.block;
+  if (!block) {
+    throw new Error(`飞书文档块不存在，block_id=${blockId}`);
+  }
+  return block;
+}
+
+async function listDescendantBlocksById(
+  client: FeishuDocsClient,
+  documentId: string,
+  blockId: string,
+): Promise<FeishuDocBlock[]> {
+  const iterator = await client.docx.v1.documentBlockChildren.getWithIterator({
+    path: {
+      document_id: documentId,
+      block_id: blockId,
+    },
+    params: {
+      with_descendants: true,
+      page_size: 200,
+    },
+  });
+
+  const items: FeishuDocBlock[] = [];
+  for await (const page of iterator) {
+    if (!page) {
+      break;
+    }
+    items.push(...(page.items ?? []));
+  }
+
+  return items;
+}
+
+const MIME_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/bmp": ".bmp",
+};
