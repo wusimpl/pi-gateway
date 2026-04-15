@@ -2,6 +2,7 @@ import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import { logger } from "../app/logger.js";
 import { BridgeError, withTimeout } from "../app/errors.js";
+import { formatModelLabel } from "./models.js";
 import {
   sendRenderedMessage,
   sendDocPreviewCard,
@@ -274,8 +275,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         lastError && !abortedByUser && hasVisibleAssistantText(fullText)
           ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
           : fullText;
-      const contextUsageFooter = formatContextUsageFooter(session.getContextUsage());
-      const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), contextUsageFooter);
+      const footer = formatPromptFooter(session);
+      const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), footer);
       const finalOutputText = abortedByUser
         ? (streamingMessage ? STOP_MESSAGE : "")
         : finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
@@ -471,6 +472,17 @@ function appendMessageFooter(text: string, footer?: string): string {
   return text ? `${text}\n\n${footer}` : footer;
 }
 
+function formatPromptFooter(
+  session: Pick<AgentSession, "getContextUsage" | "model">,
+): string | undefined {
+  const lines = [
+    formatContextUsageFooter(session.getContextUsage()),
+    formatCurrentModelFooter(session.model),
+  ].filter((line): line is string => Boolean(line));
+
+  return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
 function formatContextUsageFooter(
   contextUsage: ReturnType<AgentSession["getContextUsage"]>
 ): string | undefined {
@@ -483,6 +495,22 @@ function formatContextUsageFooter(
   }
 
   return `${contextUsage.percent.toFixed(1)}%/${formatCompactTokenCount(contextUsage.contextWindow)}`;
+}
+
+function formatCurrentModelFooter(
+  model: AgentSession["model"],
+): string | undefined {
+  if (!model) {
+    return undefined;
+  }
+
+  const provider = model.provider?.trim();
+  const id = model.id?.trim();
+  if (!provider || !id) {
+    return undefined;
+  }
+
+  return `模型: ${formatModelLabel(provider, id)}`;
 }
 
 function formatCompactTokenCount(count: number): string {

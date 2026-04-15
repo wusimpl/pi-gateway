@@ -24,6 +24,7 @@ function createSession(
   events: StreamEvent[],
   promptImpl?: () => Promise<void>,
   contextUsage?: { percent: number | null; contextWindow: number },
+  model?: { provider: string; id: string },
 ) {
   let subscriber: ((event: StreamEvent) => void) | undefined;
 
@@ -43,6 +44,7 @@ function createSession(
         subscriber = undefined;
       };
     },
+    model,
     getContextUsage: vi.fn().mockReturnValue(contextUsage),
     abort: vi.fn().mockResolvedValue(undefined),
   };
@@ -68,7 +70,7 @@ describe("promptSession", () => {
       { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello" } },
       { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " world" } },
       { type: "message_end" },
-    ], undefined, { percent: 4.1, contextWindow: 200000 });
+    ], undefined, { percent: 4.1, contextWindow: 200000 }, { provider: "rightcodes", id: "gpt-5.4-high" });
 
     const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE", true);
 
@@ -77,7 +79,11 @@ describe("promptSession", () => {
     expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world");
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
     expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
-    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "hello world\n\n4.1%/200k", 2000);
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "hello world\n\n4.1%/200k\n模型: rightcodes/gpt-5.4-high",
+      2000,
+    );
   });
 
   it("文档工具创建成功后，应在正文后补发飞书文档卡片", async () => {
@@ -148,7 +154,7 @@ describe("promptSession", () => {
       { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello" } },
       { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " world" } },
       { type: "message_end" },
-    ], undefined, { percent: 4.1, contextWindow: 200000 });
+    ], undefined, { percent: 4.1, contextWindow: 200000 }, { provider: "rightcodes", id: "gpt-5.4-high" });
 
     const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE", true);
 
@@ -156,7 +162,10 @@ describe("promptSession", () => {
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
     expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world");
     expect(mockStreamingMessage.updateBody).not.toHaveBeenCalledWith("hello world");
-    expect(mockStreamingMessage.finish).toHaveBeenCalledWith("hello world\n\n4.1%/200k", 2000);
+    expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
+      "hello world\n\n4.1%/200k\n模型: rightcodes/gpt-5.4-high",
+      2000,
+    );
   });
 
   it("reaction 添加失败时，仍应继续处理并发送回复", async () => {
@@ -197,6 +206,22 @@ describe("promptSession", () => {
     await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
 
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "done", 2000);
+  });
+
+  it("拿不到上下文占用率时仍应追加当前模型", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "done" } },
+      { type: "message_end" },
+    ], undefined, { percent: null, contextWindow: 200000 }, { provider: "zen2api", id: "minimax-m2.5-free" });
+
+    await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "done\n\n模型: zen2api/minimax-m2.5-free",
+      2000,
+    );
   });
 
   it("没有正文时不应单独发送尾巴", async () => {
