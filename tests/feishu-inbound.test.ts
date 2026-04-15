@@ -83,6 +83,58 @@ describe("normalizeFeishuInboundMessage", () => {
       durationMs: 3200,
     });
   });
+
+  it("应把富文本消息压平成可继续对话的文本", () => {
+    const result = normalizeFeishuInboundMessage({
+      sender: {
+        senderId: { openId: "ou_1", userId: "u_1", unionId: "on_1" },
+        senderType: "user",
+        tenantKey: "tk",
+      },
+      message: {
+        messageId: "om_3",
+        rootId: "om_root_3",
+        parentId: "om_parent_3",
+        threadId: "omt_3",
+        chatId: "oc_1",
+        chatType: "p2p",
+        messageType: "post",
+        content: JSON.stringify({
+          zh_cn: {
+            title: "你为什么会说这些话：",
+            content: [
+              [{ tag: "text", text: "🔧 调试代码" }],
+              [{ tag: "text", text: "📁 查看或修改文件" }],
+              [{ tag: "text", text: "🎨 设计 UI 界面" }],
+            ],
+          },
+        }),
+        createTime: "789",
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_3",
+      rootMessageId: "om_root_3",
+      parentMessageId: "om_parent_3",
+      threadId: "omt_3",
+      messageType: "post",
+      createTime: "789",
+      rawContent: JSON.stringify({
+        zh_cn: {
+          title: "你为什么会说这些话：",
+          content: [
+            [{ tag: "text", text: "🔧 调试代码" }],
+            [{ tag: "text", text: "📁 查看或修改文件" }],
+            [{ tag: "text", text: "🎨 设计 UI 界面" }],
+          ],
+        },
+      }),
+      text: "你为什么会说这些话：\n🔧 调试代码\n📁 查看或修改文件\n🎨 设计 UI 界面",
+    });
+  });
 });
 
 describe("prepareFeishuPromptInput", () => {

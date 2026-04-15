@@ -109,6 +109,10 @@ describe("isSupportedP2PMessage", () => {
     expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "image" } })).toBe(true);
   });
 
+  it("私聊富文本消息应返回 true", () => {
+    expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "post" } })).toBe(true);
+  });
+
   it("私聊语音消息应返回 true", () => {
     expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "audio" } })).toBe(true);
   });

@@ -22,7 +22,7 @@ export type FeishuInboundMessage =
   | {
       kind: "text";
       } & FeishuInboundMessageBase & {
-      messageType: "text";
+      messageType: "text" | "post";
       text: string;
     }
   | {

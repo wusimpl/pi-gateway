@@ -28,6 +28,18 @@ export function normalizeFeishuInboundMessage(event: FeishuMessageEvent): Feishu
         text,
       };
     }
+    case "post": {
+      const text = flattenPostMessage(event.message.content).trim();
+      if (!text) {
+        return null;
+      }
+      return {
+        ...base,
+        kind: "text",
+        messageType: "post",
+        text,
+      };
+    }
     case "image": {
       const payload = parseContentObject(event.message.content);
       const imageKey = asString(payload.image_key ?? payload.imageKey);
@@ -66,6 +78,89 @@ function extractTextValue(content: string): string {
   return typeof text === "string" ? text : content;
 }
 
+function flattenPostMessage(rawContent: string): string {
+  const payload = unwrapLocalizedPostPayload(parseContentObject(rawContent));
+  const title = asString(payload.title);
+  const paragraphs = Array.isArray(payload.content) ? payload.content : [];
+  const lines = paragraphs
+    .map((paragraph) => flattenPostParagraph(paragraph))
+    .filter((line): line is string => Boolean(line));
+
+  return [title, ...lines].filter(Boolean).join("\n").trim();
+}
+
+function unwrapLocalizedPostPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  if (looksLikePostPayload(payload)) {
+    return payload;
+  }
+
+  const preferredLocales = ["zh_cn", "zh_hk", "zh_tw", "en_us", "ja_jp"];
+  for (const locale of preferredLocales) {
+    const localized = asRecord(payload[locale]);
+    if (localized && looksLikePostPayload(localized)) {
+      return localized;
+    }
+  }
+
+  for (const value of Object.values(payload)) {
+    const localized = asRecord(value);
+    if (localized && looksLikePostPayload(localized)) {
+      return localized;
+    }
+  }
+
+  return payload;
+}
+
+function looksLikePostPayload(payload: Record<string, unknown>): boolean {
+  return typeof payload.title === "string" || Array.isArray(payload.content);
+}
+
+function flattenPostParagraph(paragraph: unknown): string {
+  if (!Array.isArray(paragraph)) {
+    return "";
+  }
+
+  const parts = paragraph.map((node) => {
+    const record = asRecord(node);
+    const tag = asString(record?.tag);
+
+    switch (tag) {
+      case "text":
+        return asString(record?.text);
+      case "a": {
+        const text = asString(record?.text);
+        const href = asString(record?.href);
+        return text && href ? `${text} (${href})` : text || href;
+      }
+      case "at": {
+        const userId = asString(record?.user_id ?? record?.userId);
+        return userId ? `@${userId}` : "@提及";
+      }
+      case "img":
+        return "【图片】";
+      case "media":
+        return "【视频】";
+      case "emotion":
+        return asString(record?.emoji_type ?? record?.emojiType)
+          ? `:${asString(record?.emoji_type ?? record?.emojiType)}:`
+          : "【表情】";
+      case "hr":
+        return "---";
+      case "code_block": {
+        const code = asString(record?.text);
+        const language = asString(record?.language);
+        if (!code) return language ? `【代码块 ${language}】` : "【代码块】";
+        return language ? `【代码块 ${language}】\n${code}` : `【代码块】\n${code}`;
+      }
+      default:
+        return "";
+    }
+  });
+
+  return parts.join("").trim();
+}
+
 function parseContentObject(content: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(content);
@@ -77,6 +172,10 @@ function parseContentObject(content: string): Record<string, unknown> {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
 function asOptionalNumber(value: unknown): number | undefined {
