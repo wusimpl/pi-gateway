@@ -6,9 +6,14 @@ import { createMessageRouter } from "./app/router.js";
 import { createRuntimeStateStore, type RuntimeStateStore } from "./app/state.js";
 import { ensureDir } from "./storage/files.js";
 import { createFeishuConnection } from "./feishu/client.js";
+import {
+  createFeishuDocsService,
+  type FeishuDocsClient,
+} from "./feishu/doc-service.js";
 import { createFeishuMessageReader, type FeishuMessageClient } from "./feishu/inbound/message.js";
 import { createFeishuResourceDownloader, type FeishuResourceClient } from "./feishu/inbound/resource.js";
 import { createFeishuMessenger, type FeishuApiClient } from "./feishu/send.js";
+import { createFeishuDocsExtension } from "./pi/extensions/feishu-docs.js";
 import { findAvailableModel, listAvailableModels } from "./pi/models.js";
 import { createPiRuntime, type PiRuntime } from "./pi/runtime.js";
 import { createSessionService, type SessionService } from "./pi/sessions.js";
@@ -38,9 +43,24 @@ async function main() {
   const userStateStore = createUserStateStore(config.DATA_DIR);
   const workspaceService = createWorkspaceService(config.PI_WORKSPACE_ROOT);
 
+  let feishuConnection: ReturnType<typeof createFeishuConnection>;
+  try {
+    feishuConnection = createFeishuConnection(config);
+    logger.info("飞书客户端就绪");
+  } catch (err) {
+    logger.error("飞书客户端初始化失败，请检查凭证配置", { error: String(err) });
+    process.exit(1);
+  }
+
+  const feishuDocsService = createFeishuDocsService(
+    feishuConnection.client as unknown as FeishuDocsClient,
+  );
+
   let piRuntime: PiRuntime;
   try {
-    piRuntime = createPiRuntime();
+    piRuntime = createPiRuntime({
+      extensionFactories: [createFeishuDocsExtension(feishuDocsService)],
+    });
     logger.info("Pi 运行时就绪");
   } catch (err) {
     logger.error("Pi 运行时初始化失败，服务无法启动", { error: String(err) });
@@ -56,15 +76,6 @@ async function main() {
     logger.info(`Pi 自检通过: ${models.length} 个可用模型`);
   } catch (err) {
     logger.error("Pi 自检失败", { error: String(err) });
-    process.exit(1);
-  }
-
-  let feishuConnection: ReturnType<typeof createFeishuConnection>;
-  try {
-    feishuConnection = createFeishuConnection(config);
-    logger.info("飞书客户端就绪");
-  } catch (err) {
-    logger.error("飞书客户端初始化失败，请检查凭证配置", { error: String(err) });
     process.exit(1);
   }
 

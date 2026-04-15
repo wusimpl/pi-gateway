@@ -1,9 +1,11 @@
 import {
   AuthStorage,
+  DefaultResourceLoader,
   ModelRegistry,
   SessionManager,
   createAgentSession,
   type AgentSession,
+  type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
 import { logger } from "../app/logger.js";
 
@@ -18,17 +20,33 @@ export interface PiRuntime {
   openPiSession(sessionFile: string, cwd: string): Promise<AgentSession>;
 }
 
-export function createPiRuntime(): PiRuntime {
+export interface CreatePiRuntimeOptions {
+  extensionFactories?: ExtensionFactory[];
+}
+
+export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
+  const extensionFactories = options.extensionFactories ?? [];
+
+  async function createResourceLoader(cwd: string) {
+    const resourceLoader = new DefaultResourceLoader({
+      cwd,
+      extensionFactories,
+    });
+    await resourceLoader.reload();
+    return resourceLoader;
+  }
 
   async function createPiSession(cwd: string, sessionDir?: string): Promise<AgentSession> {
     const sessionManager = SessionManager.create(cwd, sessionDir);
+    const resourceLoader = await createResourceLoader(cwd);
     const { session } = await createAgentSession({
       cwd,
       sessionManager,
       authStorage,
       modelRegistry,
+      resourceLoader,
     });
 
     logger.info("Pi session 已创建", {
@@ -44,11 +62,13 @@ export function createPiRuntime(): PiRuntime {
   ): Promise<{ session: AgentSession; fallbackMessage?: string } | null> {
     try {
       const sessionManager = SessionManager.continueRecent(cwd, sessionDir);
+      const resourceLoader = await createResourceLoader(cwd);
       const { session, modelFallbackMessage } = await createAgentSession({
         cwd,
         sessionManager,
         authStorage,
         modelRegistry,
+        resourceLoader,
       });
       logger.info("Pi session 已恢复", {
         sessionId: session.sessionId,
@@ -66,11 +86,13 @@ export function createPiRuntime(): PiRuntime {
     cwd: string,
   ): Promise<AgentSession> {
     const sessionManager = SessionManager.open(sessionFile);
+    const resourceLoader = await createResourceLoader(cwd);
     const { session } = await createAgentSession({
       cwd,
       sessionManager,
       authStorage,
       modelRegistry,
+      resourceLoader,
     });
     logger.info("Pi session 已打开", {
       sessionId: session.sessionId,

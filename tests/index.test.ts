@@ -186,6 +186,11 @@ describe("index wiring", () => {
 
     expect(mocks.createFeishuMessageReader).toHaveBeenCalledWith(mocks.client);
     expect(mocks.createFeishuResourceDownloader).toHaveBeenCalledWith(mocks.client);
+    expect(mocks.createPiRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        extensionFactories: expect.any(Array),
+      }),
+    );
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.downloadResource).toBe(downloadResource);
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.readQuotedMessage).toBe(readQuotedMessage);
     expect(mocks.startMessageConnection).toHaveBeenCalledTimes(1);
