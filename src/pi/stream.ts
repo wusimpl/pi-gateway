@@ -480,7 +480,7 @@ function formatPromptFooter(
     formatCurrentModelFooter(session.model),
   ].filter((line): line is string => Boolean(line));
 
-  return lines.length > 0 ? lines.join("\n") : undefined;
+  return lines.length > 0 ? lines.join(" | ") : undefined;
 }
 
 function formatContextUsageFooter(

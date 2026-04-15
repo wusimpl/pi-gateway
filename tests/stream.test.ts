@@ -81,7 +81,7 @@ describe("promptSession", () => {
     expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
     expect(mockSendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "hello world\n\n4.1%/200k\n模型: rightcodes/gpt-5.4-high",
+      "hello world\n\n4.1%/200k | 模型: rightcodes/gpt-5.4-high",
       2000,
     );
   });
@@ -163,7 +163,7 @@ describe("promptSession", () => {
     expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world");
     expect(mockStreamingMessage.updateBody).not.toHaveBeenCalledWith("hello world");
     expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
-      "hello world\n\n4.1%/200k\n模型: rightcodes/gpt-5.4-high",
+      "hello world\n\n4.1%/200k | 模型: rightcodes/gpt-5.4-high",
       2000,
     );
   });

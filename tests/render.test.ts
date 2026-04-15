@@ -55,7 +55,7 @@ describe("renderAssistantMessage", () => {
   });
 
   it("Markdown 内容后面追加尾巴后仍应保持卡片渲染", () => {
-    const markdown = "# Title\n\n- item1\n\n4.1%/200k\n模型: rightcodes/gpt-5.4-high";
+    const markdown = "# Title\n\n- item1\n\n4.1%/200k | 模型: rightcodes/gpt-5.4-high";
     const messages = renderAssistantMessage(markdown, 2000);
 
     expect(messages).toHaveLength(1);
