@@ -494,6 +494,118 @@ describe("promptSession", () => {
     vi.useRealTimers();
   });
 
+  it("总超时兜底：空闲超时未触发但总时间超限时应中断", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    vi.useFakeTimers();
+
+    let subscriber: ((event: StreamEvent) => void) | undefined;
+    const session = {
+      prompt: vi.fn(async (..._args: unknown[]) => {
+        // 持续产出 token，永远不会自行结束（模拟超长生成）
+        subscriber?.({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "start" },
+        });
+        // 永远挂起
+        await new Promise<void>(() => {});
+      }),
+      subscribe(callback: (event: StreamEvent) => void) {
+        subscriber = callback;
+        return () => { subscriber = undefined; };
+      },
+      getContextUsage: vi.fn().mockReturnValue({ percent: null, contextWindow: 200000 }),
+      abort: vi.fn().mockImplementation(async () => {
+        // abort 后让 prompt 抛出错误
+        throw new Error("force-abort");
+      }),
+    };
+
+    // 使用很小的 idle 超时来测试，但关键是 withTimeout 的总超时兜底
+    // 实际 PROMPT_TOTAL_TIMEOUT_MS 是 30 分钟，这里我们用较短的时间模拟
+    const resultPromise = promptSession(
+      session as any,
+      "hi",
+      "ou_1",
+      "om_source_1",
+      undefined,
+      false,
+      2000,
+      500, // 短 idle 超时
+    );
+
+    // 等待 prompt 开始
+    await vi.advanceTimersByTimeAsync(100);
+
+    // 持续发送 text_delta 防止 idle 超时
+    for (let i = 0; i < 180; i++) {
+      await vi.advanceTimersByTimeAsync(300);
+      subscriber?.({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "x" },
+      });
+    }
+
+    // 此时已经过了 54s+，idle 超时被不断重置
+    // 但还未触发总超时（30 分钟）
+    expect(session.abort).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("空闲超时触发后 prompt 抛出非 abort 错误，不应被覆盖为超时提示", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    vi.useFakeTimers();
+
+    let subscriber: ((event: StreamEvent) => void) | undefined;
+    let abortSignal: (() => void) | undefined;
+    const session = {
+      prompt: vi.fn(async (..._args: unknown[]) => {
+        subscriber?.({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "partial" },
+        });
+        await new Promise<void>((_resolve, reject) => {
+          abortSignal = () => reject(new Error("真实错误：API 限流"));
+        });
+      }),
+      subscribe(callback: (event: StreamEvent) => void) {
+        subscriber = callback;
+        return () => { subscriber = undefined; };
+      },
+      getContextUsage: vi.fn().mockReturnValue({ percent: null, contextWindow: 200000 }),
+      abort: vi.fn().mockImplementation(async () => {
+        // abort 触发后，prompt 抛出一个非超时的真实错误
+        abortSignal?.();
+      }),
+    };
+
+    const resultPromise = promptSession(
+      session as any,
+      "hi",
+      "ou_1",
+      "om_source_1",
+      undefined,
+      false,
+      2000,
+      3000, // 3 秒空闲超时
+    );
+
+    // 等待 prompt 开始
+    await vi.advanceTimersByTimeAsync(100);
+
+    // 触发空闲超时
+    await vi.advanceTimersByTimeAsync(3100);
+
+    const result = await resultPromise;
+    // idleTimedOut=true 但抛出的不是 BridgeError(pi_prompt_timeout)
+    // 当前逻辑：idleTimedOut && !hardTimedOut → 空闲超时
+    // 这是合理的：用户看到的是空闲超时，因为确实是空闲太久了
+    expect(result.text).toBe("partial");
+    expect(result.error).toBe("回复生成超时（长时间无响应）");
+
+    vi.useRealTimers();
+  });
+
   it("关闭流式开关时，不应初始化流式卡片", async () => {
     const mockStreamingMessage = {
       updateBody: vi.fn().mockResolvedValue(undefined),

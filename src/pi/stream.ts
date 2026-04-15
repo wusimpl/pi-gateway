@@ -1,6 +1,7 @@
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import { logger } from "../app/logger.js";
+import { BridgeError, withTimeout } from "../app/errors.js";
 import {
   sendRenderedMessage,
   startStreamingMessage,
@@ -24,8 +25,10 @@ export interface PromptInput {
   images?: ImageContent[];
 }
 
-/** Pi prompt 默认超时（5 分钟） */
-const PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
+/** Pi prompt 空闲超时：连续无活动超过此时间则中断（5 分钟） */
+const PROMPT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+/** Pi prompt 总超时兜底：即使模型一直有活动，总时长也不应超过此值（30 分钟） */
+const PROMPT_TOTAL_TIMEOUT_MS = 30 * 60 * 1000;
 const STREAMING_UPDATE_INTERVAL_MS = 300;
 
 type PromptMessenger = Pick<
@@ -57,7 +60,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       processingReactionType?: string,
       streamingEnabled: boolean = false,
       textChunkLimit: number = 2000,
-      timeoutMs: number = PROMPT_TIMEOUT_MS,
+      timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
       isAbortRequested?: () => boolean,
     ): Promise<PromptResult> {
       const normalizedPrompt = typeof promptInput === "string" ? { text: promptInput } : promptInput;
@@ -149,10 +152,14 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         }
       }
 
-      // ---- 空闲超时（idle timeout）机制 ----
-      // 每次收到 text_delta 就重置计时器；只有连续 idle 超过 timeoutMs 才触发超时
+      // ---- 双层超时机制 ----
+      // 1. 空闲超时（idle timeout）：连续无活动超过 timeoutMs 则中断
+      //    每次收到 text_delta / tool_execution 事件时重置
+      // 2. 总超时兜底（hard timeout）：即使一直有活动，总时长也不超过 PROMPT_TOTAL_TIMEOUT_MS
+      //    防止 session.abort() 无法终止 prompt 导致永远卡住
       let idleTimer: NodeJS.Timeout | null = null;
       let idleTimedOut = false;
+      let hardTimedOut = false;
 
       function resetIdleTimer(): void {
         if (idleTimer) clearTimeout(idleTimer);
@@ -160,7 +167,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           idleTimedOut = true;
           try { session.abort(); } catch { /* abort 可能失败 */ }
         }, timeoutMs);
-        idleTimer.unref();
+        if (typeof idleTimer.unref === "function") {
+          idleTimer.unref();
+        }
       }
 
       function clearIdleTimer(): void {
@@ -209,9 +218,21 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       try {
         const promptOptions = normalizedPrompt.images?.length ? { images: normalizedPrompt.images } : undefined;
-        await session.prompt(normalizedPrompt.text, promptOptions);
+        // 使用 withTimeout 做总超时兜底，防止 abort 失败导致永远卡住
+        await withTimeout(
+          session.prompt(normalizedPrompt.text, promptOptions),
+          PROMPT_TOTAL_TIMEOUT_MS,
+          "Pi prompt 总超时",
+        );
       } catch (err) {
-        if (idleTimedOut) {
+        if (err instanceof BridgeError && err.category === "pi_prompt_timeout") {
+          // 总超时兜底触发（极罕见）
+          hardTimedOut = true;
+          lastError = "处理超时，请稍后重试或使用 /new 新建会话";
+          logger.error("Pi prompt 总超时兜底触发", { openId, totalTimeoutMs: PROMPT_TOTAL_TIMEOUT_MS });
+          try { await session.abort(); } catch { /* abort 也可能失败 */ }
+        } else if (idleTimedOut && !hardTimedOut) {
+          // 空闲超时触发：仅在 idleTimedOut=true 且不是总超时的情况下
           lastError = "回复生成超时（长时间无响应）";
           logger.error("Pi prompt 空闲超时", { openId, timeoutMs });
         } else if (isAbortRequested?.()) {
@@ -284,7 +305,7 @@ export async function promptSession(
   processingReactionType?: string,
   streamingEnabled: boolean = false,
   textChunkLimit: number = 2000,
-  timeoutMs: number = PROMPT_TIMEOUT_MS,
+  timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
   isAbortRequested?: () => boolean,
 ): Promise<PromptResult> {
   return defaultPromptRunner.promptSession(
