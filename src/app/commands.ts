@@ -5,7 +5,7 @@ import { RESTART_MESSAGE } from "./restart.js";
 import { STOP_MESSAGE } from "./stop.js";
 
 /** 桥接层命令列表（不含斜杠） */
-const BRIDGE_COMMANDS = ["new", "reset", "status", "context", "skills", "model", "models", "stop", "restart"] as const;
+const BRIDGE_COMMANDS = ["new", "reset", "status", "context", "skills", "model", "models", "sessions", "resume", "stop", "restart"] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];
 
 interface BridgeContextFile {
@@ -15,6 +15,12 @@ interface BridgeContextFile {
 interface BridgeSkillInfo {
   filePath: string;
   scope?: string;
+}
+
+interface BridgeListedSession {
+  order: number;
+  sessionId: string;
+  isActive: boolean;
 }
 
 export interface BridgeCommand {
@@ -35,6 +41,7 @@ interface BridgeCommandContext {
   requestedProvider?: string;
   contextFiles?: BridgeContextFile[];
   skills?: BridgeSkillInfo[];
+  sessions?: BridgeListedSession[];
 }
 
 /**
@@ -143,6 +150,10 @@ export function handleBridgeCommand(
       }
       return lines.join("\n");
     }
+    case "sessions":
+      return formatSessionsReply(context.sessions ?? []);
+    case "resume":
+      return formatSessionCommandReply(`✅ 已切换到会话: ${context.sessionId ?? "unknown"}`, context.currentModel);
     case "stop":
       return STOP_MESSAGE;
     case "restart":
@@ -162,6 +173,19 @@ function formatSessionCommandReply(message: string, currentModel?: string): stri
     return message;
   }
   return `${message}\n🤖 当前模型: ${currentModel}`;
+}
+
+function formatSessionsReply(sessions: BridgeListedSession[]): string {
+  if (sessions.length === 0) {
+    return "当前还没有可恢复的历史会话。";
+  }
+
+  return [
+    `📚 最近会话（${sessions.length} 个）`,
+    "用 /resume <序号> 或 /resume <sessionId前缀> 切换。",
+    "",
+    ...sessions.map((session) => `${session.order}. ${session.sessionId}${session.isActive ? " · current" : ""}`),
+  ].join("\n");
 }
 
 function formatContextReply(contextFiles: BridgeContextFile[]): string {

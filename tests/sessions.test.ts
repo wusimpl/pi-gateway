@@ -7,6 +7,7 @@ function createDeps() {
     createPiSession: vi.fn(),
     continueRecentPiSession: vi.fn(),
     openPiSession: vi.fn(),
+    listPiSessions: vi.fn(),
   };
   const userStateStore = {
     readUserState: vi.fn().mockResolvedValue(null),
@@ -74,5 +75,124 @@ describe("session service", () => {
     await service.createNewSession(identity);
 
     expect(getWorkspaceIdentity("/tmp/workspace/ou_1")).toEqual(identity);
+  });
+
+  it("应列出用户最近会话并标记当前会话", async () => {
+    const deps = createDeps();
+    deps.userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "session_2",
+      piSessionFile: "/tmp/sessions/ou_1/session_2.jsonl",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+    });
+    deps.runtime.listPiSessions.mockResolvedValue([
+      {
+        id: "session_2",
+        path: "/tmp/sessions/ou_1/session_2.jsonl",
+        created: new Date("2026-04-15T00:00:00.000Z"),
+        modified: new Date("2026-04-15T00:30:00.000Z"),
+      },
+      {
+        id: "session_1",
+        path: "/tmp/sessions/ou_1/session_1.jsonl",
+        created: new Date("2026-04-14T00:00:00.000Z"),
+        modified: new Date("2026-04-14T00:30:00.000Z"),
+      },
+    ]);
+
+    const service = createSessionService(deps as any);
+
+    const sessions = await service.listSessions({ openId: "ou_1", userId: "u_1" });
+
+    expect(sessions).toEqual([
+      {
+        order: 1,
+        sessionId: "session_2",
+        sessionFile: "/tmp/sessions/ou_1/session_2.jsonl",
+        isActive: true,
+        createdAt: "2026-04-15T00:00:00.000Z",
+        updatedAt: "2026-04-15T00:30:00.000Z",
+      },
+      {
+        order: 2,
+        sessionId: "session_1",
+        sessionFile: "/tmp/sessions/ou_1/session_1.jsonl",
+        isActive: false,
+        createdAt: "2026-04-14T00:00:00.000Z",
+        updatedAt: "2026-04-14T00:30:00.000Z",
+      },
+    ]);
+  });
+
+  it("应支持按序号恢复指定会话", async () => {
+    const deps = createDeps();
+    const dispose = vi.fn();
+    deps.userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSessionFile: "/tmp/sessions/ou_1/session_1.jsonl",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+    });
+    deps.runtime.listPiSessions.mockResolvedValue([
+      {
+        id: "session_2",
+        path: "/tmp/sessions/ou_1/session_2.jsonl",
+        created: new Date("2026-04-15T00:00:00.000Z"),
+        modified: new Date("2026-04-15T00:30:00.000Z"),
+      },
+      {
+        id: "session_1",
+        path: "/tmp/sessions/ou_1/session_1.jsonl",
+        created: new Date("2026-04-14T00:00:00.000Z"),
+        modified: new Date("2026-04-14T00:30:00.000Z"),
+      },
+    ]);
+    deps.runtime.openPiSession.mockResolvedValue({
+      sessionFile: "/tmp/sessions/ou_1/session_2.jsonl",
+      model: { provider: "rightcodes", id: "gpt-5.4-high" },
+      dispose: vi.fn(),
+    });
+
+    const service = createSessionService(deps as any);
+    const result = await service.resumeSession({ openId: "ou_1", userId: "u_1" }, "1");
+
+    expect(dispose).not.toHaveBeenCalled();
+    expect(deps.runtime.openPiSession).toHaveBeenCalledWith(
+      "/tmp/sessions/ou_1/session_2.jsonl",
+      "/tmp/workspace/ou_1",
+    );
+    expect(deps.userStateStore.writeUserState).toHaveBeenCalledTimes(1);
+    expect(result.activeSessionId).toBe("session_2");
+  });
+
+  it("应支持按 sessionId 前缀恢复指定会话", async () => {
+    const deps = createDeps();
+    deps.userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "session_old",
+      piSessionFile: "/tmp/sessions/ou_1/session_old.jsonl",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+    });
+    deps.runtime.listPiSessions.mockResolvedValue([
+      {
+        id: "abc123xyz",
+        path: "/tmp/sessions/ou_1/abc123xyz.jsonl",
+        created: new Date("2026-04-15T00:00:00.000Z"),
+        modified: new Date("2026-04-15T00:30:00.000Z"),
+      },
+    ]);
+    deps.runtime.openPiSession.mockResolvedValue({
+      sessionFile: "/tmp/sessions/ou_1/abc123xyz.jsonl",
+      dispose: vi.fn(),
+    });
+
+    const service = createSessionService(deps as any);
+    const result = await service.resumeSession({ openId: "ou_1", userId: "u_1" }, "abc123");
+
+    expect(result.activeSessionId).toBe("abc123xyz");
+    expect(deps.runtime.openPiSession).toHaveBeenCalledTimes(1);
   });
 });

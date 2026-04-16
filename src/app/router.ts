@@ -6,6 +6,8 @@ import { promptSession } from "../pi/stream.js";
 import {
   createNewSession,
   getOrCreateActiveSession,
+  listSessions,
+  resumeSession,
   touchSession,
 } from "../pi/sessions.js";
 import { getUserWorkspaceDir } from "../pi/workspace.js";
@@ -173,6 +175,8 @@ export function initRouter(cfg: Config): void {
     sessionService: {
       getOrCreateActiveSession: (...args) => getOrCreateActiveSession(...args),
       createNewSession: (...args) => createNewSession(...args),
+      listSessions: (...args) => listSessions(...args),
+      resumeSession: (...args) => resumeSession(...args),
     },
     userStateStore: {
       readUserState: (...args) => readUserState(...args),

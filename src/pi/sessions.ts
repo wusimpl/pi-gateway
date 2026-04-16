@@ -1,6 +1,6 @@
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, SessionInfo } from "@mariozechner/pi-coding-agent";
 import type { PiRuntime } from "./runtime.js";
-import { createPiSession, continueRecentPiSession, openPiSession } from "./runtime.js";
+import { createPiSession, continueRecentPiSession, openPiSession, listPiSessions } from "./runtime.js";
 import {
   readUserState,
   writeUserState,
@@ -19,15 +19,26 @@ interface SessionResult {
   piSession: AgentSession;
 }
 
+export interface ListedSession {
+  order: number;
+  sessionId: string;
+  sessionFile: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface SessionService {
   getOrCreateActiveSession(identity: UserIdentity): Promise<SessionResult>;
   createNewSession(identity: UserIdentity): Promise<SessionResult>;
+  listSessions(identity: UserIdentity): Promise<ListedSession[]>;
+  resumeSession(identity: UserIdentity, ref: string): Promise<SessionResult>;
   touchSession(openId: string, messageId: string): Promise<void>;
   disposeAllSessions(): void;
 }
 
 interface SessionServiceDeps {
-  runtime: Pick<PiRuntime, "createPiSession" | "continueRecentPiSession" | "openPiSession">;
+  runtime: Pick<PiRuntime, "createPiSession" | "listPiSessions" | "continueRecentPiSession" | "openPiSession">;
   userStateStore: Pick<
     UserStateStore,
     "readUserState" | "writeUserState" | "createUserState" | "touchUserState" | "userSessionsDir"
@@ -105,15 +116,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   async function createNewSession(identity: UserIdentity): Promise<SessionResult> {
     const openId = identity.openId;
 
-    const oldSession = sessionCache.get(openId);
-    if (oldSession) {
-      try {
-        oldSession.dispose();
-      } catch {
-        // 忽略 dispose 错误
-      }
-      sessionCache.delete(openId);
-    }
+    disposeCachedSession(openId);
 
     return doCreateNewSession(identity);
   }
@@ -148,8 +151,85 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     return { activeSessionId: newSessionId, piSession };
   }
 
+  async function listSessions(identity: UserIdentity): Promise<ListedSession[]> {
+    const openId = identity.openId;
+    const workspaceDir = await ensureWorkspaceForIdentity(identity);
+    const sessionDir = deps.userStateStore.userSessionsDir(openId);
+    const listed = await deps.runtime.listPiSessions(workspaceDir, sessionDir);
+    const state = await deps.userStateStore.readUserState(openId);
+
+    return listed.map((session, index) => ({
+      order: index + 1,
+      sessionId: session.id,
+      sessionFile: session.path,
+      isActive: state?.activeSessionId === session.id || state?.piSessionFile === session.path,
+      createdAt: session.created?.toISOString(),
+      updatedAt: session.modified?.toISOString(),
+    }));
+  }
+
+  async function resumeSession(identity: UserIdentity, ref: string): Promise<SessionResult> {
+    const openId = identity.openId;
+    const normalizedRef = ref.trim();
+    if (!normalizedRef) {
+      throw new Error("RESUME_REF_REQUIRED");
+    }
+
+    const sessions = await listSessions(identity);
+    const target = resolveTargetSession(sessions, normalizedRef);
+    if (!target) {
+      throw new Error("RESUME_SESSION_NOT_FOUND");
+    }
+
+    const workspaceDir = await ensureWorkspaceForIdentity(identity);
+    disposeCachedSession(openId);
+
+    const piSession = await deps.runtime.openPiSession(target.sessionFile, workspaceDir);
+    sessionCache.set(openId, piSession);
+
+    const now = new Date().toISOString();
+    const state = await deps.userStateStore.readUserState(openId);
+    if (state) {
+      state.activeSessionId = target.sessionId;
+      state.piSessionFile = target.sessionFile;
+      state.updatedAt = now;
+      state.lastActiveAt = now;
+      await deps.userStateStore.writeUserState(openId, state);
+    } else {
+      const created = await deps.userStateStore.createUserState(openId, target.sessionId);
+      created.piSessionFile = target.sessionFile;
+      created.updatedAt = now;
+      created.lastActiveAt = now;
+      await deps.userStateStore.writeUserState(openId, created);
+    }
+
+    logger.info("Pi session 已切换到历史会话", {
+      openId,
+      sessionId: target.sessionId,
+      sessionFile: target.sessionFile,
+    });
+    return {
+      activeSessionId: target.sessionId,
+      piSession,
+    };
+  }
+
   async function touchSession(openId: string, messageId: string): Promise<void> {
     await deps.userStateStore.touchUserState(openId, messageId);
+  }
+
+  function disposeCachedSession(openId: string): void {
+    const oldSession = sessionCache.get(openId);
+    if (!oldSession) {
+      return;
+    }
+
+    try {
+      oldSession.dispose();
+    } catch {
+      // 忽略 dispose 错误
+    }
+    sessionCache.delete(openId);
   }
 
   function disposeAllSessions(): void {
@@ -168,9 +248,30 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   return {
     getOrCreateActiveSession,
     createNewSession,
+    listSessions,
+    resumeSession,
     touchSession,
     disposeAllSessions,
   };
+}
+
+function resolveTargetSession(sessions: ListedSession[], ref: string): ListedSession | null {
+  if (/^\d+$/.test(ref)) {
+    const order = Number(ref);
+    return sessions.find((session) => session.order === order) ?? null;
+  }
+
+  const exact = sessions.find((session) => session.sessionId === ref);
+  if (exact) {
+    return exact;
+  }
+
+  const matches = sessions.filter((session) => session.sessionId.startsWith(ref));
+  if (matches.length === 1) {
+    return matches[0];
+  }
+
+  return null;
 }
 
 /**
@@ -187,6 +288,7 @@ function getDefaultSessionService(): SessionService {
   return createSessionService({
     runtime: {
       createPiSession: (...args) => createPiSession(...args),
+      listPiSessions: (...args) => listPiSessions(...args),
       continueRecentPiSession: (...args) => continueRecentPiSession(...args),
       openPiSession: (...args) => openPiSession(...args),
     },
@@ -218,6 +320,14 @@ export async function getOrCreateActiveSession(identity: UserIdentity): Promise<
 
 export async function createNewSession(identity: UserIdentity): Promise<SessionResult> {
   return ensureDefaultSessionService().createNewSession(identity);
+}
+
+export async function listSessions(identity: UserIdentity): Promise<ListedSession[]> {
+  return ensureDefaultSessionService().listSessions(identity);
+}
+
+export async function resumeSession(identity: UserIdentity, ref: string): Promise<SessionResult> {
+  return ensureDefaultSessionService().resumeSession(identity, ref);
 }
 
 export async function touchSession(openId: string, messageId: string): Promise<void> {

@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   promptSession: vi.fn(),
   getOrCreateActiveSession: vi.fn(),
   touchSession: vi.fn(),
+  listSessions: vi.fn(),
+  resumeSession: vi.fn(),
   parseMessageEvent: vi.fn(),
   isSupportedP2PMessage: vi.fn(),
   normalizeFeishuInboundMessage: vi.fn(),
@@ -18,6 +20,8 @@ vi.mock("../src/pi/sessions.js", () => ({
   getOrCreateActiveSession: mocks.getOrCreateActiveSession,
   createNewSession: vi.fn(),
   touchSession: mocks.touchSession,
+  listSessions: mocks.listSessions,
+  resumeSession: mocks.resumeSession,
 }));
 
 vi.mock("../src/storage/users.js", () => ({

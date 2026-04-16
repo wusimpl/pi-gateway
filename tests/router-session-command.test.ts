@@ -5,15 +5,16 @@ const mocks = vi.hoisted(() => ({
   sendRenderedMessage: vi.fn(),
   promptSession: vi.fn(),
   getOrCreateActiveSession: vi.fn(),
-  touchSession: vi.fn(),
   createNewSession: vi.fn(),
+  touchSession: vi.fn(),
   listSessions: vi.fn(),
   resumeSession: vi.fn(),
   readUserState: vi.fn(),
   parseMessageEvent: vi.fn(),
   isSupportedP2PMessage: vi.fn(),
   normalizeFeishuInboundMessage: vi.fn(),
-  prepareFeishuPromptInput: vi.fn(),
+  listAvailableModels: vi.fn(),
+  findAvailableModel: vi.fn(),
 }));
 
 vi.mock("../src/feishu/send.js", () => ({
@@ -51,31 +52,49 @@ vi.mock("../src/feishu/inbound/normalize.js", () => ({
 }));
 
 vi.mock("../src/feishu/inbound/transform.js", () => ({
-  prepareFeishuPromptInput: mocks.prepareFeishuPromptInput,
+  prepareFeishuPromptInput: vi.fn(),
 }));
 
-import { clearAllState } from "../src/app/state.js";
+vi.mock("../src/pi/models.js", () => ({
+  listAvailableModels: mocks.listAvailableModels,
+  findAvailableModel: mocks.findAvailableModel,
+  filterAvailableModels: (models: Array<{ provider: string }>, providerFilter?: string) => {
+    const trimmed = providerFilter?.trim();
+    if (!trimmed) {
+      return models;
+    }
+    return models.filter((model) => model.provider === trimmed);
+  },
+  formatModelLabel: (provider: string, id: string) => `${provider}/${id}`,
+}));
+
+import { clearAllState, releaseLock } from "../src/app/state.js";
 import { handleFeishuMessage, initRouter } from "../src/app/router.js";
 
 const baseEvent = {
   sender: { senderId: { openId: "ou_1", userId: "u_1" } },
-  message: { messageId: "om_1", messageType: "text", content: '{}' },
+  message: { messageId: "om_1", messageType: "text", content: "{}" },
 };
 
-describe("handleFeishuMessage 运行锁", () => {
+describe("handleFeishuMessage 会话历史命令", () => {
   beforeEach(() => {
     clearAllState();
+    releaseLock("ou_1");
+
     mocks.sendTextMessage.mockReset();
     mocks.sendRenderedMessage.mockReset();
     mocks.promptSession.mockReset();
     mocks.getOrCreateActiveSession.mockReset();
-    mocks.touchSession.mockReset();
     mocks.createNewSession.mockReset();
+    mocks.touchSession.mockReset();
+    mocks.listSessions.mockReset();
+    mocks.resumeSession.mockReset();
     mocks.readUserState.mockReset();
     mocks.parseMessageEvent.mockReset();
     mocks.isSupportedP2PMessage.mockReset();
     mocks.normalizeFeishuInboundMessage.mockReset();
-    mocks.prepareFeishuPromptInput.mockReset();
+    mocks.listAvailableModels.mockReset();
+    mocks.findAvailableModel.mockReset();
 
     initRouter({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
@@ -85,74 +104,62 @@ describe("handleFeishuMessage 运行锁", () => {
 
     mocks.parseMessageEvent.mockReturnValue(baseEvent);
     mocks.isSupportedP2PMessage.mockReturnValue(true);
+    mocks.sendRenderedMessage.mockResolvedValue(undefined);
+    mocks.sendTextMessage.mockResolvedValue("om_reply");
+  });
+
+  it("`/sessions` 会返回最近会话列表", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
       identity: { openId: "ou_1", userId: "u_1" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
-      rawContent: '{"text":"hello"}',
-      text: "hello",
+      rawContent: '{"text":"/sessions"}',
+      text: "/sessions",
     });
-    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "hello", localFiles: [] });
-    mocks.getOrCreateActiveSession.mockResolvedValue({
-      activeSessionId: "session_1",
-      piSession: { id: "pi_session" },
-    });
-    mocks.touchSession.mockResolvedValue(undefined);
+    mocks.listSessions.mockResolvedValue([
+      { order: 1, sessionId: "session_003", sessionFile: "/tmp/3.jsonl", isActive: true },
+      { order: 2, sessionId: "session_002", sessionFile: "/tmp/2.jsonl", isActive: false },
+    ]);
+
+    await handleFeishuMessage({});
+
+    expect(mocks.listSessions).toHaveBeenCalledTimes(1);
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "📚 最近会话（2 个）\n用 /resume <序号> 或 /resume <sessionId前缀> 切换。\n\n1. session_003 · current\n2. session_002",
+      2000,
+    );
   });
 
-  it("已有处理中任务时后续消息应排队，首条完成后继续处理", async () => {
-    let releasePrompt: (() => void) | undefined;
-    mocks.promptSession
-      .mockImplementationOnce(
-        () => new Promise((resolve) => {
-          releasePrompt = () => resolve({ text: "done", error: undefined });
-        })
-      )
-      .mockResolvedValueOnce({ text: "done second", error: undefined });
-
-    const firstCall = handleFeishuMessage({});
-    await vi.waitFor(() => {
-      expect(mocks.promptSession).toHaveBeenCalledTimes(1);
-    });
-
-    mocks.parseMessageEvent.mockReturnValue({
-      ...baseEvent,
-      message: { ...baseEvent.message, messageId: "om_2", content: '{}' },
-    });
+  it("`/resume` 会切换到指定会话", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
       identity: { openId: "ou_1", userId: "u_1" },
-      messageId: "om_2",
+      messageId: "om_1",
       messageType: "text",
-      createTime: "124",
-      rawContent: '{"text":"second"}',
-      text: "second",
+      createTime: "123",
+      rawContent: '{"text":"/resume 1"}',
+      text: "/resume 1",
     });
-    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "second", localFiles: [] });
+    mocks.resumeSession.mockResolvedValue({
+      activeSessionId: "session_002",
+      piSession: {
+        model: { provider: "rightcodes", id: "gpt-5.4-high" },
+      },
+    });
 
-    const secondCall = handleFeishuMessage({});
+    await handleFeishuMessage({});
 
-    await Promise.resolve();
-    expect(mocks.promptSession).toHaveBeenCalledTimes(1);
-
-    releasePrompt?.();
-    await firstCall;
-    await secondCall;
-
-    expect(mocks.promptSession).toHaveBeenCalledTimes(2);
-    expect(mocks.prepareFeishuPromptInput).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        messageId: "om_2",
-        text: "second",
-      }),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
+    expect(mocks.resumeSession).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      "1",
     );
-    expect(mocks.sendTextMessage).not.toHaveBeenCalled();
-    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "✅ 已切换到会话: session_002\n🤖 当前模型: rightcodes/gpt-5.4-high",
+      2000,
+    );
   });
 });

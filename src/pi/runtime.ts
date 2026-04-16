@@ -7,6 +7,7 @@ import {
   getAgentDir,
   type AgentSession,
   type ExtensionFactory,
+  type SessionInfo,
 } from "@mariozechner/pi-coding-agent";
 import { resolve, join } from "node:path";
 import { logger } from "../app/logger.js";
@@ -15,6 +16,7 @@ export interface PiRuntime {
   getAuthStorage(): AuthStorage;
   getModelRegistry(): ModelRegistry;
   createPiSession(cwd: string, sessionDir?: string): Promise<AgentSession>;
+  listPiSessions(cwd: string, sessionDir?: string): Promise<SessionInfo[]>;
   continueRecentPiSession(
     cwd: string,
     sessionDir?: string,
@@ -59,6 +61,10 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
       sessionFile: session.sessionFile,
     });
     return session;
+  }
+
+  async function listPiSessions(cwd: string, sessionDir?: string): Promise<SessionInfo[]> {
+    return SessionManager.list(cwd, sessionDir);
   }
 
   async function continueRecentPiSession(
@@ -110,6 +116,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
     getAuthStorage: () => authStorage,
     getModelRegistry: () => modelRegistry,
     createPiSession,
+    listPiSessions,
     continueRecentPiSession,
     openPiSession,
   };
@@ -166,6 +173,13 @@ export async function continueRecentPiSession(
   sessionDir?: string
 ): Promise<{ session: AgentSession; fallbackMessage?: string } | null> {
   return getDefaultPiRuntime().continueRecentPiSession(cwd, sessionDir);
+}
+
+export async function listPiSessions(
+  cwd: string,
+  sessionDir?: string
+): Promise<SessionInfo[]> {
+  return getDefaultPiRuntime().listPiSessions(cwd, sessionDir);
 }
 
 export async function openPiSession(

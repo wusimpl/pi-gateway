@@ -36,6 +36,20 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /sessions", () => {
+    expect(parseBridgeCommand("/sessions")).toEqual({
+      name: "sessions",
+      args: "",
+    });
+  });
+
+  it("should parse /resume with args", () => {
+    expect(parseBridgeCommand("/resume abc123")).toEqual({
+      name: "resume",
+      args: "abc123",
+    });
+  });
+
   it("should parse /stop", () => {
     expect(parseBridgeCommand("/stop")).toEqual({
       name: "stop",
@@ -105,5 +119,31 @@ describe("handleBridgeCommand", () => {
 
   it("`/restart` 应返回重启提示", () => {
     expect(handleBridgeCommand("restart", {})).toBe("🔄 正在重启网关...");
+  });
+
+  it("`/sessions` 应返回最近会话列表", () => {
+    expect(
+      handleBridgeCommand("sessions", {
+        sessions: [
+          { order: 1, sessionId: "session_003", isActive: true },
+          { order: 2, sessionId: "session_002", isActive: false },
+        ],
+      } as any),
+    ).toBe(
+      "📚 最近会话（2 个）\n" +
+        "用 /resume <序号> 或 /resume <sessionId前缀> 切换。\n" +
+        "\n" +
+        "1. session_003 · current\n" +
+        "2. session_002",
+    );
+  });
+
+  it("`/resume` 应返回切换后的会话", () => {
+    expect(
+      handleBridgeCommand("resume", {
+        sessionId: "session_002",
+        currentModel: "rightcodes/gpt-5.4-high",
+      }),
+    ).toBe("✅ 已切换到会话: session_002\n🤖 当前模型: rightcodes/gpt-5.4-high");
   });
 });

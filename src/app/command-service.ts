@@ -22,7 +22,7 @@ export interface CommandService {
 interface CommandServiceDeps {
   config: Pick<Config, "TEXT_CHUNK_LIMIT">;
   messenger: Pick<FeishuMessenger, "sendRenderedMessage" | "sendTextMessage">;
-  sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession">;
+  sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession" | "listSessions" | "resumeSession">;
   userStateStore: Pick<UserStateStore, "readUserState">;
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
   runtimeState: Pick<
@@ -79,6 +79,15 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           availableModels: filteredModels,
         });
         await sendCommandReply(openId, reply);
+      } else if (command.name === "sessions") {
+        const sessions = await deps.sessionService.listSessions(identity);
+        const reply = handleBridgeCommand(command, {
+          openId,
+          sessions,
+        });
+        await sendCommandReply(openId, reply);
+      } else if (command.name === "resume") {
+        await handleResumeCommand(identity, command);
       } else if (command.name === "model") {
         await handleModelCommand(identity, command);
       } else if (command.name === "stop") {
@@ -161,6 +170,44 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       previousModel,
     });
     await sendCommandReply(openId, reply);
+  }
+
+  async function handleResumeCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    const argText = command.args.trim();
+
+    if (!argText) {
+      await deps.messenger.sendTextMessage(
+        openId,
+        "请先给出要恢复的会话。\n\n先用 /sessions 看列表，再用 /resume <序号> 或 /resume <sessionId前缀>。",
+      );
+      return;
+    }
+
+    if (deps.runtimeState.isLocked(openId)) {
+      await deps.messenger.sendTextMessage(openId, "当前还有任务在跑，等这条回复结束后再切会话。");
+      return;
+    }
+
+    try {
+      const sessionState = await deps.sessionService.resumeSession(identity, argText);
+      const reply = handleBridgeCommand(command, {
+        openId,
+        sessionId: sessionState.activeSessionId,
+        currentModel: getCurrentModelLabel(sessionState.piSession),
+      });
+      await sendCommandReply(openId, reply);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      if (code === "RESUME_SESSION_NOT_FOUND") {
+        await deps.messenger.sendTextMessage(
+          openId,
+          "没找到这个会话。\n\n先用 /sessions 看列表，再用 /resume <序号> 或 /resume <sessionId前缀>。",
+        );
+        return;
+      }
+      throw error;
+    }
   }
 
   async function sendCommandReply(openId: string, text: string): Promise<void> {
