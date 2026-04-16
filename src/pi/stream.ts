@@ -65,7 +65,9 @@ interface ToolCallState {
   toolCallId: string;
   toolName: string;
   status: "running" | "done" | "error";
-  summary?: string;
+  argsSummary?: string;
+  resultSummary?: string;
+  showOutputSummary?: boolean;
 }
 
 export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
@@ -236,7 +238,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
                 toolCallId: event.toolCallId,
                 toolName: event.toolName,
                 status: "running",
-                summary: summarizeToolArgs(event.args),
+                argsSummary: summarizeToolArgs(event.args),
+                showOutputSummary: hasNamedSummaryField(event.args, "command"),
               });
               queueStreamingFlush(true);
             }
@@ -247,7 +250,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             if (showToolCallsInReply) {
               const toolCall = toolCallMap.get(event.toolCallId);
               if (toolCall) {
-                toolCall.summary = summarizeToolProgress(event.partialResult) ?? toolCall.summary;
+                toolCall.resultSummary = summarizeToolProgress(event.partialResult) ?? toolCall.resultSummary;
                 queueStreamingFlush(!hasVisibleAssistantText(fullText));
               }
             }
@@ -262,7 +265,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               const toolCall = toolCallMap.get(event.toolCallId);
               if (toolCall) {
                 toolCall.status = event.isError ? "error" : "done";
-                toolCall.summary = summarizeToolProgress(event.result) ?? toolCall.summary;
+                toolCall.resultSummary = summarizeToolProgress(event.result) ?? toolCall.resultSummary;
                 queueStreamingFlush(true);
               }
             }
@@ -553,11 +556,28 @@ function formatToolCallsSection(toolCallMap: ReadonlyMap<string, ToolCallState>)
 
   const lines = [" ---", "**工具调用**"];
   for (const toolCall of toolCalls) {
-    const statusLabel = formatToolStatus(toolCall.status);
-    const summary = toolCall.summary ? `: ${toolCall.summary}` : "";
-    lines.push(`${toolCall.toolName} ${statusLabel}${summary}`);
+    lines.push(...formatToolCallLines(toolCall));
   }
   return lines.join("\n");
+}
+
+function formatToolCallLines(toolCall: ToolCallState): string[] {
+  const statusLabel = formatToolStatus(toolCall.status);
+  const primarySummary = toolCall.showOutputSummary
+    ? (toolCall.argsSummary ?? toolCall.resultSummary)
+    : (toolCall.resultSummary ?? toolCall.argsSummary);
+  const summary = primarySummary ? `: ${primarySummary}` : "";
+  const lines = [`${toolCall.toolName} ${statusLabel}${summary}`];
+
+  if (
+    toolCall.showOutputSummary &&
+    toolCall.argsSummary &&
+    toolCall.resultSummary
+  ) {
+    lines.push(`output: ${toolCall.resultSummary}`);
+  }
+
+  return lines;
 }
 
 function formatToolStatus(status: ToolCallState["status"]): string {
@@ -656,6 +676,15 @@ function readPreferredSummaryField(
   }
 
   return undefined;
+}
+
+function hasNamedSummaryField(value: unknown, key: string): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" && Boolean(field.trim());
 }
 
 function summarizeUnknownValue(value: unknown): string | undefined {
