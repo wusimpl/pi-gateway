@@ -80,6 +80,29 @@ describe("handleBridgeCommand", () => {
     expect(handleBridgeCommand("new", {})).toBe("✅ 已创建新会话");
   });
 
+  it("`/skills` 只显示到技能目录", () => {
+    expect(
+      handleBridgeCommand("skills", {
+        skills: [
+          {
+            filePath: "/Users/williamsandy/.pi/agent/skills/feishu-docs/SKILL.md",
+            scope: "user",
+          },
+          {
+            filePath: "/Users/williamsandy/code/pi-gateway/.agents/skills/local/SKILL.md",
+            scope: "project",
+          },
+        ],
+      }),
+    ).toBe(
+      "[Skills]\n" +
+        "  user\n" +
+        "    /Users/williamsandy/.pi/agent/skills/feishu-docs\n" +
+        "  project\n" +
+        "    /Users/williamsandy/code/pi-gateway/.agents/skills/local",
+    );
+  });
+
   it("`/restart` 应返回重启提示", () => {
     expect(handleBridgeCommand("restart", {})).toBe("🔄 正在重启网关...");
   });

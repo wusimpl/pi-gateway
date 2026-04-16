@@ -185,9 +185,17 @@ function formatSkillsReply(skills: BridgeSkillInfo[]): string {
   const groupedSkills = groupSkillsByScope(skills);
   for (const [scope, items] of groupedSkills) {
     lines.push(`  ${scope}`);
-    lines.push(...items.map((skill) => `    ${formatDisplayPath(skill.filePath)}`));
+    lines.push(...items.map((skill) => `    ${formatSkillDirectoryPath(skill.filePath)}`));
   }
   return lines.join("\n");
+}
+
+function formatSkillDirectoryPath(filePath: string): string {
+  const normalizedPath = filePath.replace(/\\/g, "/");
+  if (normalizedPath.endsWith("/SKILL.md")) {
+    return formatDisplayPath(normalizedPath.slice(0, -"/SKILL.md".length));
+  }
+  return formatDisplayPath(filePath);
 }
 
 function groupSkillsByScope(skills: BridgeSkillInfo[]): Array<[string, BridgeSkillInfo[]]> {
