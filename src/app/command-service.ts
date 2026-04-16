@@ -15,6 +15,7 @@ import { logger } from "./logger.js";
 import type { RestartService } from "./restart.js";
 import type { RuntimeStateStore } from "./state.js";
 import type { CronService } from "../cron/service.js";
+import type { RuntimeConfigStore } from "./runtime-config.js";
 import {
   formatCronHelp,
   formatCronJobAdded,
@@ -43,6 +44,15 @@ interface CommandServiceDeps {
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
   cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "removeJob" | "runJobNow">;
+  runtimeConfig?: Pick<
+    RuntimeConfigStore,
+    | "getAudioTranscribeProvider"
+    | "setAudioTranscribeProvider"
+    | "getStreamingEnabled"
+    | "setStreamingEnabled"
+    | "enableProcessingReaction"
+    | "disableProcessingReaction"
+  >;
 }
 
 export function createCommandService(deps: CommandServiceDeps): CommandService {
@@ -130,6 +140,12 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleModelCommand(identity, command);
       } else if (command.name === "cron") {
         await handleCronCommand(identity, command);
+      } else if (command.name === "stt") {
+        await handleSttCommand(identity, command);
+      } else if (command.name === "stream") {
+        await handleStreamCommand(identity, command);
+      } else if (command.name === "reaction") {
+        await handleReactionCommand(identity, command);
       } else if (command.name === "stop") {
         await handleStopCommand(identity, command);
       } else if (command.name === "restart") {
@@ -335,6 +351,72 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
   }
 
+  async function handleSttCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    if (!deps.runtimeConfig) {
+      await deps.messenger.sendTextMessage(openId, "当前环境不支持这个命令。");
+      return;
+    }
+
+    const parsed = parseSttProviderArgs(command.args);
+    if (parsed.error) {
+      await deps.messenger.sendTextMessage(openId, parsed.error);
+      return;
+    }
+
+    deps.runtimeConfig.setAudioTranscribeProvider(parsed.provider);
+    await sendCommandReply(openId, `✅ 语音转写已切到 ${parsed.provider}。`);
+  }
+
+  async function handleStreamCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    if (!deps.runtimeConfig) {
+      await deps.messenger.sendTextMessage(openId, "当前环境不支持这个命令。");
+      return;
+    }
+
+    const parsed = parseOnOffArgs(command.args, "stream");
+    if (parsed.error) {
+      await deps.messenger.sendTextMessage(openId, parsed.error);
+      return;
+    }
+
+    deps.runtimeConfig.setStreamingEnabled(parsed.enabled);
+    const action = parsed.enabled ? "开启" : "关闭";
+    await sendCommandReply(openId, `✅ 已${action}流式回复。`);
+  }
+
+  async function handleReactionCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    if (!deps.runtimeConfig) {
+      await deps.messenger.sendTextMessage(openId, "当前环境不支持这个命令。");
+      return;
+    }
+
+    const parsed = parseOnOffArgs(command.args, "reaction");
+    if (parsed.error) {
+      await deps.messenger.sendTextMessage(openId, parsed.error);
+      return;
+    }
+
+    if (!parsed.enabled) {
+      deps.runtimeConfig.disableProcessingReaction();
+      await sendCommandReply(openId, "✅ 已关闭处理中 reaction。");
+      return;
+    }
+
+    const reactionType = deps.runtimeConfig.enableProcessingReaction();
+    if (!reactionType) {
+      await deps.messenger.sendTextMessage(
+        openId,
+        "当前 .env 里没配置 FEISHU_PROCESSING_REACTION_TYPE，不能开启 reaction。",
+      );
+      return;
+    }
+
+    await sendCommandReply(openId, `✅ 已开启处理中 reaction，表情继续使用 .env 里的 ${reactionType}。`);
+  }
+
   async function sendCommandReply(openId: string, text: string): Promise<void> {
     await deps.messenger.sendRenderedMessage(openId, text, deps.config.TEXT_CHUNK_LIMIT);
   }
@@ -361,6 +443,35 @@ function parseSessionsPage(args: string): { page: number; error?: undefined } | 
   }
 
   return { page };
+}
+
+function parseSttProviderArgs(
+  args: string,
+): { provider: "sensevoice" | "whisper"; error?: undefined } | { provider?: undefined; error: string } {
+  const matched = args.trim().match(/^provider\s+(sensevoice|whisper)$/i);
+  if (!matched) {
+    return { error: "用法：/stt provider sensevoice|whisper。" };
+  }
+
+  return {
+    provider: matched[1]!.toLowerCase() as "sensevoice" | "whisper",
+  };
+}
+
+function parseOnOffArgs(
+  args: string,
+  commandName: "stream" | "reaction",
+): { enabled: boolean; error?: undefined } | { enabled?: undefined; error: string } {
+  const normalized = args.trim().toLowerCase();
+  if (normalized === "on") {
+    return { enabled: true };
+  }
+
+  if (normalized === "off") {
+    return { enabled: false };
+  }
+
+  return { error: `用法：/${commandName} on 或 /${commandName} off。` };
 }
 
 function getCurrentModelLabel(session: { model?: { provider: string; id: string } | undefined }): string | undefined {

@@ -71,6 +71,27 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /stt with args", () => {
+    expect(parseBridgeCommand("/stt provider sensevoice")).toEqual({
+      name: "stt",
+      args: "provider sensevoice",
+    });
+  });
+
+  it("should parse /stream with args", () => {
+    expect(parseBridgeCommand("/stream on")).toEqual({
+      name: "stream",
+      args: "on",
+    });
+  });
+
+  it("should parse /reaction with args", () => {
+    expect(parseBridgeCommand("/reaction off")).toEqual({
+      name: "reaction",
+      args: "off",
+    });
+  });
+
   it("should return null for plain text", () => {
     expect(parseBridgeCommand("hello")).toBeNull();
   });

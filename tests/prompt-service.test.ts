@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPromptService } from "../src/app/prompt-service.js";
+import { createRuntimeConfigStore } from "../src/app/runtime-config.js";
 
 describe("createPromptService", () => {
   const preparePromptInput = vi.fn();
@@ -137,6 +138,92 @@ describe("createPromptService", () => {
     expect(promptSession).toHaveBeenCalled();
     expect(sendTextMessage).not.toHaveBeenCalled();
     expect(releaseLock).toHaveBeenCalledWith("ou_1");
+  });
+
+  it("运行中配置应覆盖启动时的 stream、reaction 和 stt provider", async () => {
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeConfig: createRuntimeConfigStore({
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "whisper",
+        STREAMING_ENABLED: false,
+      }),
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "audio",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_runtime_1",
+        messageType: "audio",
+        createTime: "123",
+        rawContent: '{"file_key":"file_123","duration":3200}',
+        fileKey: "file_123",
+        durationMs: 3200,
+      },
+    );
+
+    expect(preparePromptInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "audio",
+      }),
+      expect.anything(),
+      expect.objectContaining({
+        audioTranscribeProvider: "whisper",
+      }),
+      expect.anything(),
+    );
+    expect(promptSession).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "ou_1",
+      "om_runtime_1",
+      undefined,
+      false,
+      2000,
+      false,
+      undefined,
+      expect.any(Function),
+    );
   });
 
   it("引用回复时应先读取父消息，再把引用内容透传给 prompt 预处理", async () => {

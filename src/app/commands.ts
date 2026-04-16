@@ -5,7 +5,23 @@ import { RESTART_MESSAGE } from "./restart.js";
 import { STOP_MESSAGE } from "./stop.js";
 
 /** 桥接层命令列表（不含斜杠） */
-const BRIDGE_COMMANDS = ["new", "reset", "status", "context", "skills", "model", "models", "sessions", "resume", "stop", "restart", "cron"] as const;
+const BRIDGE_COMMANDS = [
+  "new",
+  "reset",
+  "status",
+  "context",
+  "skills",
+  "model",
+  "models",
+  "sessions",
+  "resume",
+  "stop",
+  "restart",
+  "cron",
+  "stt",
+  "stream",
+  "reaction",
+] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];
 
 interface BridgeContextFile {
@@ -169,6 +185,10 @@ export function handleBridgeCommand(
       return STOP_MESSAGE;
     case "restart":
       return RESTART_MESSAGE;
+    case "stt":
+    case "stream":
+    case "reaction":
+      return "";
     default:
       return "";
   }

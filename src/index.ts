@@ -27,6 +27,7 @@ import { createPromptRunner } from "./pi/stream.js";
 import { setQuotedMessageDataDir } from "./storage/quoted-messages.js";
 import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
+import { createRuntimeConfigStore } from "./app/runtime-config.js";
 
 async function main() {
   const config = loadConfig();
@@ -51,6 +52,7 @@ async function main() {
   logger.info("Workspace 根目录就绪", { workspaceRoot: config.PI_WORKSPACE_ROOT });
 
   const runtimeState = createRuntimeStateStore();
+  const runtimeConfig = createRuntimeConfigStore(config);
   const userStateStore = createUserStateStore(config.DATA_DIR);
   const workspaceService = createWorkspaceService(config.PI_WORKSPACE_ROOT);
 
@@ -146,9 +148,11 @@ async function main() {
     listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
     findAvailableModel: (rawRef: string) => findAvailableModel(rawRef, piRuntime.getModelRegistry()),
     cronService: cronService ?? undefined,
+    runtimeConfig,
   });
   const promptService = createPromptService({
     config,
+    runtimeConfig,
     runtimeState,
     sessionService,
     workspaceService,

@@ -13,6 +13,7 @@ import { readQuotedMessage as readCachedQuotedMessage } from "../storage/quoted-
 import type { UserIdentity } from "../types.js";
 import { logger } from "./logger.js";
 import type { RuntimeStateStore } from "./state.js";
+import type { RuntimeConfigStore } from "./runtime-config.js";
 
 export interface PromptService {
   handleUserPrompt(identity: UserIdentity, message: FeishuInboundMessage): Promise<void>;
@@ -46,6 +47,10 @@ interface PromptServiceDeps {
   downloadResource?: typeof downloadFeishuResource;
   readQuotedMessage?: typeof readFeishuQuotedMessage;
   preparePromptInput?: typeof prepareFeishuPromptInput;
+  runtimeConfig?: Pick<
+    RuntimeConfigStore,
+    "getAudioTranscribeProvider" | "getStreamingEnabled" | "getProcessingReactionType"
+  >;
 }
 
 export function createPromptService(deps: PromptServiceDeps): PromptService {
@@ -90,11 +95,20 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       }
 
       const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
+      const audioTranscribeProvider = deps.runtimeConfig
+        ? deps.runtimeConfig.getAudioTranscribeProvider()
+        : deps.config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER;
+      const processingReactionType = deps.runtimeConfig
+        ? deps.runtimeConfig.getProcessingReactionType()
+        : deps.config.FEISHU_PROCESSING_REACTION_TYPE;
+      const streamingEnabled = deps.runtimeConfig
+        ? deps.runtimeConfig.getStreamingEnabled()
+        : deps.config.STREAMING_ENABLED;
       const promptInput = await preparePromptInput(enrichedMessage, piSession, {
         workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
         ollamaBaseUrl: deps.config.FEISHU_MEDIA_OLLAMA_BASE_URL,
         ocrModel: deps.config.FEISHU_MEDIA_OCR_MODEL,
-        audioTranscribeProvider: deps.config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER,
+        audioTranscribeProvider,
         audioTranscribeScript: deps.config.FEISHU_AUDIO_TRANSCRIBE_SCRIPT,
         audioLanguage: deps.config.FEISHU_AUDIO_TRANSCRIBE_LANGUAGE,
         audioTranscribeSenseVoicePython: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON,
@@ -114,8 +128,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         promptInput,
         openId,
         messageId,
-        deps.config.FEISHU_PROCESSING_REACTION_TYPE,
-        deps.config.STREAMING_ENABLED,
+        processingReactionType,
+        streamingEnabled,
         deps.config.TEXT_CHUNK_LIMIT,
         deps.config.PI_SHOW_TOOL_CALLS_IN_REPLY,
         undefined,

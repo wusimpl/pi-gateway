@@ -24,6 +24,7 @@ import { createCommandService, type CommandService } from "./command-service.js"
 import { logger } from "./logger.js";
 import { createPromptService, type PromptService } from "./prompt-service.js";
 import { createRestartService } from "./restart.js";
+import { createRuntimeConfigStore } from "./runtime-config.js";
 import {
   acquireLock,
   beginRestartDrain,
@@ -166,8 +167,10 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 let defaultRouter: MessageRouter | null = null;
 
 export function initRouter(cfg: Config): void {
+  const runtimeConfig = createRuntimeConfigStore(cfg);
   const commandService = createCommandService({
     config: cfg,
+    runtimeConfig,
     messenger: {
       sendRenderedMessage: (...args) => sendRenderedMessage(...args),
       sendTextMessage: (...args) => sendTextMessage(...args),
@@ -198,6 +201,7 @@ export function initRouter(cfg: Config): void {
 
   const promptService = createPromptService({
     config: cfg,
+    runtimeConfig,
     runtimeState: {
       acquireLock: (...args) => acquireLock(...args),
       releaseLock: (...args) => releaseLock(...args),
