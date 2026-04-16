@@ -35,6 +35,9 @@ export function createFeishuConnection(config: Config): FeishuConnection {
     handler: (data: Record<string, unknown>) => Promise<void>,
   ): Promise<void> {
     eventDispatcher.register({
+      // 反应事件：当前无需业务处理，注册空 handler 消除 SDK warn 日志
+      "im.message.reaction.created_v1": () => {},
+      "im.message.reaction.deleted_v1": () => {},
       "im.message.receive_v1": (data: Record<string, unknown>) => {
         logger.debug("收到飞书消息事件", {
           topLevelKeys: Object.keys(data),
