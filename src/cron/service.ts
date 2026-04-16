@@ -10,6 +10,7 @@ import type {
 } from "./types.js";
 
 const BUSY_RETRY_MS = 60_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export interface CronService {
   start(): Promise<void>;
@@ -82,7 +83,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
       return;
     }
 
-    const delayMs = Math.max(0, nextRunAtMs - now());
+    const delayMs = Math.max(0, Math.min(nextRunAtMs - now(), MAX_TIMER_DELAY_MS));
     timer = setTimeout(() => {
       void processDueJobs();
     }, delayMs);
@@ -103,7 +104,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
         .sort((a, b) => (a.state.nextRunAtMs ?? Number.MAX_SAFE_INTEGER) - (b.state.nextRunAtMs ?? Number.MAX_SAFE_INTEGER));
 
       for (const job of dueJobs) {
-        void executeJob(job.id);
+        void executeJob(job.id, "scheduled");
       }
 
       armTimer();
@@ -213,10 +214,13 @@ export function createCronService(deps: CronServiceDeps): CronService {
       throw new Error("CRON_JOB_NOT_FOUND");
     }
 
-    return executeJob(ownedJob.id);
+    return executeJob(ownedJob.id, "manual");
   }
 
-  async function executeJob(jobId: string): Promise<CronManualRunResult> {
+  async function executeJob(
+    jobId: string,
+    trigger: "manual" | "scheduled",
+  ): Promise<CronManualRunResult> {
     let jobSnapshot: CronJob;
 
     await mutate(async () => {
@@ -270,7 +274,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
       job.state.lastRunStatus = runResult.status;
       job.state.lastError = runResult.error;
 
-      const removed = finalizeJobAfterRun(job, runResult, currentTime);
+      const removed = finalizeJobAfterRun(job, runResult, currentTime, trigger);
       await persist();
       armTimer();
 
@@ -307,8 +311,12 @@ export function createCronService(deps: CronServiceDeps): CronService {
     job: CronJob,
     runResult: CronJobRunResult,
     currentTime: number,
+    trigger: "manual" | "scheduled",
   ): boolean {
     if (runResult.status === "busy") {
+      if (trigger === "manual") {
+        return false;
+      }
       job.state.nextRunAtMs = currentTime + BUSY_RETRY_MS;
       return false;
     }
@@ -367,4 +375,3 @@ function normalizeJobName(rawName: string | undefined, prompt: string): string {
 
   return firstLine.length > 30 ? `${firstLine.slice(0, 30)}...` : firstLine;
 }
-

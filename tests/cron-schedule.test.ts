@@ -45,8 +45,39 @@ describe("cron schedule", () => {
     expect(nextRunAtMs).toBe(Date.parse("2026-04-16T09:00:00.000+08:00"));
   });
 
+  it("日期输入会按默认时区解析到当天零点", () => {
+    const parsed = parseScheduleInput(
+      "2026-04-16",
+      "Asia/Shanghai",
+      Date.parse("2026-04-15T12:00:00.000+08:00"),
+    );
+
+    expect(parsed).toEqual({
+      schedule: {
+        kind: "at",
+        atMs: Date.parse("2026-04-16T00:00:00.000+08:00"),
+      },
+      deleteAfterRun: true,
+    });
+  });
+
+  it("无时区的绝对时间会按默认时区解释", () => {
+    const parsed = parseScheduleInput(
+      "2026-04-16T13:30",
+      "America/New_York",
+      Date.parse("2026-04-16T00:00:00.000Z"),
+    );
+
+    expect(parsed).toEqual({
+      schedule: {
+        kind: "at",
+        atMs: Date.parse("2026-04-16T13:30:00.000-04:00"),
+      },
+      deleteAfterRun: true,
+    });
+  });
+
   it("非法 cron 会直接报错", () => {
     expect(() => parseScheduleInput("not-a-cron", "Asia/Shanghai")).toThrow();
   });
 });
-

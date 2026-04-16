@@ -1,6 +1,9 @@
 import { Cron } from "croner";
 import type { CronJob, CronSchedule } from "./types.js";
 
+const ABSOLUTE_DATE_TIME_PATTERN =
+  /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})(?:[ T](?<hour>\d{2}):(?<minute>\d{2})(?::(?<second>\d{2})(?:\.(?<millisecond>\d{1,3}))?)?(?<offset>Z|[+-]\d{2}:\d{2})?)?$/;
+
 const DURATION_UNITS: Record<string, number> = {
   ms: 1,
   s: 1000,
@@ -37,10 +40,7 @@ export function parseScheduleInput(
   }
 
   if (looksLikeIsoDateTime(input)) {
-    const atMs = Date.parse(input);
-    if (Number.isNaN(atMs)) {
-      throw new Error("时间格式不合法，请用 ISO 时间、相对时间或 cron 表达式");
-    }
+    const atMs = parseAbsoluteDateTime(input, defaultTz);
     if (atMs <= nowMs) {
       throw new Error("一次性任务时间必须晚于当前时间");
     }
@@ -125,9 +125,7 @@ export function formatDateTime(ms: number, timeZone: string): string {
 }
 
 function looksLikeIsoDateTime(input: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})?)?$/.test(
-    input,
-  );
+  return ABSOLUTE_DATE_TIME_PATTERN.test(input);
 }
 
 function parseDurationMs(input: string): number | null {
@@ -153,3 +151,188 @@ function parseDurationMs(input: string): number | null {
   return totalMs;
 }
 
+function parseAbsoluteDateTime(input: string, defaultTz: string): number {
+  const match = ABSOLUTE_DATE_TIME_PATTERN.exec(input);
+  if (!match?.groups) {
+    throw new Error("时间格式不合法，请用 ISO 时间、相对时间或 cron 表达式");
+  }
+
+  const parts = parseAbsoluteDateTimeParts(match.groups);
+  if (!isValidAbsoluteDateTimeParts(parts)) {
+    throw new Error("时间格式不合法，请用 ISO 时间、相对时间或 cron 表达式");
+  }
+
+  if (parts.offset) {
+    return applyOffsetToAbsoluteDateTime(parts);
+  }
+
+  return parseAbsoluteDateTimeInTimeZone(parts, defaultTz);
+}
+
+function parseAbsoluteDateTimeParts(
+  groups: Record<string, string | undefined>,
+): ParsedAbsoluteDateTimeParts {
+  return {
+    year: Number(groups.year),
+    month: Number(groups.month),
+    day: Number(groups.day),
+    hour: Number(groups.hour ?? "0"),
+    minute: Number(groups.minute ?? "0"),
+    second: Number(groups.second ?? "0"),
+    millisecond: Number((groups.millisecond ?? "").padEnd(3, "0") || "0"),
+    offset: groups.offset,
+  };
+}
+
+function isValidAbsoluteDateTimeParts(parts: ParsedAbsoluteDateTimeParts): boolean {
+  if (parts.month < 1 || parts.month > 12) {
+    return false;
+  }
+  if (parts.hour < 0 || parts.hour > 23) {
+    return false;
+  }
+  if (parts.minute < 0 || parts.minute > 59) {
+    return false;
+  }
+  if (parts.second < 0 || parts.second > 59) {
+    return false;
+  }
+  if (parts.millisecond < 0 || parts.millisecond > 999) {
+    return false;
+  }
+
+  const maxDay = new Date(Date.UTC(parts.year, parts.month, 0)).getUTCDate();
+  return parts.day >= 1 && parts.day <= maxDay;
+}
+
+function applyOffsetToAbsoluteDateTime(parts: ParsedAbsoluteDateTimeParts): number {
+  const utcMs = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+    parts.millisecond,
+  );
+  return utcMs - parseOffsetMs(parts.offset);
+}
+
+function parseAbsoluteDateTimeInTimeZone(
+  parts: ParsedAbsoluteDateTimeParts,
+  timeZone: string,
+): number {
+  const utcGuess = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+    parts.millisecond,
+  );
+
+  let atMs = utcGuess - getTimeZoneOffsetMs(utcGuess, timeZone);
+  atMs = utcGuess - getTimeZoneOffsetMs(atMs, timeZone);
+
+  if (!matchesAbsoluteDateTimeInTimeZone(atMs, parts, timeZone)) {
+    throw new Error("时间格式不合法，请用 ISO 时间、相对时间或 cron 表达式");
+  }
+
+  return atMs;
+}
+
+function matchesAbsoluteDateTimeInTimeZone(
+  atMs: number,
+  parts: ParsedAbsoluteDateTimeParts,
+  timeZone: string,
+): boolean {
+  const actual = formatDateTimePartsInTimeZone(atMs, timeZone);
+  return (
+    actual.year === parts.year &&
+    actual.month === parts.month &&
+    actual.day === parts.day &&
+    actual.hour === parts.hour &&
+    actual.minute === parts.minute &&
+    actual.second === parts.second
+  );
+}
+
+function formatDateTimePartsInTimeZone(atMs: number, timeZone: string): FormattedDateTimeParts {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  });
+  const parts = formatter.formatToParts(new Date(atMs));
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value),
+    month: Number(parts.find((part) => part.type === "month")?.value),
+    day: Number(parts.find((part) => part.type === "day")?.value),
+    hour: Number(parts.find((part) => part.type === "hour")?.value),
+    minute: Number(parts.find((part) => part.type === "minute")?.value),
+    second: Number(parts.find((part) => part.type === "second")?.value),
+  };
+}
+
+function getTimeZoneOffsetMs(atMs: number, timeZone: string): number {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "longOffset",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const offset = formatter
+    .formatToParts(new Date(atMs))
+    .find((part) => part.type === "timeZoneName")?.value;
+  return parseOffsetMs(offset);
+}
+
+function parseOffsetMs(offset: string | undefined): number {
+  if (!offset) {
+    throw new Error("时间格式不合法，请用 ISO 时间、相对时间或 cron 表达式");
+  }
+
+  if (offset === "Z" || offset === "GMT" || offset === "UTC") {
+    return 0;
+  }
+
+  const match = /^(?:GMT)?(?<sign>[+-])(?<hour>\d{2}):(?<minute>\d{2})$/.exec(offset);
+  if (!match?.groups) {
+    throw new Error("时间格式不合法，请用 ISO 时间、相对时间或 cron 表达式");
+  }
+
+  const sign = match.groups.sign === "+" ? 1 : -1;
+  return sign * (Number(match.groups.hour) * 60 + Number(match.groups.minute)) * 60_000;
+}
+
+interface ParsedAbsoluteDateTimeParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  millisecond: number;
+  offset?: string;
+}
+
+interface FormattedDateTimeParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
