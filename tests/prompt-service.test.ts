@@ -69,6 +69,7 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -151,6 +152,7 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -238,6 +240,7 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -313,6 +316,7 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -377,6 +381,7 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {

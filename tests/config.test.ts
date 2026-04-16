@@ -38,6 +38,13 @@ describe("loadConfig", () => {
     expect(loadConfig().STREAMING_ENABLED).toBe(false);
   });
 
+  it("PI_SHOW_TOOL_CALLS_IN_REPLY 默认应为 false", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().PI_SHOW_TOOL_CALLS_IN_REPLY).toBe(false);
+  });
+
   it("PI_DISABLE_GLOBAL_AGENTS 默认应为 false", async () => {
     applyBaseEnv();
     const { loadConfig } = await import("../src/config.js");

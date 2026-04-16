@@ -76,7 +76,7 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "hello world", error: undefined });
     expect(mockAddProcessingReaction).toHaveBeenCalledWith("om_source_1", "SMILE");
-    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world");
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world", "");
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
     expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
     expect(mockSendRenderedMessage).toHaveBeenCalledWith(
@@ -144,6 +144,7 @@ describe("promptSession", () => {
   it("启用流式卡片时，应持续更新并最终收口到同一条消息", async () => {
     const mockStreamingMessage = {
       updateBody: vi.fn().mockResolvedValue(undefined),
+      updateTools: vi.fn().mockResolvedValue(undefined),
       finish: vi.fn().mockResolvedValue(undefined),
     };
     mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
@@ -160,11 +161,65 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "hello world", error: undefined });
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
-    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world");
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world", "");
     expect(mockStreamingMessage.updateBody).not.toHaveBeenCalledWith("hello world");
     expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
       "hello world\n\n4.1%/200k | 模型: rightcodes/gpt-5.4-high",
       2000,
+      "",
+    );
+  });
+
+  it("开启工具展示后，应在流式卡片里实时刷新简短工具状态", async () => {
+    const mockStreamingMessage = {
+      updateBody: vi.fn().mockResolvedValue(undefined),
+      updateTools: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+    };
+    mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_1",
+        toolName: "read",
+        args: { filePath: "src/index.ts" },
+      } as any,
+      {
+        type: "tool_execution_update",
+        toolCallId: "call_1",
+        toolName: "read",
+        partialResult: {
+          content: [{ type: "text", text: "import { loadConfig } from \"./config.js\";" }],
+        },
+      } as any,
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "我先看了入口文件。" } },
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_1",
+        toolName: "read",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "import { loadConfig } from \"./config.js\";" }],
+        },
+      } as any,
+      { type: "message_end" },
+    ]);
+
+    await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, true, 2000, true);
+
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "",
+      "**工具**\nread 运行中: src/index.ts",
+    );
+    expect(mockStreamingMessage.updateTools).toHaveBeenCalledWith(
+      "**工具**\nread 运行中: import { loadConfig } from \"./config.js\";",
+    );
+    expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
+      "我先看了入口文件。",
+      2000,
+      "**工具**\nread 完成: import { loadConfig } from \"./config.js\";",
     );
   });
 
@@ -288,6 +343,7 @@ describe("promptSession", () => {
       undefined,
       false,
       2000,
+      false,
       5 * 60 * 1000,
       () => aborted,
     );
@@ -299,6 +355,7 @@ describe("promptSession", () => {
   it("用户主动停止且已经有流式卡片时，应直接收口当前卡片", async () => {
     const mockStreamingMessage = {
       updateBody: vi.fn().mockResolvedValue(undefined),
+      updateTools: vi.fn().mockResolvedValue(undefined),
       finish: vi.fn().mockResolvedValue(undefined),
     };
     mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
@@ -328,6 +385,7 @@ describe("promptSession", () => {
       undefined,
       true,
       2000,
+      false,
       5 * 60 * 1000,
       () => aborted,
     );
@@ -391,6 +449,7 @@ describe("promptSession", () => {
       undefined,
       true,
       2000,
+      false,
       5 * 60 * 1000,
       () => aborted,
     );
@@ -473,6 +532,7 @@ describe("promptSession", () => {
       undefined,
       false,
       2000,
+      false,
       3000, // 3 秒空闲超时
     );
 
@@ -526,6 +586,7 @@ describe("promptSession", () => {
       undefined,
       false,
       2000,
+      false,
       3000, // 3 秒空闲超时
     );
 
@@ -587,6 +648,7 @@ describe("promptSession", () => {
       undefined,
       false,
       2000,
+      false,
       3000, // 3 秒空闲超时
     );
 
@@ -656,6 +718,7 @@ describe("promptSession", () => {
       undefined,
       false,
       2000,
+      false,
       500, // 短 idle 超时
     );
 
@@ -713,6 +776,7 @@ describe("promptSession", () => {
       undefined,
       false,
       2000,
+      false,
       3000, // 3 秒空闲超时
     );
 

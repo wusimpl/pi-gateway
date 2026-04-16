@@ -31,6 +31,7 @@ interface PromptServiceDeps {
     | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE"
     | "FEISHU_PROCESSING_REACTION_TYPE"
     | "STREAMING_ENABLED"
+    | "PI_SHOW_TOOL_CALLS_IN_REPLY"
     | "TEXT_CHUNK_LIMIT"
   >;
   runtimeState: Pick<
@@ -116,6 +117,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         deps.config.FEISHU_PROCESSING_REACTION_TYPE,
         deps.config.STREAMING_ENABLED,
         deps.config.TEXT_CHUNK_LIMIT,
+        deps.config.PI_SHOW_TOOL_CALLS_IN_REPLY,
         undefined,
         () => deps.runtimeState.isStopRequested(openId, messageId),
       );

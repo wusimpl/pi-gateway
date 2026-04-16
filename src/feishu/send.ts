@@ -12,6 +12,7 @@ import {
   buildStreamingCardSettings,
   buildStreamingSummary,
   getStreamingBodyElementId,
+  getStreamingToolsElementId,
 } from "./streaming-card.js";
 import {
   buildFeishuDocPreviewCardContent,
@@ -122,7 +123,8 @@ export interface FeishuApiClient {
 
 export interface FeishuStreamingMessage {
   updateBody(text: string): Promise<void>;
-  finish(bodyText: string, textChunkLimit: number): Promise<void>;
+  updateTools(text: string): Promise<void>;
+  finish(bodyText: string, textChunkLimit: number, toolsText?: string): Promise<void>;
 }
 
 export type { FeishuDocPreviewCardInput } from "./doc-preview-card.js";
@@ -133,7 +135,7 @@ export interface FeishuMessenger {
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
   sendLocalFileMessage(openId: string, input: SendLocalFileInput): Promise<SentFeishuFile>;
   sendDocPreviewCard(openId: string, input: FeishuDocPreviewCardInput): Promise<string | null>;
-  startStreamingMessage(openId: string, bodyText?: string): Promise<FeishuStreamingMessage | null>;
+  startStreamingMessage(openId: string, bodyText?: string, toolsText?: string): Promise<FeishuStreamingMessage | null>;
   addProcessingReaction(messageId: string, reactionType?: string): Promise<string | null>;
   removeReaction(messageId: string, reactionId: string): Promise<boolean>;
 }
@@ -299,6 +301,7 @@ export function createFeishuMessenger(
   async function startStreamingMessage(
     openId: string,
     bodyText: string = "",
+    toolsText: string = "",
   ): Promise<FeishuStreamingMessage | null> {
     try {
       const createResp = await retryRequest("飞书流式卡片创建", { openId }, () => client.cardkit.v1.card.create({
@@ -306,6 +309,7 @@ export function createFeishuMessenger(
           type: "card_json",
           data: buildStreamingCardData({
             bodyText,
+            toolsText,
           }),
         },
       }));
@@ -382,27 +386,30 @@ export function createFeishuMessenger(
       return {
         updateBody: (nextBodyText: string) =>
           updateElement(getStreamingBodyElementId(), nextBodyText),
-        async finish(finalBodyText: string, textChunkLimit: number): Promise<void> {
+        updateTools: (nextToolsText: string) =>
+          updateElement(getStreamingToolsElementId(), nextToolsText),
+        async finish(finalBodyText: string, textChunkLimit: number, toolsText: string = ""): Promise<void> {
+          const finalText = toolsText ? `${finalBodyText}\n\n${toolsText}` : finalBodyText;
           await cacheQuotedMessage(
             quotedMessageStore,
             messageId,
             "interactive",
-            finalBodyText.trim(),
+            finalText.trim(),
           );
 
-          const renderedMessages = renderAssistantMessage(finalBodyText, textChunkLimit);
+          const renderedMessages = renderAssistantMessage(finalText, textChunkLimit);
           if (renderedMessages.length === 1 && renderedMessages[0].msgType === "interactive") {
             await updateCard(buildFinalStreamingCardData({
               finalMessage: renderedMessages[0],
-              summaryText: buildStreamingSummary(finalBodyText),
+              summaryText: buildStreamingSummary(finalText),
             }));
             return;
           }
 
-          await updateElement(getStreamingBodyElementId(), finalBodyText);
+          await updateElement(getStreamingBodyElementId(), finalText);
           await updateSettings(buildStreamingCardSettings({
             streamingMode: false,
-            summaryText: buildStreamingSummary(finalBodyText),
+            summaryText: buildStreamingSummary(finalText),
           }));
         },
       };
@@ -508,8 +515,9 @@ export async function sendDocPreviewCard(
 export async function startStreamingMessage(
   openId: string,
   bodyText: string = "",
+  toolsText: string = "",
 ): Promise<FeishuStreamingMessage | null> {
-  return getDefaultFeishuMessenger().startStreamingMessage(openId, bodyText);
+  return getDefaultFeishuMessenger().startStreamingMessage(openId, bodyText, toolsText);
 }
 
 export async function addProcessingReaction(

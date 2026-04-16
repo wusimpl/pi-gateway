@@ -1,10 +1,12 @@
 import type { RenderedFeishuMessage } from "./render.js";
 
 const STREAMING_BODY_ELEMENT_ID = "stream_body";
+const STREAMING_TOOLS_ELEMENT_ID = "stream_tools";
 const STREAMING_SUMMARY_LIMIT = 120;
 
 interface BuildStreamingCardOptions {
   bodyText?: string;
+  toolsText?: string;
   summaryText?: string;
 }
 
@@ -20,6 +22,7 @@ interface BuildFinalStreamingCardOptions {
 
 export function buildStreamingCardData({
   bodyText = "",
+  toolsText = "",
   summaryText = "",
 }: BuildStreamingCardOptions): string {
   return JSON.stringify({
@@ -30,6 +33,7 @@ export function buildStreamingCardData({
       padding: "12px 12px 12px 12px",
       elements: [
         buildMarkdownElement(bodyText, STREAMING_BODY_ELEMENT_ID),
+        buildMarkdownElement(toolsText, STREAMING_TOOLS_ELEMENT_ID),
       ],
     },
   });
@@ -74,6 +78,10 @@ export function buildStreamingSummary(text: string): string {
 
 export function getStreamingBodyElementId(): string {
   return STREAMING_BODY_ELEMENT_ID;
+}
+
+export function getStreamingToolsElementId(): string {
+  return STREAMING_TOOLS_ELEMENT_ID;
 }
 
 function buildStreamingCardConfig(

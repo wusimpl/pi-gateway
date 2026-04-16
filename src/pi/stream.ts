@@ -34,6 +34,8 @@ const PROMPT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 /** Pi prompt 总超时兜底：即使模型一直有活动，总时长也不应超过此值（30 分钟） */
 const PROMPT_TOTAL_TIMEOUT_MS = 30 * 60 * 1000;
 const STREAMING_UPDATE_INTERVAL_MS = 300;
+const MAX_VISIBLE_TOOL_CALLS = 5;
+const TOOL_SUMMARY_MAX_CHARS = 80;
 
 type PromptMessenger = Pick<
   FeishuMessenger,
@@ -53,9 +55,17 @@ export interface PromptRunner {
     processingReactionType?: string,
     streamingEnabled?: boolean,
     textChunkLimit?: number,
+    showToolCallsInReply?: boolean,
     timeoutMs?: number,
     isAbortRequested?: () => boolean,
   ): Promise<PromptResult>;
+}
+
+interface ToolCallState {
+  toolCallId: string;
+  toolName: string;
+  status: "running" | "done" | "error";
+  summary?: string;
 }
 
 export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
@@ -65,12 +75,13 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       promptInput: string | PromptInput,
       openId: string,
       sourceMessageId: string,
-      processingReactionType?: string,
-      streamingEnabled: boolean = false,
-      textChunkLimit: number = 2000,
-      timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
-      isAbortRequested?: () => boolean,
-    ): Promise<PromptResult> {
+    processingReactionType?: string,
+    streamingEnabled: boolean = false,
+    textChunkLimit: number = 2000,
+    showToolCallsInReply: boolean = false,
+    timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
+    isAbortRequested?: () => boolean,
+  ): Promise<PromptResult> {
       const normalizedPrompt = typeof promptInput === "string" ? { text: promptInput } : promptInput;
       let fullText = "";
       let lastError: string | undefined;
@@ -79,10 +90,12 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let streamingMessage: FeishuStreamingMessage | null = null;
       let streamingBroken = false;
       let flushedBody = "";
+      let flushedTools = "";
       let pendingTimer: NodeJS.Timeout | null = null;
       let flushChain: Promise<void> = Promise.resolve();
       let streamingInitAttempted = false;
       const docPreviewMap = new Map<string, FeishuDocPreviewCardInput>();
+      const toolCallMap = new Map<string, ToolCallState>();
 
       try {
         reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
@@ -92,22 +105,24 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       async function ensureStreamingMessage(
         initialBody: string = stripLeadingBlankLines(fullText),
+        initialTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "",
       ): Promise<void> {
         if (
           !streamingEnabled ||
           streamingBroken ||
           streamingMessage ||
           streamingInitAttempted ||
-          !hasVisibleAssistantText(fullText)
+          !hasVisibleStreamingContent(fullText, initialTools)
         ) {
           return;
         }
 
         streamingInitAttempted = true;
         try {
-          streamingMessage = await messenger.startStreamingMessage(openId, initialBody);
+          streamingMessage = await messenger.startStreamingMessage(openId, initialBody, initialTools);
           if (streamingMessage) {
             flushedBody = initialBody;
+            flushedTools = initialTools;
           }
         } catch (err) {
           logger.warn("飞书流式卡片初始化失败，回退到最终消息发送", {
@@ -119,14 +134,16 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       }
 
       function queueStreamingFlush(force: boolean = false): void {
-        if (!streamingEnabled || streamingBroken || !hasVisibleAssistantText(fullText)) return;
+        const toolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "";
+        if (!streamingEnabled || streamingBroken || !hasVisibleStreamingContent(fullText, toolsSnapshot)) return;
         if (force) {
           const bodySnapshot = stripLeadingBlankLines(fullText);
+          const forcedToolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "";
           if (pendingTimer) {
             clearTimeout(pendingTimer);
             pendingTimer = null;
           }
-          flushChain = flushChain.then(() => flushStreamingState(bodySnapshot));
+          flushChain = flushChain.then(() => flushStreamingState(bodySnapshot, forcedToolsSnapshot));
           return;
         }
         if (pendingTimer) return;
@@ -138,11 +155,12 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       async function flushStreamingState(
         nextBody: string = stripLeadingBlankLines(fullText),
+        nextTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "",
       ): Promise<void> {
         if (streamingBroken) return;
-        await ensureStreamingMessage(nextBody);
+        await ensureStreamingMessage(nextBody, nextTools);
         if (!streamingMessage) return;
-        if (nextBody === flushedBody) {
+        if (nextBody === flushedBody && nextTools === flushedTools) {
           return;
         }
 
@@ -150,6 +168,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           if (nextBody !== flushedBody) {
             await streamingMessage.updateBody(nextBody);
             flushedBody = nextBody;
+          }
+          if (nextTools !== flushedTools) {
+            await streamingMessage.updateTools(nextTools);
+            flushedTools = nextTools;
           }
         } catch (err) {
           streamingBroken = true;
@@ -209,7 +231,26 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             break;
           case "tool_execution_start":
             logger.debug("Pi tool_execution_start", { toolName: event.toolName });
+            if (showToolCallsInReply) {
+              toolCallMap.set(event.toolCallId, {
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                status: "running",
+                summary: summarizeToolArgs(event.args),
+              });
+              queueStreamingFlush(true);
+            }
             // 工具调用开始也说明模型在活跃，重置空闲计时器
+            resetIdleTimer();
+            break;
+          case "tool_execution_update":
+            if (showToolCallsInReply) {
+              const toolCall = toolCallMap.get(event.toolCallId);
+              if (toolCall) {
+                toolCall.summary = summarizeToolProgress(event.partialResult) ?? toolCall.summary;
+                queueStreamingFlush(!hasVisibleAssistantText(fullText));
+              }
+            }
             resetIdleTimer();
             break;
           case "tool_execution_end":
@@ -217,6 +258,14 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               toolName: event.toolName,
               isError: event.isError,
             });
+            if (showToolCallsInReply) {
+              const toolCall = toolCallMap.get(event.toolCallId);
+              if (toolCall) {
+                toolCall.status = event.isError ? "error" : "done";
+                toolCall.summary = summarizeToolProgress(event.result) ?? toolCall.summary;
+                queueStreamingFlush(true);
+              }
+            }
             collectDocPreviewCardInput(docPreviewMap, event.toolName, event.result, event.isError);
             // 工具调用结束也说明模型在活跃，重置空闲计时器
             resetIdleTimer();
@@ -259,7 +308,14 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           clearTimeout(pendingTimer);
           pendingTimer = null;
         }
-        if (streamingEnabled && !streamingBroken && hasVisibleAssistantText(fullText)) {
+        if (
+          streamingEnabled &&
+          !streamingBroken &&
+          hasVisibleStreamingContent(
+            fullText,
+            showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "",
+          )
+        ) {
           flushChain = flushChain.then(() => flushStreamingState());
         }
         await flushChain;
@@ -277,6 +333,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           : fullText;
       const footer = formatPromptFooter(session);
       const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), footer);
+      const finalToolsText = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "";
       const finalOutputText = abortedByUser
         ? (streamingMessage ? STOP_MESSAGE : "")
         : finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
@@ -286,6 +343,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           openId,
           finalOutputText,
           textChunkLimit,
+          finalToolsText,
           streamingMessage,
           streamingBroken,
         );
@@ -317,6 +375,7 @@ export async function promptSession(
   processingReactionType?: string,
   streamingEnabled: boolean = false,
   textChunkLimit: number = 2000,
+  showToolCallsInReply: boolean = false,
   timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
   isAbortRequested?: () => boolean,
 ): Promise<PromptResult> {
@@ -328,6 +387,7 @@ export async function promptSession(
     processingReactionType,
     streamingEnabled,
     textChunkLimit,
+    showToolCallsInReply,
     timeoutMs,
     isAbortRequested,
   );
@@ -339,12 +399,13 @@ async function finalizeMessage(
   openId: string,
   fullText: string,
   textChunkLimit: number,
+  toolsText: string = "",
   streamingMessage?: FeishuStreamingMessage | null,
   streamingBroken: boolean = false,
 ): Promise<void> {
   if (streamingMessage && !streamingBroken) {
     try {
-      await streamingMessage.finish(fullText, textChunkLimit);
+      await streamingMessage.finish(fullText, textChunkLimit, toolsText);
       return;
     } catch (err) {
       logger.error("飞书流式卡片收口失败，回退到最终消息发送", {
@@ -354,7 +415,7 @@ async function finalizeMessage(
     }
   }
   if (!fullText) return;
-  await messenger.sendRenderedMessage(openId, fullText, textChunkLimit);
+  await messenger.sendRenderedMessage(openId, appendToolCallsSection(fullText, toolsText), textChunkLimit);
 }
 
 async function sendCollectedDocPreviewCards(
@@ -467,9 +528,160 @@ function hasVisibleAssistantText(text: string): boolean {
   return stripLeadingBlankLines(text).length > 0;
 }
 
+function hasVisibleStreamingContent(text: string, toolsText: string): boolean {
+  return hasVisibleAssistantText(text) || hasVisibleToolText(toolsText);
+}
+
+function hasVisibleToolText(toolsText: string): boolean {
+  return toolsText.trim().length > 0;
+}
+
 function appendMessageFooter(text: string, footer?: string): string {
   if (!text || !footer) return text;
   return text ? `${text}\n\n${footer}` : footer;
+}
+
+function appendToolCallsSection(text: string, toolsText: string): string {
+  if (!toolsText) return text;
+  return text ? `${text}\n\n${toolsText}` : toolsText;
+}
+
+function formatToolCallsSection(toolCallMap: ReadonlyMap<string, ToolCallState>): string {
+  const toolCalls = Array.from(toolCallMap.values()).slice(-MAX_VISIBLE_TOOL_CALLS);
+  if (toolCalls.length === 0) return "";
+
+  const lines = ["**工具**"];
+  for (const toolCall of toolCalls) {
+    const statusLabel = formatToolStatus(toolCall.status);
+    const summary = toolCall.summary ? `: ${toolCall.summary}` : "";
+    lines.push(`${toolCall.toolName} ${statusLabel}${summary}`);
+  }
+  return lines.join("\n");
+}
+
+function formatToolStatus(status: ToolCallState["status"]): string {
+  switch (status) {
+    case "running":
+      return "运行中";
+    case "done":
+      return "完成";
+    case "error":
+      return "失败";
+  }
+}
+
+function summarizeToolArgs(args: unknown): string | undefined {
+  const preferred = readPreferredSummaryField(args, [
+    "command",
+    "filePath",
+    "path",
+    "url",
+    "query",
+    "prompt",
+    "title",
+    "name",
+  ]);
+  if (preferred) return preferred;
+  return summarizeUnknownValue(args);
+}
+
+function summarizeToolProgress(result: unknown): string | undefined {
+  const contentText = extractToolContentText(result);
+  if (contentText) return contentText;
+
+  const details = extractToolResultDetails(result);
+  const preferred = readPreferredSummaryField(details, [
+    "message",
+    "summary",
+    "result",
+    "output",
+    "title",
+    "document_url",
+    "document_id",
+    "file_name",
+    "file_path",
+    "path",
+  ]);
+  if (preferred) return preferred;
+
+  return summarizeUnknownValue(details);
+}
+
+function extractToolContentText(result: unknown): string | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return undefined;
+  }
+
+  const raw = result as Record<string, unknown>;
+  const content = raw.content;
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  for (const item of content) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+
+    const text = (item as Record<string, unknown>).text;
+    if (typeof text === "string" && text.trim()) {
+      return normalizeToolSummary(text);
+    }
+  }
+
+  return undefined;
+}
+
+function readPreferredSummaryField(
+  value: unknown,
+  keys: string[],
+): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const field = record[key];
+    if (typeof field === "string" && field.trim()) {
+      return normalizeToolSummary(field);
+    }
+  }
+
+  for (const field of Object.values(record)) {
+    if (typeof field === "string" && field.trim()) {
+      return normalizeToolSummary(field);
+    }
+  }
+
+  return undefined;
+}
+
+function summarizeUnknownValue(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    return normalizeToolSummary(value);
+  }
+
+  try {
+    return normalizeToolSummary(JSON.stringify(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeToolSummary(text: string): string | undefined {
+  const normalized = text
+    .replace(/\r\n/g, "\n")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return undefined;
+  if (normalized.length <= TOOL_SUMMARY_MAX_CHARS) {
+    return normalized;
+  }
+  return `${normalized.slice(0, TOOL_SUMMARY_MAX_CHARS - 3)}...`;
 }
 
 function formatPromptFooter(

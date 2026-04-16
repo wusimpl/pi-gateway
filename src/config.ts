@@ -26,6 +26,10 @@ const envSchema = z.object({
     .string()
     .transform((v) => v === "true")
     .default("false"),
+  PI_SHOW_TOOL_CALLS_IN_REPLY: z
+    .string()
+    .transform((v) => v === "true")
+    .default("false"),
   TEXT_CHUNK_LIMIT: z.coerce.number().int().positive().default(2000),
   FEISHU_PROCESSING_REACTION_TYPE: z.string().optional(),
 });

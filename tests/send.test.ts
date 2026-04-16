@@ -251,7 +251,7 @@ describe("send helpers", () => {
     });
   });
 
-  it("startStreamingMessage: 应创建只有正文的流式卡片并发送消息", async () => {
+  it("startStreamingMessage: 应创建正文区和工具区的流式卡片并发送消息", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
     const { startStreamingMessage } = await import("../src/feishu/send.js");
@@ -269,6 +269,10 @@ describe("send helpers", () => {
       expect.objectContaining({
         element_id: "stream_body",
         content: "hello",
+      }),
+      expect.objectContaining({
+        element_id: "stream_tools",
+        content: "",
       }),
     ]);
     expect(mockCreate).toHaveBeenCalledWith({
@@ -298,6 +302,7 @@ describe("send helpers", () => {
 
     expect(stream).not.toBeNull();
     await stream!.updateBody("hello world");
+    await stream!.updateTools("read 运行中: package.json");
     await stream!.finish("hello world", 2000);
 
     expect(mockCardContent).toHaveBeenNthCalledWith(1, {
@@ -314,11 +319,22 @@ describe("send helpers", () => {
     expect(mockCardContent).toHaveBeenNthCalledWith(2, {
       path: {
         card_id: "card_1",
+        element_id: "stream_tools",
+      },
+      data: expect.objectContaining({
+        content: "read 运行中: package.json",
+        sequence: 2,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardContent).toHaveBeenNthCalledWith(3, {
+      path: {
+        card_id: "card_1",
         element_id: "stream_body",
       },
       data: expect.objectContaining({
         content: "hello world",
-        sequence: 2,
+        sequence: 3,
         uuid: expect.any(String),
       }),
     });
@@ -327,7 +343,7 @@ describe("send helpers", () => {
         card_id: "card_1",
       },
       data: expect.objectContaining({
-        sequence: 3,
+        sequence: 4,
         uuid: expect.any(String),
       }),
     });
@@ -384,6 +400,10 @@ describe("send helpers", () => {
       expect.objectContaining({
         element_id: "stream_body",
         content: "stream body",
+      }),
+      expect.objectContaining({
+        element_id: "stream_tools",
+        content: "",
       }),
     ]);
   });
@@ -490,12 +510,12 @@ describe("send helpers", () => {
     );
 
     const stream = await messenger.startStreamingMessage("ou_1", "init");
-    await stream!.finish("最终完整正文", 2000);
+    await stream!.finish("最终完整正文", 2000, "**工具**\nread 完成: src/index.ts");
 
     expect(quotedMessageStore.writeQuotedMessage).toHaveBeenCalledWith({
       messageId: "om_stream_cache_1",
       messageType: "interactive",
-      text: "最终完整正文",
+      text: "最终完整正文\n\n**工具**\nread 完成: src/index.ts",
     });
   });
 });
