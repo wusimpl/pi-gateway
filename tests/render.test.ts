@@ -52,6 +52,7 @@ describe("renderAssistantMessage", () => {
         { col_0: "local", col_1: "MiniMax M2.5" },
       ],
     });
+    expect(elements[1].columns[0]).not.toHaveProperty("text_align");
   });
 
   it("Markdown 内容后面追加尾巴后仍应保持卡片渲染", () => {

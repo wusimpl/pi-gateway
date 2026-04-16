@@ -159,10 +159,10 @@ describe("handleBridgeCommand", () => {
       "📚 最近会话（第 1/2 页，共 22 个）\n" +
         "用 /resume <序号> 切换。翻页：/sessions -n <页码>。\n" +
         "\n" +
-        "| 序号 | 会话 | 消息 | 时间 | 当前 |\n" +
-        "| --- | --- | --- | --- | --- |\n" +
-        "| 1 | 这个项目 | 2 | 12m | 当前 |\n" +
-        "| 2 | hello! | 14 | 2d |  |",
+        "| 序号 | 会话 | 消息 | 时间 |\n" +
+        "| --- | --- | --- | --- |\n" +
+        "| 1 | 这个项目 | 2 | 12m |\n" +
+        "| 2 | hello! | 14 | 2d |",
     );
   });
 
@@ -183,7 +183,7 @@ describe("handleBridgeCommand", () => {
           },
         ],
       } as any),
-    ).toContain("| 1 | hello \\| world | 3 | 12m |  |");
+    ).toContain("| 1 | hello \\| world | 3 | 12m |");
   });
 
   it("`/resume` 应返回切换后的会话", () => {

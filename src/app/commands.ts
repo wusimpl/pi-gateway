@@ -202,8 +202,8 @@ function formatSessionsReply(
     `📚 最近会话（第 ${meta.page}/${meta.totalPages} 页，共 ${meta.totalCount} 个）`,
     "用 /resume <序号> 切换。翻页：/sessions -n <页码>。",
     "",
-    "| 序号 | 会话 | 消息 | 时间 | 当前 |",
-    "| --- | --- | --- | --- | --- |",
+    "| 序号 | 会话 | 消息 | 时间 |",
+    "| --- | --- | --- | --- |",
     ...formatSessionRows(sessions),
   ].join("\n");
 }
@@ -213,8 +213,7 @@ function formatSessionRows(sessions: BridgeListedSession[]): string[] {
     const title = escapeMarkdownTableCell(getSessionDisplayTitle(session));
     const messageCount = Math.max(0, session.messageCount);
     const ageLabel = formatSessionAge(session.updatedAt);
-    const activeLabel = session.isActive ? "当前" : "";
-    return `| ${session.order} | ${title} | ${messageCount} | ${ageLabel} | ${activeLabel} |`;
+    return `| ${session.order} | ${title} | ${messageCount} | ${ageLabel} |`;
   });
 }
 

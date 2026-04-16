@@ -524,6 +524,51 @@ describe("send helpers", () => {
     });
   });
 
+  it("sendRenderedMessage: 卡片发送失败时应回退为文本", async () => {
+    mockCreate
+      .mockRejectedValueOnce(new Error("interactive failed"))
+      .mockRejectedValueOnce(new Error("interactive failed"))
+      .mockRejectedValueOnce(new Error("interactive failed"))
+      .mockResolvedValueOnce({ data: { message_id: "om_fallback_1" } });
+    const { createFeishuMessenger } = await import("../src/feishu/send.js");
+
+    const messenger = createFeishuMessenger({
+      im: {
+        file: {
+          create: mockFileCreate,
+        },
+        message: {
+          create: mockCreate,
+        },
+        messageReaction: {
+          create: mockReactionCreate,
+          delete: mockReactionDelete,
+        },
+      },
+      cardkit: {
+        v1: {
+          card: {
+            create: mockCardCreate,
+            update: mockCardUpdate,
+            settings: mockCardSettings,
+          },
+          cardElement: {
+            content: mockCardContent,
+          },
+        },
+      },
+    } as any);
+
+    await messenger.sendRenderedMessage("ou_1", "标题\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n", 2000);
+
+    expect(mockCreate).toHaveBeenCalledTimes(4);
+    expect(mockCreate.mock.calls[0][0].data.msg_type).toBe("interactive");
+    expect(mockCreate.mock.calls[3][0].data.msg_type).toBe("text");
+    expect(JSON.parse(mockCreate.mock.calls[3][0].data.content)).toEqual({
+      text: "标题\n\n| A | B |\n| --- | --- |\n| 1 | 2 |",
+    });
+  });
+
   it("startStreamingMessage.finish: 应把最终收口正文写入引用缓存", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_cache_1" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_cache_1" } });

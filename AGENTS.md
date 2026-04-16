@@ -5,6 +5,7 @@
 
 ## 开发
 禁止使用worktree
+改飞书卡片前先对照官方字段，尤其 `table.columns` 不能自造属性如 `text_align`，否则会被飞书 400 拒掉。
 
 ## Pi Skills
 涉及 Pi 的 skill、技能目录、`/skills`、`SKILL.md` 或“有没有配套 skill”这类问题时，默认先检查 `~/.pi/agent/skills`，不要只看项目目录。项目内和全局目录都可能有 skills；如果没有特别说明，优先认为 `~/.pi/agent/skills` 是有效技能来源之一。

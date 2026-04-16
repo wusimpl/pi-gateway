@@ -227,9 +227,27 @@ export function createFeishuMessenger(
     text: string,
     textChunkLimit: number
   ): Promise<void> {
-    const messages = renderAssistantMessage(text, textChunkLimit);
+    const normalized = text.replace(/\r\n/g, "\n").trimEnd();
+    if (!normalized) {
+      return;
+    }
+
+    const messages = renderAssistantMessage(normalized, textChunkLimit);
     for (const message of messages) {
-      await sendFeishuMessage(openId, message.msgType, message.content);
+      const messageId = await sendFeishuMessage(openId, message.msgType, message.content);
+      if (messageId) {
+        continue;
+      }
+
+      if (message.msgType !== "interactive") {
+        continue;
+      }
+
+      logger.warn("飞书卡片发送失败，回退为文本消息", { openId });
+      for (const chunk of chunkText(normalized, textChunkLimit)) {
+        await sendFeishuMessage(openId, "text", { text: chunk });
+      }
+      return;
     }
   }
 

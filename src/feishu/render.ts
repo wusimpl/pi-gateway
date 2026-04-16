@@ -32,7 +32,6 @@ interface TableColumn {
   name: string;
   display_name: string;
   data_type: "text" | "number";
-  text_align: "left" | "center" | "right";
 }
 
 const MAX_CARD_ELEMENTS = 30;
@@ -152,7 +151,6 @@ function buildTableElement(token: Tokens.Table): TableCardElement {
       name,
       display_name: inlineCellText(cell) || `Column ${index + 1}`,
       data_type: isNumberColumn ? "number" : "text",
-      text_align: mapAlign(token.align[index], isNumberColumn),
     };
   });
 
@@ -254,16 +252,6 @@ function inlineCellText(cell: Tokens.TableCell | undefined): string {
 
 function isNumericCell(value: string): boolean {
   return /^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(value.trim());
-}
-
-function mapAlign(
-  align: Tokens.TableCell["align"] | null | undefined,
-  isNumberColumn: boolean
-): "left" | "center" | "right" {
-  if (align === "center" || align === "right" || align === "left") {
-    return align;
-  }
-  return isNumberColumn ? "right" : "left";
 }
 
 function chunkCardElements(elements: CardElement[]): CardElement[][] {

@@ -151,7 +151,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
     expect(mocks.listSessions).toHaveBeenCalledTimes(1);
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "📚 最近会话（第 1/1 页，共 2 个）\n用 /resume <序号> 切换。翻页：/sessions -n <页码>。\n\n| 序号 | 会话 | 消息 | 时间 | 当前 |\n| --- | --- | --- | --- | --- |\n| 1 | 这个项目 | 2 | 12m | 当前 |\n| 2 | hello! | 14 | 2d |  |",
+      "📚 最近会话（第 1/1 页，共 2 个）\n用 /resume <序号> 切换。翻页：/sessions -n <页码>。\n\n| 序号 | 会话 | 消息 | 时间 |\n| --- | --- | --- | --- |\n| 1 | 这个项目 | 2 | 12m |\n| 2 | hello! | 14 | 2d |",
       2000,
     );
   });
@@ -182,7 +182,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
 
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "📚 最近会话（第 2/2 页，共 22 个）\n用 /resume <序号> 切换。翻页：/sessions -n <页码>。\n\n| 序号 | 会话 | 消息 | 时间 | 当前 |\n| --- | --- | --- | --- | --- |\n| 21 | 会话 21 | 21 | 12m | 当前 |\n| 22 | 会话 22 | 22 | 12m |  |",
+      "📚 最近会话（第 2/2 页，共 22 个）\n用 /resume <序号> 切换。翻页：/sessions -n <页码>。\n\n| 序号 | 会话 | 消息 | 时间 |\n| --- | --- | --- | --- |\n| 21 | 会话 21 | 21 | 12m |\n| 22 | 会话 22 | 22 | 12m |",
       2000,
     );
   });
