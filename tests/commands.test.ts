@@ -157,13 +157,33 @@ describe("handleBridgeCommand", () => {
       } as any),
     ).toBe(
       "📚 最近会话（第 1/2 页，共 22 个）\n" +
-        "用 /resume <序号> 切换。翻页：/sessions -n <页码>。* 表示当前会话。\n" +
+        "用 /resume <序号> 切换。翻页：/sessions -n <页码>。\n" +
         "\n" +
-        "```text\n" +
-        "1. 这个项目                      2 12m *\n" +
-        "2. hello!                       14  2d  \n" +
-        "```",
+        "| 序号 | 会话 | 消息 | 时间 | 当前 |\n" +
+        "| --- | --- | --- | --- | --- |\n" +
+        "| 1 | 这个项目 | 2 | 12m | 当前 |\n" +
+        "| 2 | hello! | 14 | 2d |  |",
     );
+  });
+
+  it("`/sessions` 标题里的竖线应转义，避免把表格切坏", () => {
+    expect(
+      handleBridgeCommand("sessions", {
+        sessionsPage: 1,
+        sessionsTotalPages: 1,
+        sessionsTotalCount: 1,
+        sessions: [
+          {
+            order: 1,
+            sessionId: "session_001",
+            isActive: false,
+            firstMessage: "hello | world",
+            messageCount: 3,
+            updatedAt: "2026-04-16T11:48:00.000Z",
+          },
+        ],
+      } as any),
+    ).toContain("| 1 | hello \\| world | 3 | 12m |  |");
   });
 
   it("`/resume` 应返回切换后的会话", () => {

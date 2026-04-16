@@ -200,32 +200,21 @@ function formatSessionsReply(
 
   return [
     `📚 最近会话（第 ${meta.page}/${meta.totalPages} 页，共 ${meta.totalCount} 个）`,
-    "用 /resume <序号> 切换。翻页：/sessions -n <页码>。* 表示当前会话。",
+    "用 /resume <序号> 切换。翻页：/sessions -n <页码>。",
     "",
-    "```text",
+    "| 序号 | 会话 | 消息 | 时间 | 当前 |",
+    "| --- | --- | --- | --- | --- |",
     ...formatSessionRows(sessions),
-    "```",
   ].join("\n");
 }
 
 function formatSessionRows(sessions: BridgeListedSession[]): string[] {
-  const titleWidth = 28;
-  const orderWidth = String(sessions[sessions.length - 1]?.order ?? 1).length;
-  const messageCountWidth = Math.max(
-    1,
-    ...sessions.map((session) => String(Math.max(0, session.messageCount)).length),
-  );
-  const ageLabels = sessions.map((session) => formatSessionAge(session.updatedAt));
-  const ageWidth = Math.max(2, ...ageLabels.map((label) => label.length));
-
-  return sessions.map((session, index) => {
-    const title = getSessionDisplayTitle(session);
-    const paddedTitle = fitDisplayText(title, titleWidth);
-    const ageLabel = ageLabels[index].padStart(ageWidth);
-    const rightPart = `${String(Math.max(0, session.messageCount)).padStart(messageCountWidth)} ${ageLabel} ${
-      session.isActive ? "*" : " "
-    }`;
-    return `${String(session.order).padStart(orderWidth)}. ${paddedTitle} ${rightPart}`;
+  return sessions.map((session) => {
+    const title = escapeMarkdownTableCell(getSessionDisplayTitle(session));
+    const messageCount = Math.max(0, session.messageCount);
+    const ageLabel = formatSessionAge(session.updatedAt);
+    const activeLabel = session.isActive ? "当前" : "";
+    return `| ${session.order} | ${title} | ${messageCount} | ${ageLabel} | ${activeLabel} |`;
   });
 }
 
@@ -259,57 +248,8 @@ function formatSessionAge(updatedAt?: string): string {
   return `${Math.floor(diffDays / 365)}y`;
 }
 
-function fitDisplayText(text: string, width: number): string {
-  if (width <= 0) {
-    return "";
-  }
-
-  const normalized = text.trim();
-  const fullWidth = getDisplayWidth(normalized);
-  if (fullWidth <= width) {
-    return normalized + " ".repeat(width - fullWidth);
-  }
-
-  if (width === 1) {
-    return "…";
-  }
-
-  let result = "";
-  let resultWidth = 0;
-  for (const char of normalized) {
-    const charWidth = getDisplayWidth(char);
-    if (resultWidth + charWidth > width - 1) {
-      break;
-    }
-    result += char;
-    resultWidth += charWidth;
-  }
-
-  return result + "…" + " ".repeat(Math.max(0, width - resultWidth - 1));
-}
-
-function getDisplayWidth(text: string): number {
-  let width = 0;
-  for (const char of text) {
-    width += isWideCodePoint(char.codePointAt(0) ?? 0) ? 2 : 1;
-  }
-  return width;
-}
-
-function isWideCodePoint(codePoint: number): boolean {
-  return (
-    codePoint >= 0x1100 &&
-    (codePoint <= 0x115f ||
-      codePoint === 0x2329 ||
-      codePoint === 0x232a ||
-      (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
-      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
-      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
-      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
-      (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
-      (codePoint >= 0xff00 && codePoint <= 0xff60) ||
-      (codePoint >= 0xffe0 && codePoint <= 0xffe6))
-  );
+function escapeMarkdownTableCell(text: string): string {
+  return text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
 }
 
 function formatContextReply(contextFiles: BridgeContextFile[]): string {
