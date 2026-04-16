@@ -407,6 +407,9 @@ export function createFeishuMessenger(
           }
 
           await updateElement(getStreamingBodyElementId(), finalText);
+          if (toolsText) {
+            await updateElement(getStreamingToolsElementId(), "");
+          }
           await updateSettings(buildStreamingCardSettings({
             streamingMode: false,
             summaryText: buildStreamingSummary(finalText),

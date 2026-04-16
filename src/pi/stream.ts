@@ -337,7 +337,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const finalOutputText = abortedByUser
         ? (streamingMessage ? STOP_MESSAGE : "")
         : finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
-      if ((!lastError || hasVisibleAssistantText(fullText) || abortedByUser) && finalOutputText) {
+      const hasFinalOutput = Boolean(finalOutputText || finalToolsText);
+      if ((!lastError || hasVisibleAssistantText(fullText) || abortedByUser) && hasFinalOutput) {
         await finalizeMessage(
           messenger,
           openId,
@@ -414,7 +415,7 @@ async function finalizeMessage(
       });
     }
   }
-  if (!fullText) return;
+  if (!fullText && !toolsText) return;
   await messenger.sendRenderedMessage(openId, appendToolCallsSection(fullText, toolsText), textChunkLimit);
 }
 

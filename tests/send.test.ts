@@ -352,6 +352,65 @@ describe("send helpers", () => {
     expect(settingsJson.config.summary.content).toBe("hello world");
   });
 
+  it("startStreamingMessage: 收口把工具状态拼进正文时，应清空原工具区避免重复展示", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
+    mockCardUpdate.mockResolvedValue({});
+    mockCardContent.mockResolvedValue({});
+    mockCardSettings.mockResolvedValue({});
+    const { startStreamingMessage } = await import("../src/feishu/send.js");
+    const longBody = "a".repeat(12010);
+
+    const stream = await startStreamingMessage("ou_1", "hello");
+
+    expect(stream).not.toBeNull();
+    await stream!.updateTools("read 运行中: package.json");
+    await stream!.finish(longBody, 2000, "**工具**\nread 完成: package.json");
+
+    expect(mockCardContent).toHaveBeenNthCalledWith(1, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_tools",
+      },
+      data: expect.objectContaining({
+        content: "read 运行中: package.json",
+        sequence: 1,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardContent).toHaveBeenNthCalledWith(2, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_body",
+      },
+      data: expect.objectContaining({
+        content: `${longBody}\n\n**工具**\nread 完成: package.json`,
+        sequence: 2,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardContent).toHaveBeenNthCalledWith(3, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_tools",
+      },
+      data: expect.objectContaining({
+        content: "",
+        sequence: 3,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardSettings).toHaveBeenCalledWith({
+      path: {
+        card_id: "card_1",
+      },
+      data: expect.objectContaining({
+        sequence: 4,
+        uuid: expect.any(String),
+      }),
+    });
+  });
+
   it("startStreamingMessage: 最终是表格卡片时应整卡更新，保留原有表格渲染", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });

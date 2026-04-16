@@ -223,6 +223,40 @@ describe("promptSession", () => {
     );
   });
 
+  it("非流式且没有 assistant 正文时，仍应发送最终工具状态", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_1",
+        toolName: "read",
+        args: { filePath: "package.json" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_1",
+        toolName: "read",
+        isError: false,
+        result: {
+          details: {
+            path: "package.json",
+          },
+        },
+      } as any,
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, false, 2000, true);
+
+    expect(result).toEqual({ text: "", error: undefined });
+    expect(mockStartStreamingMessage).not.toHaveBeenCalled();
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "**工具**\nread 完成: package.json",
+      2000,
+    );
+  });
+
   it("reaction 添加失败时，仍应继续处理并发送回复", async () => {
     mockAddProcessingReaction.mockResolvedValue(null);
     const { promptSession } = await import("../src/pi/stream.js");
