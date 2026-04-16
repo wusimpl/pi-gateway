@@ -21,6 +21,10 @@ interface BridgeListedSession {
   order: number;
   sessionId: string;
   isActive: boolean;
+  name?: string;
+  firstMessage?: string;
+  messageCount: number;
+  updatedAt?: string;
 }
 
 export interface BridgeCommand {
@@ -42,6 +46,9 @@ interface BridgeCommandContext {
   contextFiles?: BridgeContextFile[];
   skills?: BridgeSkillInfo[];
   sessions?: BridgeListedSession[];
+  sessionsPage?: number;
+  sessionsTotalPages?: number;
+  sessionsTotalCount?: number;
 }
 
 /**
@@ -151,7 +158,11 @@ export function handleBridgeCommand(
       return lines.join("\n");
     }
     case "sessions":
-      return formatSessionsReply(context.sessions ?? []);
+      return formatSessionsReply(context.sessions ?? [], {
+        page: context.sessionsPage ?? 1,
+        totalPages: context.sessionsTotalPages ?? 1,
+        totalCount: context.sessionsTotalCount ?? (context.sessions?.length ?? 0),
+      });
     case "resume":
       return formatSessionCommandReply(`✅ 已切换到会话: ${context.sessionId ?? "unknown"}`, context.currentModel);
     case "stop":
@@ -175,17 +186,130 @@ function formatSessionCommandReply(message: string, currentModel?: string): stri
   return `${message}\n🤖 当前模型: ${currentModel}`;
 }
 
-function formatSessionsReply(sessions: BridgeListedSession[]): string {
-  if (sessions.length === 0) {
+function formatSessionsReply(
+  sessions: BridgeListedSession[],
+  meta: {
+    page: number;
+    totalPages: number;
+    totalCount: number;
+  },
+): string {
+  if (meta.totalCount === 0) {
     return "当前还没有可恢复的历史会话。";
   }
 
   return [
-    `📚 最近会话（${sessions.length} 个）`,
-    "用 /resume <序号> 或 /resume <sessionId前缀> 切换。",
+    `📚 最近会话（第 ${meta.page}/${meta.totalPages} 页，共 ${meta.totalCount} 个）`,
+    "用 /resume <序号> 切换。翻页：/sessions -n <页码>。* 表示当前会话。",
     "",
-    ...sessions.map((session) => `${session.order}. ${session.sessionId}${session.isActive ? " · current" : ""}`),
+    "```text",
+    ...formatSessionRows(sessions),
+    "```",
   ].join("\n");
+}
+
+function formatSessionRows(sessions: BridgeListedSession[]): string[] {
+  const titleWidth = 28;
+  const orderWidth = String(sessions[sessions.length - 1]?.order ?? 1).length;
+  const messageCountWidth = Math.max(
+    1,
+    ...sessions.map((session) => String(Math.max(0, session.messageCount)).length),
+  );
+  const ageLabels = sessions.map((session) => formatSessionAge(session.updatedAt));
+  const ageWidth = Math.max(2, ...ageLabels.map((label) => label.length));
+
+  return sessions.map((session, index) => {
+    const title = getSessionDisplayTitle(session);
+    const paddedTitle = fitDisplayText(title, titleWidth);
+    const ageLabel = ageLabels[index].padStart(ageWidth);
+    const rightPart = `${String(Math.max(0, session.messageCount)).padStart(messageCountWidth)} ${ageLabel} ${
+      session.isActive ? "*" : " "
+    }`;
+    return `${String(session.order).padStart(orderWidth)}. ${paddedTitle} ${rightPart}`;
+  });
+}
+
+function getSessionDisplayTitle(session: BridgeListedSession): string {
+  const source = session.name?.trim() || session.firstMessage?.trim() || session.sessionId;
+  const normalized = source.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim();
+  return normalized || session.sessionId;
+}
+
+function formatSessionAge(updatedAt?: string): string {
+  if (!updatedAt) {
+    return "--";
+  }
+
+  const updated = new Date(updatedAt);
+  if (Number.isNaN(updated.getTime())) {
+    return "--";
+  }
+
+  const diffMs = Date.now() - updated.getTime();
+  const diffMins = Math.floor(diffMs / 60_000);
+  const diffHours = Math.floor(diffMs / 3_600_000);
+  const diffDays = Math.floor(diffMs / 86_400_000);
+
+  if (diffMins < 1) return "now";
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo`;
+  return `${Math.floor(diffDays / 365)}y`;
+}
+
+function fitDisplayText(text: string, width: number): string {
+  if (width <= 0) {
+    return "";
+  }
+
+  const normalized = text.trim();
+  const fullWidth = getDisplayWidth(normalized);
+  if (fullWidth <= width) {
+    return normalized + " ".repeat(width - fullWidth);
+  }
+
+  if (width === 1) {
+    return "…";
+  }
+
+  let result = "";
+  let resultWidth = 0;
+  for (const char of normalized) {
+    const charWidth = getDisplayWidth(char);
+    if (resultWidth + charWidth > width - 1) {
+      break;
+    }
+    result += char;
+    resultWidth += charWidth;
+  }
+
+  return result + "…" + " ".repeat(Math.max(0, width - resultWidth - 1));
+}
+
+function getDisplayWidth(text: string): number {
+  let width = 0;
+  for (const char of text) {
+    width += isWideCodePoint(char.codePointAt(0) ?? 0) ? 2 : 1;
+  }
+  return width;
+}
+
+function isWideCodePoint(codePoint: number): boolean {
+  return (
+    codePoint >= 0x1100 &&
+    (codePoint <= 0x115f ||
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+      (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+      (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6))
+  );
 }
 
 function formatContextReply(contextFiles: BridgeContextFile[]): string {

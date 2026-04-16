@@ -24,6 +24,10 @@ export interface ListedSession {
   sessionId: string;
   sessionFile: string;
   isActive: boolean;
+  cwd?: string;
+  name?: string;
+  firstMessage?: string;
+  messageCount: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -172,6 +176,10 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       sessionId: session.id,
       sessionFile: session.path,
       isActive: state?.activeSessionId === session.id || state?.piSessionFile === session.path,
+      cwd: session.cwd || undefined,
+      name: session.name || undefined,
+      firstMessage: session.firstMessage || undefined,
+      messageCount: session.messageCount,
       createdAt: session.created?.toISOString(),
       updatedAt: session.modified?.toISOString(),
     }));

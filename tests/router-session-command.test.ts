@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   sendTextMessage: vi.fn(),
@@ -78,6 +78,9 @@ const baseEvent = {
 
 describe("handleFeishuMessage 会话历史命令", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-16T12:00:00.000Z"));
+
     clearAllState();
     releaseLock("ou_1");
 
@@ -108,6 +111,10 @@ describe("handleFeishuMessage 会话历史命令", () => {
     mocks.sendTextMessage.mockResolvedValue("om_reply");
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("`/sessions` 会返回最近会话列表", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
@@ -119,8 +126,24 @@ describe("handleFeishuMessage 会话历史命令", () => {
       text: "/sessions",
     });
     mocks.listSessions.mockResolvedValue([
-      { order: 1, sessionId: "session_003", sessionFile: "/tmp/3.jsonl", isActive: true },
-      { order: 2, sessionId: "session_002", sessionFile: "/tmp/2.jsonl", isActive: false },
+      {
+        order: 1,
+        sessionId: "session_003",
+        sessionFile: "/tmp/3.jsonl",
+        isActive: true,
+        firstMessage: "这个项目",
+        messageCount: 2,
+        updatedAt: "2026-04-16T11:48:00.000Z",
+      },
+      {
+        order: 2,
+        sessionId: "session_002",
+        sessionFile: "/tmp/2.jsonl",
+        isActive: false,
+        firstMessage: "hello!",
+        messageCount: 14,
+        updatedAt: "2026-04-14T12:00:00.000Z",
+      },
     ]);
 
     await handleFeishuMessage({});
@@ -128,8 +151,69 @@ describe("handleFeishuMessage 会话历史命令", () => {
     expect(mocks.listSessions).toHaveBeenCalledTimes(1);
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "📚 最近会话（2 个）\n用 /resume <序号> 或 /resume <sessionId前缀> 切换。\n\n1. session_003 · current\n2. session_002",
+      "📚 最近会话（第 1/1 页，共 2 个）\n用 /resume <序号> 切换。翻页：/sessions -n <页码>。* 表示当前会话。\n\n```text\n1. 这个项目                      2 12m *\n2. hello!                       14  2d  \n```",
       2000,
+    );
+  });
+
+  it("`/sessions -n 2` 会返回第二页会话列表", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/sessions -n 2"}',
+      text: "/sessions -n 2",
+    });
+    mocks.listSessions.mockResolvedValue(
+      Array.from({ length: 22 }, (_, index) => ({
+        order: index + 1,
+        sessionId: `session_${String(index + 1).padStart(3, "0")}`,
+        sessionFile: `/tmp/${index + 1}.jsonl`,
+        isActive: index + 1 === 21,
+        firstMessage: `会话 ${index + 1}`,
+        messageCount: index + 1,
+        updatedAt: "2026-04-16T11:48:00.000Z",
+      })),
+    );
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "📚 最近会话（第 2/2 页，共 22 个）\n用 /resume <序号> 切换。翻页：/sessions -n <页码>。* 表示当前会话。\n\n```text\n21. 会话 21                      21 12m *\n22. 会话 22                      22 12m  \n```",
+      2000,
+    );
+  });
+
+  it("`/sessions -n 3` 超出页码时会返回提示", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/sessions -n 3"}',
+      text: "/sessions -n 3",
+    });
+    mocks.listSessions.mockResolvedValue(
+      Array.from({ length: 22 }, (_, index) => ({
+        order: index + 1,
+        sessionId: `session_${String(index + 1).padStart(3, "0")}`,
+        sessionFile: `/tmp/${index + 1}.jsonl`,
+        isActive: false,
+        firstMessage: `会话 ${index + 1}`,
+        messageCount: index + 1,
+        updatedAt: "2026-04-16T11:48:00.000Z",
+      })),
+    );
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "页码超出范围，目前只有 2 页。\n\n用 /sessions 看第一页，或用 /sessions -n <页码> 翻页。",
     );
   });
 

@@ -121,14 +121,21 @@ describe("session service", () => {
       {
         id: "session_2",
         path: "/tmp/sessions/ou_1/session_2.jsonl",
+        cwd: "/tmp/workspace/ou_1",
+        name: "这个项目",
         created: new Date("2026-04-15T00:00:00.000Z"),
         modified: new Date("2026-04-15T00:30:00.000Z"),
+        messageCount: 2,
+        firstMessage: "这个项目",
       },
       {
         id: "session_1",
         path: "/tmp/sessions/ou_1/session_1.jsonl",
+        cwd: "/tmp/workspace/ou_1",
         created: new Date("2026-04-14T00:00:00.000Z"),
         modified: new Date("2026-04-14T00:30:00.000Z"),
+        messageCount: 4,
+        firstMessage: "hello!",
       },
     ]);
 
@@ -142,6 +149,10 @@ describe("session service", () => {
         sessionId: "session_2",
         sessionFile: "/tmp/sessions/ou_1/session_2.jsonl",
         isActive: true,
+        cwd: "/tmp/workspace/ou_1",
+        name: "这个项目",
+        firstMessage: "这个项目",
+        messageCount: 2,
         createdAt: "2026-04-15T00:00:00.000Z",
         updatedAt: "2026-04-15T00:30:00.000Z",
       },
@@ -150,6 +161,9 @@ describe("session service", () => {
         sessionId: "session_1",
         sessionFile: "/tmp/sessions/ou_1/session_1.jsonl",
         isActive: false,
+        cwd: "/tmp/workspace/ou_1",
+        firstMessage: "hello!",
+        messageCount: 4,
         createdAt: "2026-04-14T00:00:00.000Z",
         updatedAt: "2026-04-14T00:30:00.000Z",
       },
@@ -172,12 +186,16 @@ describe("session service", () => {
         path: "/tmp/sessions/ou_1/session_2.jsonl",
         created: new Date("2026-04-15T00:00:00.000Z"),
         modified: new Date("2026-04-15T00:30:00.000Z"),
+        messageCount: 2,
+        firstMessage: "session 2",
       },
       {
         id: "session_1",
         path: "/tmp/sessions/ou_1/session_1.jsonl",
         created: new Date("2026-04-14T00:00:00.000Z"),
         modified: new Date("2026-04-14T00:30:00.000Z"),
+        messageCount: 1,
+        firstMessage: "session 1",
       },
     ]);
     deps.runtime.openPiSession.mockResolvedValue({
@@ -214,6 +232,8 @@ describe("session service", () => {
         path: "/tmp/sessions/ou_1/abc123xyz.jsonl",
         created: new Date("2026-04-15T00:00:00.000Z"),
         modified: new Date("2026-04-15T00:30:00.000Z"),
+        messageCount: 1,
+        firstMessage: "session",
       },
     ]);
     deps.runtime.openPiSession.mockResolvedValue({

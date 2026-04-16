@@ -35,6 +35,8 @@ interface CommandServiceDeps {
 }
 
 export function createCommandService(deps: CommandServiceDeps): CommandService {
+  const SESSION_PAGE_SIZE = 20;
+
   async function handleBridgeCommandFlow(
     identity: UserIdentity,
     command: BridgeCommand,
@@ -80,10 +82,30 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         });
         await sendCommandReply(openId, reply);
       } else if (command.name === "sessions") {
+        const pageResult = parseSessionsPage(command.args);
+        if (pageResult.error) {
+          await deps.messenger.sendTextMessage(openId, pageResult.error);
+          return;
+        }
+
         const sessions = await deps.sessionService.listSessions(identity);
+        const totalCount = sessions.length;
+        const totalPages = Math.max(1, Math.ceil(totalCount / SESSION_PAGE_SIZE));
+        if (totalCount > 0 && pageResult.page > totalPages) {
+          await deps.messenger.sendTextMessage(
+            openId,
+            `页码超出范围，目前只有 ${totalPages} 页。\n\n用 /sessions 看第一页，或用 /sessions -n <页码> 翻页。`,
+          );
+          return;
+        }
+
+        const startIndex = (pageResult.page - 1) * SESSION_PAGE_SIZE;
         const reply = handleBridgeCommand(command, {
           openId,
-          sessions,
+          sessions: sessions.slice(startIndex, startIndex + SESSION_PAGE_SIZE),
+          sessionsPage: pageResult.page,
+          sessionsTotalPages: totalPages,
+          sessionsTotalCount: totalCount,
         });
         await sendCommandReply(openId, reply);
       } else if (command.name === "resume") {
@@ -217,6 +239,25 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
   return {
     handleBridgeCommand: handleBridgeCommandFlow,
   };
+}
+
+function parseSessionsPage(args: string): { page: number; error?: undefined } | { page?: undefined; error: string } {
+  const trimmed = args.trim();
+  if (!trimmed) {
+    return { page: 1 };
+  }
+
+  const matched = trimmed.match(/^-n\s+(\d+)$/);
+  if (!matched) {
+    return { error: "用法：/sessions 或 /sessions -n <页码>。" };
+  }
+
+  const page = Number(matched[1]);
+  if (!Number.isSafeInteger(page) || page < 1) {
+    return { error: "页码必须是大于等于 1 的整数。" };
+  }
+
+  return { page };
 }
 
 function getCurrentModelLabel(session: { model?: { provider: string; id: string } | undefined }): string | undefined {

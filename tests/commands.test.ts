@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { handleBridgeCommand, parseBridgeCommand } from "../src/app/commands.js";
 
 describe("parseBridgeCommand", () => {
@@ -82,6 +82,15 @@ describe("parseBridgeCommand", () => {
 });
 
 describe("handleBridgeCommand", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-16T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("`/new` 应带上当前模型", () => {
     expect(
       handleBridgeCommand("new", {
@@ -111,9 +120,9 @@ describe("handleBridgeCommand", () => {
     ).toBe(
       "[Skills]\n" +
         "  user\n" +
-        "    /Users/williamsandy/.pi/agent/skills/feishu-docs\n" +
+        "    ~/.pi/agent/skills/feishu-docs\n" +
         "  project\n" +
-        "    /Users/williamsandy/code/pi-gateway/.agents/skills/local",
+        "    ~/code/pi-gateway/.agents/skills/local",
     );
   });
 
@@ -124,17 +133,36 @@ describe("handleBridgeCommand", () => {
   it("`/sessions` 应返回最近会话列表", () => {
     expect(
       handleBridgeCommand("sessions", {
+        sessionsPage: 1,
+        sessionsTotalPages: 2,
+        sessionsTotalCount: 22,
         sessions: [
-          { order: 1, sessionId: "session_003", isActive: true },
-          { order: 2, sessionId: "session_002", isActive: false },
+          {
+            order: 1,
+            sessionId: "session_003",
+            isActive: true,
+            firstMessage: "这个项目",
+            messageCount: 2,
+            updatedAt: "2026-04-16T11:48:00.000Z",
+          },
+          {
+            order: 2,
+            sessionId: "session_002",
+            isActive: false,
+            firstMessage: "hello!",
+            messageCount: 14,
+            updatedAt: "2026-04-14T12:00:00.000Z",
+          },
         ],
       } as any),
     ).toBe(
-      "📚 最近会话（2 个）\n" +
-        "用 /resume <序号> 或 /resume <sessionId前缀> 切换。\n" +
+      "📚 最近会话（第 1/2 页，共 22 个）\n" +
+        "用 /resume <序号> 切换。翻页：/sessions -n <页码>。* 表示当前会话。\n" +
         "\n" +
-        "1. session_003 · current\n" +
-        "2. session_002",
+        "```text\n" +
+        "1. 这个项目                      2 12m *\n" +
+        "2. hello!                       14  2d  \n" +
+        "```",
     );
   });
 
