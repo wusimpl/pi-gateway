@@ -213,11 +213,12 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
 
     try {
       const sessionState = await deps.sessionService.resumeSession(identity, argText);
-      const reply = handleBridgeCommand(command, {
+      const baseReply = handleBridgeCommand(command, {
         openId,
         sessionId: sessionState.activeSessionId,
         currentModel: getCurrentModelLabel(sessionState.piSession),
       });
+      const reply = appendRecentHistory(baseReply, sessionState.piSession);
       await sendCommandReply(openId, reply);
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
@@ -265,6 +266,144 @@ function getCurrentModelLabel(session: { model?: { provider: string; id: string 
     return undefined;
   }
   return formatModelLabel(session.model.provider, session.model.id);
+}
+
+function appendRecentHistory(
+  baseReply: string,
+  session: {
+    messages?: Array<{
+      role?: string;
+      content?: unknown;
+      stopReason?: string;
+      errorMessage?: string;
+    }>;
+    state?: {
+      messages?: Array<{
+        role?: string;
+        content?: unknown;
+        stopReason?: string;
+        errorMessage?: string;
+      }>;
+    };
+  },
+): string {
+  const historyText = formatRecentHistory(session);
+  if (!historyText) {
+    return baseReply;
+  }
+  return `${baseReply}\n\n历史消息：\n${historyText}`;
+}
+
+function formatRecentHistory(session: {
+  messages?: Array<{
+    role?: string;
+    content?: unknown;
+    stopReason?: string;
+    errorMessage?: string;
+  }>;
+  state?: {
+    messages?: Array<{
+      role?: string;
+      content?: unknown;
+      stopReason?: string;
+      errorMessage?: string;
+    }>;
+  };
+}): string {
+  const messages = session.messages ?? session.state?.messages ?? [];
+  if (messages.length === 0) {
+    return "";
+  }
+
+  const turns: Array<{ user: string; assistant?: string }> = [];
+  for (const message of messages) {
+    if (message.role === "user") {
+      const userText = summarizeUserMessage(message.content);
+      if (userText) {
+        turns.push({ user: userText });
+      }
+      continue;
+    }
+
+    if (message.role !== "assistant" || turns.length === 0) {
+      continue;
+    }
+
+    const assistantText = summarizeAssistantMessage(message.content, message.stopReason, message.errorMessage);
+    if (!assistantText) {
+      continue;
+    }
+
+    turns[turns.length - 1]!.assistant = assistantText;
+  }
+
+  const recentTurns = turns.slice(-2);
+  if (recentTurns.length === 0) {
+    return "";
+  }
+
+  return recentTurns
+    .map((turn) => `user input: ${turn.user}\nmodel output: ${turn.assistant ?? "（无模型输出）"}`)
+    .join("\n\n");
+}
+
+function summarizeUserMessage(content: unknown): string {
+  return summarizeMessageContent(content, { includeImages: true }) || "（空输入）";
+}
+
+function summarizeAssistantMessage(content: unknown, stopReason?: string, errorMessage?: string): string {
+  const text = summarizeMessageContent(content, { includeImages: false });
+  if (text) {
+    return text;
+  }
+
+  if ((stopReason === "error" || stopReason === "aborted") && errorMessage?.trim()) {
+    return truncateHistoryText(errorMessage.trim());
+  }
+
+  return "";
+}
+
+function summarizeMessageContent(content: unknown, options: { includeImages: boolean }): string {
+  if (typeof content === "string") {
+    return truncateHistoryText(normalizeHistoryText(content));
+  }
+
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  const pieces: string[] = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    if ("type" in item && item.type === "text" && typeof item.text === "string") {
+      const normalized = normalizeHistoryText(item.text);
+      if (normalized) {
+        pieces.push(normalized);
+      }
+      continue;
+    }
+
+    if (options.includeImages && "type" in item && item.type === "image") {
+      pieces.push("[图片]");
+    }
+  }
+
+  return truncateHistoryText(pieces.join(" ").trim());
+}
+
+function normalizeHistoryText(text: string): string {
+  return text.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function truncateHistoryText(text: string, maxLength = 160): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 function getLoadedContextFiles(session: {

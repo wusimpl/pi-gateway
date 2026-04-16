@@ -231,6 +231,12 @@ describe("handleFeishuMessage 会话历史命令", () => {
       activeSessionId: "session_002",
       piSession: {
         model: { provider: "rightcodes", id: "gpt-5.4-high" },
+        messages: [
+          { role: "user", content: "第一轮问题" },
+          { role: "assistant", content: [{ type: "text", text: "第一轮回答" }] },
+          { role: "user", content: "第二轮问题" },
+          { role: "assistant", content: [{ type: "text", text: "第二轮回答" }] },
+        ],
       },
     });
 
@@ -242,7 +248,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
     );
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "✅ 已切换到会话: session_002\n🤖 当前模型: rightcodes/gpt-5.4-high",
+      "✅ 已切换到会话: session_002\n🤖 当前模型: rightcodes/gpt-5.4-high\n\n历史消息：\nuser input: 第一轮问题\nmodel output: 第一轮回答\n\nuser input: 第二轮问题\nmodel output: 第二轮回答",
       2000,
     );
   });
