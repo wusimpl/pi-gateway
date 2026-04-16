@@ -551,7 +551,7 @@ function formatToolCallsSection(toolCallMap: ReadonlyMap<string, ToolCallState>)
   const toolCalls = Array.from(toolCallMap.values()).slice(-MAX_VISIBLE_TOOL_CALLS);
   if (toolCalls.length === 0) return "";
 
-  const lines = ["**工具**"];
+  const lines = [" ---", "**工具调用**"];
   for (const toolCall of toolCalls) {
     const statusLabel = formatToolStatus(toolCall.status);
     const summary = toolCall.summary ? `: ${toolCall.summary}` : "";

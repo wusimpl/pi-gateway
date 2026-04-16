@@ -211,15 +211,15 @@ describe("promptSession", () => {
     expect(mockStartStreamingMessage).toHaveBeenCalledWith(
       "ou_1",
       "",
-      "**工具**\nread 运行中: src/index.ts",
+      " ---\n**工具调用**\nread 运行中: src/index.ts",
     );
     expect(mockStreamingMessage.updateTools).toHaveBeenCalledWith(
-      "**工具**\nread 运行中: import { loadConfig } from \"./config.js\";",
+      " ---\n**工具调用**\nread 运行中: import { loadConfig } from \"./config.js\";",
     );
     expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
       "我先看了入口文件。",
       2000,
-      "**工具**\nread 完成: import { loadConfig } from \"./config.js\";",
+      " ---\n**工具调用**\nread 完成: import { loadConfig } from \"./config.js\";",
     );
   });
 
@@ -252,7 +252,7 @@ describe("promptSession", () => {
     expect(mockStartStreamingMessage).not.toHaveBeenCalled();
     expect(mockSendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "**工具**\nread 完成: package.json",
+      " ---\n**工具调用**\nread 完成: package.json",
       2000,
     );
   });
