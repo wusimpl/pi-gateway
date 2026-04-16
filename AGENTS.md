@@ -9,9 +9,3 @@
 
 ## Pi Skills
 涉及 Pi 的 skill、技能目录、`/skills`、`SKILL.md` 或“有没有配套 skill”这类问题时，默认先检查 `~/.pi/agent/skills`，不要只看项目目录。项目内和全局目录都可能有 skills；如果没有特别说明，优先认为 `~/.pi/agent/skills` 是有效技能来源之一。
-
-## 提交和推送
-测试通过后方可git提交和推送。
-
-## code review
-commit 后，根据改动大小判断是否使用subagent skill，指定gpt 5.4 模型进行code review，根据反馈fix bugs，然后再做一次提交推送。
