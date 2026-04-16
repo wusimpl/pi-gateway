@@ -252,4 +252,83 @@ describe("handleFeishuMessage 会话历史命令", () => {
       2000,
     );
   });
+
+  it("`/resume` 历史摘要不应回显引用/媒体包装提示", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/resume 1"}',
+      text: "/resume 1",
+    });
+    mocks.resumeSession.mockResolvedValue({
+      activeSessionId: "session_002",
+      piSession: {
+        messages: [
+          {
+            role: "user",
+            content:
+              "用户这次是在回复一条之前的消息。\n被引用消息：\n上一条机器人消息\n\n用户这次的新消息：\n继续处理这个报错",
+          },
+          { role: "assistant", content: [{ type: "text", text: "先看日志" }] },
+          {
+            role: "user",
+            content:
+              "用户发来了一张图片，图片已保存到本地：/tmp/pi-workspace/user/.feishu-inbox/om_2/image.png\n当前模型不支持直接看图，以下是本地 OCR/视觉结果：\n这里是截图里的文字",
+          },
+          { role: "assistant", content: [{ type: "text", text: "我看到一张报错截图" }] },
+        ],
+      },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "✅ 已切换到会话: session_002\n\n历史消息：\nuser input: 继续处理这个报错\nmodel output: 先看日志\n\nuser input: [图片]\nmodel output: 我看到一张报错截图",
+      2000,
+    );
+  });
+
+  it("`/resume` 历史摘要应保留上一轮失败或停止状态", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/resume 1"}',
+      text: "/resume 1",
+    });
+    mocks.resumeSession.mockResolvedValue({
+      activeSessionId: "session_002",
+      piSession: {
+        messages: [
+          { role: "user", content: "第一轮问题" },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "第一轮回答到一半" }],
+            stopReason: "error",
+            errorMessage: "网络断开",
+          },
+          { role: "user", content: "第二轮问题" },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "第二轮回答到一半" }],
+            stopReason: "aborted",
+          },
+        ],
+      },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "✅ 已切换到会话: session_002\n\n历史消息：\nuser input: 第一轮问题\nmodel output: 第一轮回答到一半 （回复中断：网络断开）\n\nuser input: 第二轮问题\nmodel output: 第二轮回答到一半 （已停止）",
+      2000,
+    );
+  });
 });

@@ -348,25 +348,54 @@ function formatRecentHistory(session: {
 }
 
 function summarizeUserMessage(content: unknown): string {
-  return summarizeMessageContent(content, { includeImages: true }) || "（空输入）";
+  if (typeof content === "string") {
+    return truncateHistoryText(extractUserHistoryText(content) || "（空输入）");
+  }
+
+  if (!Array.isArray(content)) {
+    return "（空输入）";
+  }
+
+  const pieces: string[] = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    if ("type" in item && item.type === "text" && typeof item.text === "string") {
+      const normalized = extractUserHistoryText(item.text);
+      if (normalized) {
+        pieces.push(normalized);
+      }
+      continue;
+    }
+
+    if ("type" in item && item.type === "image" && pieces[pieces.length - 1] !== "[图片]") {
+      pieces.push("[图片]");
+    }
+  }
+
+  return truncateHistoryText(pieces.join(" ").trim() || "（空输入）");
 }
 
 function summarizeAssistantMessage(content: unknown, stopReason?: string, errorMessage?: string): string {
-  const text = summarizeMessageContent(content, { includeImages: false });
-  if (text) {
-    return text;
+  const text = collectMessageContentText(content, { includeImages: false });
+  const statusText = summarizeAssistantStopReason(stopReason, errorMessage);
+  if (text && statusText) {
+    return appendHistoryStatus(text, statusText);
   }
 
-  if ((stopReason === "error" || stopReason === "aborted") && errorMessage?.trim()) {
-    return truncateHistoryText(errorMessage.trim());
-  }
-
-  return "";
+  return text ? truncateHistoryText(text) : statusText;
 }
 
 function summarizeMessageContent(content: unknown, options: { includeImages: boolean }): string {
+  const text = collectMessageContentText(content, options);
+  return text ? truncateHistoryText(text) : "";
+}
+
+function collectMessageContentText(content: unknown, options: { includeImages: boolean }): string {
   if (typeof content === "string") {
-    return truncateHistoryText(normalizeHistoryText(content));
+    return normalizeHistoryText(content);
   }
 
   if (!Array.isArray(content)) {
@@ -392,11 +421,99 @@ function summarizeMessageContent(content: unknown, options: { includeImages: boo
     }
   }
 
-  return truncateHistoryText(pieces.join(" ").trim());
+  return pieces.join(" ").trim();
 }
 
 function normalizeHistoryText(text: string): string {
   return text.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractUserHistoryText(text: string): string {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const quotedMessage = extractQuotedCurrentMessage(normalized);
+  if (quotedMessage !== null) {
+    return extractUserHistoryText(quotedMessage) || "（回复了一条消息）";
+  }
+
+  const audioTranscript = extractAudioTranscript(normalized);
+  if (audioTranscript !== null) {
+    return audioTranscript || "[语音]";
+  }
+
+  if (isImagePrompt(normalized)) {
+    return "[图片]";
+  }
+
+  return normalizeHistoryText(normalized);
+}
+
+function extractQuotedCurrentMessage(text: string): string | null {
+  const prefix = "用户这次是在回复一条之前的消息。\n被引用消息：\n";
+  const marker = "\n\n用户这次的新消息：\n";
+  if (!text.startsWith(prefix)) {
+    return null;
+  }
+
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return text.slice(markerIndex + marker.length).trim();
+}
+
+function extractAudioTranscript(text: string): string | null {
+  const prefix = "用户发来了一段语音，音频已保存到本地：";
+  const marker = "\n以下是本地转写结果：\n";
+  if (!text.startsWith(prefix)) {
+    return null;
+  }
+
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex === -1) {
+    return "";
+  }
+
+  return normalizeHistoryText(text.slice(markerIndex + marker.length));
+}
+
+function isImagePrompt(text: string): boolean {
+  return (
+    text.startsWith("用户发来了一张图片，图片已保存到本地：") &&
+    (text.includes("\n请直接查看图片内容并继续对话；如果用户没写额外说明，就先简短描述图片里有什么。") ||
+      text.includes("\n当前模型不支持直接看图，以下是本地 OCR/视觉结果：\n"))
+  );
+}
+
+function summarizeAssistantStopReason(stopReason?: string, errorMessage?: string): string {
+  if (stopReason === "error") {
+    const normalizedError = normalizeHistoryText(errorMessage ?? "");
+    return normalizedError ? `（回复中断：${normalizedError}）` : "（回复中断）";
+  }
+
+  if (stopReason === "aborted") {
+    const normalizedError = normalizeHistoryText(errorMessage ?? "");
+    return normalizedError ? `（已停止：${normalizedError}）` : "（已停止）";
+  }
+
+  return "";
+}
+
+function appendHistoryStatus(text: string, statusText: string, maxLength = 160): string {
+  if (!statusText) {
+    return truncateHistoryText(text, maxLength);
+  }
+
+  const remainingLength = maxLength - statusText.length - 1;
+  if (remainingLength <= 0) {
+    return truncateHistoryText(statusText, maxLength);
+  }
+
+  return `${truncateHistoryText(text, remainingLength)} ${statusText}`;
 }
 
 function truncateHistoryText(text: string, maxLength = 160): string {
