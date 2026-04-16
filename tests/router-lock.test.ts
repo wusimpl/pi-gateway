@@ -98,7 +98,7 @@ describe("handleFeishuMessage 运行锁", () => {
     mocks.touchSession.mockResolvedValue(undefined);
   });
 
-  it("已有处理中任务时应排队等待，前一条结束后继续处理下一条", async () => {
+  it("已有处理中任务时后续消息应排队，首条完成后继续处理", async () => {
     let releasePrompt: (() => void) | undefined;
     mocks.promptSession
       .mockImplementationOnce(

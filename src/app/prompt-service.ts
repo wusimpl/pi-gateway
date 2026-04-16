@@ -144,12 +144,13 @@ async function attachQuotedMessage(
   quotedMessageStore: Pick<QuotedMessageStore, "readQuotedMessage">,
   readQuotedMessage: typeof readFeishuQuotedMessage,
 ): Promise<FeishuInboundMessage> {
-  if (!message.parentMessageId) {
+  const quotedMessageId = resolveQuotedMessageId(message);
+  if (!quotedMessageId) {
     return message;
   }
 
   try {
-    const cachedQuotedMessage = await quotedMessageStore.readQuotedMessage(message.parentMessageId);
+    const cachedQuotedMessage = await quotedMessageStore.readQuotedMessage(quotedMessageId);
     if (cachedQuotedMessage) {
       return {
         ...message,
@@ -160,12 +161,14 @@ async function attachQuotedMessage(
     logger.warn("Quoted message cache read failed", {
       messageId: message.messageId,
       parentMessageId: message.parentMessageId,
+      rootMessageId: message.rootMessageId,
+      quotedMessageId,
       error: String(error),
     });
   }
 
   try {
-    const quotedMessage = await readQuotedMessage(message.parentMessageId);
+    const quotedMessage = await readQuotedMessage(quotedMessageId);
     if (!quotedMessage) {
       return message;
     }
@@ -178,8 +181,20 @@ async function attachQuotedMessage(
     logger.warn("读取被引用消息失败，已退回仅处理当前消息", {
       messageId: message.messageId,
       parentMessageId: message.parentMessageId,
+      rootMessageId: message.rootMessageId,
+      quotedMessageId,
       error: String(error),
     });
     return message;
   }
+}
+
+function resolveQuotedMessageId(message: FeishuInboundMessage): string | null {
+  const candidates = [message.parentMessageId, message.rootMessageId];
+  for (const candidate of candidates) {
+    if (candidate && candidate !== message.messageId) {
+      return candidate;
+    }
+  }
+  return null;
 }
