@@ -20,6 +20,7 @@ import { findAvailableModel, listAvailableModels } from "./pi/models.js";
 import { createPiRuntime, type PiRuntime } from "./pi/runtime.js";
 import { createSessionService, type SessionService } from "./pi/sessions.js";
 import { createPromptRunner } from "./pi/stream.js";
+import { setQuotedMessageDataDir } from "./storage/quoted-messages.js";
 import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
 
@@ -38,6 +39,7 @@ async function main() {
 
   await ensureDir(config.DATA_DIR);
   logger.info("数据目录就绪", { dataDir: config.DATA_DIR });
+  setQuotedMessageDataDir(config.DATA_DIR);
 
   await ensureDir(config.PI_WORKSPACE_ROOT);
   logger.info("Workspace 根目录就绪", { workspaceRoot: config.PI_WORKSPACE_ROOT });

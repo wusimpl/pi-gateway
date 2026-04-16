@@ -387,4 +387,115 @@ describe("send helpers", () => {
       }),
     ]);
   });
+
+  it("sendRenderedMessage: 应把每条发送成功的正文写入引用缓存", async () => {
+    mockCreate
+      .mockResolvedValueOnce({ data: { message_id: "om_quote_1" } })
+      .mockResolvedValueOnce({ data: { message_id: "om_quote_2" } });
+    const quotedMessageStore = {
+      writeQuotedMessage: vi.fn().mockResolvedValue(undefined),
+      readQuotedMessage: vi.fn(),
+    };
+    const { createFeishuMessenger } = await import("../src/feishu/send.js");
+
+    const messenger = createFeishuMessenger(
+      {
+        im: {
+          file: {
+            create: mockFileCreate,
+          },
+          message: {
+            create: mockCreate,
+          },
+          messageReaction: {
+            create: mockReactionCreate,
+            delete: mockReactionDelete,
+          },
+        },
+        cardkit: {
+          v1: {
+            card: {
+              create: mockCardCreate,
+              update: mockCardUpdate,
+              settings: mockCardSettings,
+            },
+            cardElement: {
+              content: mockCardContent,
+            },
+          },
+        },
+      } as any,
+      {
+        quotedMessageStore,
+      },
+    );
+
+    await messenger.sendRenderedMessage("ou_1", "aaaa\n\nbbbb", 4);
+
+    expect(quotedMessageStore.writeQuotedMessage).toHaveBeenCalledTimes(2);
+    expect(quotedMessageStore.writeQuotedMessage).toHaveBeenNthCalledWith(1, {
+      messageId: "om_quote_1",
+      messageType: "text",
+      text: "aaaa",
+    });
+    expect(quotedMessageStore.writeQuotedMessage).toHaveBeenNthCalledWith(2, {
+      messageId: "om_quote_2",
+      messageType: "text",
+      text: "bbb",
+    });
+  });
+
+  it("startStreamingMessage.finish: 应把最终收口正文写入引用缓存", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_cache_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_cache_1" } });
+    mockCardUpdate.mockResolvedValue({});
+    mockCardContent.mockResolvedValue({});
+    mockCardSettings.mockResolvedValue({});
+    const quotedMessageStore = {
+      writeQuotedMessage: vi.fn().mockResolvedValue(undefined),
+      readQuotedMessage: vi.fn(),
+    };
+    const { createFeishuMessenger } = await import("../src/feishu/send.js");
+
+    const messenger = createFeishuMessenger(
+      {
+        im: {
+          file: {
+            create: mockFileCreate,
+          },
+          message: {
+            create: mockCreate,
+          },
+          messageReaction: {
+            create: mockReactionCreate,
+            delete: mockReactionDelete,
+          },
+        },
+        cardkit: {
+          v1: {
+            card: {
+              create: mockCardCreate,
+              update: mockCardUpdate,
+              settings: mockCardSettings,
+            },
+            cardElement: {
+              content: mockCardContent,
+            },
+          },
+        },
+      } as any,
+      {
+        quotedMessageStore,
+      },
+    );
+
+    const stream = await messenger.startStreamingMessage("ou_1", "init");
+    await stream!.finish("最终完整正文", 2000);
+
+    expect(quotedMessageStore.writeQuotedMessage).toHaveBeenCalledWith({
+      messageId: "om_stream_cache_1",
+      messageType: "interactive",
+      text: "最终完整正文",
+    });
+  });
 });

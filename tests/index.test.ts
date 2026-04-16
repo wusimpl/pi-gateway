@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => {
     createWorkspaceService: vi.fn(() => ({
       getUserWorkspaceDir: vi.fn(),
     })),
+    setQuotedMessageDataDir: vi.fn(),
   };
 });
 
@@ -144,6 +145,10 @@ vi.mock("../src/storage/users.js", () => ({
   createUserStateStore: mocks.createUserStateStore,
 }));
 
+vi.mock("../src/storage/quoted-messages.js", () => ({
+  setQuotedMessageDataDir: mocks.setQuotedMessageDataDir,
+}));
+
 vi.mock("../src/pi/workspace.js", () => ({
   createWorkspaceService: mocks.createWorkspaceService,
 }));
@@ -170,6 +175,7 @@ describe("index wiring", () => {
     mocks.createMessageRouter.mockClear();
     mocks.createRuntimeStateStore.mockClear();
     mocks.createUserStateStore.mockClear();
+    mocks.setQuotedMessageDataDir.mockClear();
     mocks.createWorkspaceService.mockClear();
   });
 
@@ -193,6 +199,7 @@ describe("index wiring", () => {
         extensionFactories: expect.any(Array),
       }),
     );
+    expect(mocks.setQuotedMessageDataDir).toHaveBeenCalledWith("/tmp/pi-gateway-data");
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.downloadResource).toBe(downloadResource);
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.readQuotedMessage).toBe(readQuotedMessage);
     expect(mocks.startMessageConnection).toHaveBeenCalledTimes(1);

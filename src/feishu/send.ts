@@ -19,6 +19,10 @@ import {
   type FeishuDocPreviewCardInput,
 } from "./doc-preview-card.js";
 import type { FeishuWebDomain } from "./doc-links.js";
+import {
+  type QuotedMessageStore,
+  writeQuotedMessage as writeDefaultQuotedMessage,
+} from "../storage/quoted-messages.js";
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
@@ -171,9 +175,13 @@ export function createFeishuMessenger(
   client: FeishuApiClient,
   options?: {
     feishuDomain?: FeishuWebDomain;
+    quotedMessageStore?: Pick<QuotedMessageStore, "writeQuotedMessage">;
   },
 ): FeishuMessenger {
   const feishuDomain = options?.feishuDomain ?? "feishu";
+  const quotedMessageStore = options?.quotedMessageStore ?? {
+    writeQuotedMessage: writeDefaultQuotedMessage,
+  };
 
   async function sendFeishuMessage(
     openId: string,
@@ -190,6 +198,14 @@ export function createFeishuMessenger(
         },
       }));
       const msgId = resp.data?.message_id ?? null;
+      if (msgId) {
+        await cacheQuotedMessage(
+          quotedMessageStore,
+          msgId,
+          msgType,
+          extractQuotedTextFromOutgoingMessage(msgType, content),
+        );
+      }
       logger.debug("飞书消息已发送", { openId, messageId: msgId, msgType });
       return msgId;
     } catch {
@@ -367,6 +383,13 @@ export function createFeishuMessenger(
         updateBody: (nextBodyText: string) =>
           updateElement(getStreamingBodyElementId(), nextBodyText),
         async finish(finalBodyText: string, textChunkLimit: number): Promise<void> {
+          await cacheQuotedMessage(
+            quotedMessageStore,
+            messageId,
+            "interactive",
+            finalBodyText.trim(),
+          );
+
           const renderedMessages = renderAssistantMessage(finalBodyText, textChunkLimit);
           if (renderedMessages.length === 1 && renderedMessages[0].msgType === "interactive") {
             await updateCard(buildFinalStreamingCardData({
@@ -521,4 +544,123 @@ function inferFeishuUploadFileType(fileName: string): FeishuUploadFileType {
     default:
       return "stream";
   }
+}
+
+async function cacheQuotedMessage(
+  quotedMessageStore: Pick<QuotedMessageStore, "writeQuotedMessage">,
+  messageId: string,
+  messageType: string,
+  text: string | null,
+): Promise<void> {
+  const normalizedText = text?.trim();
+  if (!normalizedText) {
+    return;
+  }
+
+  try {
+    await quotedMessageStore.writeQuotedMessage({
+      messageId,
+      messageType,
+      text: normalizedText,
+    });
+  } catch (error) {
+    logger.warn("Quoted message cache write failed", {
+      messageId,
+      messageType,
+      error: String(error),
+    });
+  }
+}
+
+function extractQuotedTextFromOutgoingMessage(
+  msgType: FeishuMessageType,
+  content: Record<string, unknown>,
+): string | null {
+  switch (msgType) {
+    case "text":
+      return asString(content.text).trim() || null;
+    case "interactive":
+      return flattenOutgoingInteractiveMessage(content);
+    default:
+      return null;
+  }
+}
+
+function flattenOutgoingInteractiveMessage(content: Record<string, unknown>): string | null {
+  const cardType = asString(content.type);
+  if (cardType === "card") {
+    return null;
+  }
+
+  const header = asRecord(content.header);
+  const title = asRecord(header?.title);
+  const titleText = asString(title?.content).trim();
+  const body = asRecord(content.body);
+  const elements = Array.isArray(body?.elements) ? body.elements : [];
+  const lines = elements.flatMap((element) => flattenOutgoingInteractiveElement(element));
+  const text = [titleText, ...lines].map((line) => line.trim()).filter(Boolean).join("\n").trim();
+  return text || null;
+}
+
+function flattenOutgoingInteractiveElement(element: unknown): string[] {
+  const record = asRecord(element);
+  const tag = asString(record?.tag);
+
+  switch (tag) {
+    case "markdown":
+    case "plain_text":
+    case "lark_md": {
+      const content = asString(record?.content ?? record?.text);
+      return content ? [content] : [];
+    }
+    case "table":
+      return flattenOutgoingInteractiveTable(record);
+    case "img":
+      return ["【图片】"];
+    case "hr":
+      return ["---"];
+    default:
+      return [];
+  }
+}
+
+function flattenOutgoingInteractiveTable(table: Record<string, unknown> | null): string[] {
+  const columns = Array.isArray(table?.columns) ? table.columns.map((column) => asRecord(column)) : [];
+  const rows = Array.isArray(table?.rows) ? table.rows.map((row) => asRecord(row)) : [];
+  const columnKeys = columns.map((column, index) => asString(column?.name) || `col_${index}`);
+  const headers = columns
+    .map((column, index) => asString(column?.display_name) || asString(column?.name) || `列${index + 1}`)
+    .filter(Boolean);
+  const lines: string[] = [];
+
+  if (headers.length > 0) {
+    lines.push(headers.join(" | "));
+  }
+
+  for (const row of rows) {
+    if (!row) continue;
+    const cells = columnKeys.map((key) => stringifyOutgoingInteractiveCell(row[key]));
+    if (cells.some(Boolean)) {
+      lines.push(cells.join(" | "));
+    }
+  }
+
+  return lines;
+}
+
+function stringifyOutgoingInteractiveCell(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => stringifyOutgoingInteractiveCell(item)).filter(Boolean).join(", ");
+  }
+  return "";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }

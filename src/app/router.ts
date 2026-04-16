@@ -52,10 +52,19 @@ interface MessageRouterDeps {
   normalizeFeishuInboundMessage?: typeof normalizeFeishuInboundMessage;
 }
 
+interface QueuedPrompt {
+  identity: UserIdentity;
+  message: FeishuInboundMessage;
+  resolve(): void;
+  reject(error: unknown): void;
+}
+
 export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
   const parseEvent = deps.parseMessageEvent ?? parseMessageEvent;
   const isSupportedMessage = deps.isSupportedP2PMessage ?? isSupportedP2PMessage;
   const normalizeMessage = deps.normalizeFeishuInboundMessage ?? normalizeFeishuInboundMessage;
+  const promptQueues = new Map<string, QueuedPrompt[]>();
+  const drainingUsers = new Set<string>();
 
   async function handleFeishuMessage(data: Record<string, unknown>): Promise<void> {
     const event = parseEvent(data);
@@ -93,7 +102,58 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       return;
     }
 
-    await deps.promptService.handleUserPrompt(identity, message);
+    await enqueuePrompt(identity, message);
+  }
+
+  function enqueuePrompt(identity: UserIdentity, message: FeishuInboundMessage): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const openId = identity.openId;
+      const queue = promptQueues.get(openId) ?? [];
+      queue.push({
+        identity,
+        message,
+        resolve,
+        reject,
+      });
+      promptQueues.set(openId, queue);
+      void drainPromptQueue(openId);
+    });
+  }
+
+  async function drainPromptQueue(openId: string): Promise<void> {
+    if (drainingUsers.has(openId)) {
+      return;
+    }
+
+    drainingUsers.add(openId);
+
+    try {
+      while (true) {
+        const queue = promptQueues.get(openId);
+        const next = queue?.shift();
+
+        if (!next) {
+          promptQueues.delete(openId);
+          break;
+        }
+
+        try {
+          await deps.promptService.handleUserPrompt(next.identity, next.message);
+          next.resolve();
+        } catch (error) {
+          next.reject(error);
+        }
+
+        if (queue && queue.length === 0) {
+          promptQueues.delete(openId);
+        }
+      }
+    } finally {
+      drainingUsers.delete(openId);
+      if ((promptQueues.get(openId)?.length ?? 0) > 0) {
+        void drainPromptQueue(openId);
+      }
+    }
   }
 
   return {

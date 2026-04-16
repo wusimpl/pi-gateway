@@ -8,6 +8,8 @@ import type { FeishuMessenger } from "../feishu/send.js";
 import type { PromptRunner } from "../pi/stream.js";
 import type { SessionService } from "../pi/sessions.js";
 import type { WorkspaceService } from "../pi/workspace.js";
+import type { QuotedMessageStore } from "../storage/quoted-messages.js";
+import { readQuotedMessage as readCachedQuotedMessage } from "../storage/quoted-messages.js";
 import type { UserIdentity } from "../types.js";
 import { logger } from "./logger.js";
 import type { RuntimeStateStore } from "./state.js";
@@ -39,6 +41,7 @@ interface PromptServiceDeps {
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
   promptRunner: Pick<PromptRunner, "promptSession">;
   messenger: Pick<FeishuMessenger, "sendTextMessage">;
+  quotedMessageStore?: Pick<QuotedMessageStore, "readQuotedMessage">;
   downloadResource?: typeof downloadFeishuResource;
   readQuotedMessage?: typeof readFeishuQuotedMessage;
   preparePromptInput?: typeof prepareFeishuPromptInput;
@@ -47,6 +50,9 @@ interface PromptServiceDeps {
 export function createPromptService(deps: PromptServiceDeps): PromptService {
   const preparePromptInput = deps.preparePromptInput ?? prepareFeishuPromptInput;
   const readQuotedMessage = deps.readQuotedMessage ?? readFeishuQuotedMessage;
+  const quotedMessageStore = deps.quotedMessageStore ?? {
+    readQuotedMessage: readCachedQuotedMessage,
+  };
 
   async function handleUserPrompt(
     identity: UserIdentity,
@@ -82,7 +88,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         return;
       }
 
-      const enrichedMessage = await attachQuotedMessage(message, readQuotedMessage);
+      const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
       const promptInput = await preparePromptInput(enrichedMessage, piSession, {
         workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
         ollamaBaseUrl: deps.config.FEISHU_MEDIA_OLLAMA_BASE_URL,
@@ -135,10 +141,27 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
 async function attachQuotedMessage(
   message: FeishuInboundMessage,
+  quotedMessageStore: Pick<QuotedMessageStore, "readQuotedMessage">,
   readQuotedMessage: typeof readFeishuQuotedMessage,
 ): Promise<FeishuInboundMessage> {
   if (!message.parentMessageId) {
     return message;
+  }
+
+  try {
+    const cachedQuotedMessage = await quotedMessageStore.readQuotedMessage(message.parentMessageId);
+    if (cachedQuotedMessage) {
+      return {
+        ...message,
+        quotedMessage: cachedQuotedMessage,
+      };
+    }
+  } catch (error) {
+    logger.warn("Quoted message cache read failed", {
+      messageId: message.messageId,
+      parentMessageId: message.parentMessageId,
+      error: String(error),
+    });
   }
 
   try {

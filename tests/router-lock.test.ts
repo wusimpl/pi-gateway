@@ -98,13 +98,15 @@ describe("handleFeishuMessage 运行锁", () => {
     mocks.touchSession.mockResolvedValue(undefined);
   });
 
-  it("已有处理中任务时不再发送提示消息，仅忽略后续消息", async () => {
+  it("已有处理中任务时应排队等待，前一条结束后继续处理下一条", async () => {
     let releasePrompt: (() => void) | undefined;
-    mocks.promptSession.mockImplementation(
-      () => new Promise((resolve) => {
-        releasePrompt = () => resolve({ text: "done", error: undefined });
-      })
-    );
+    mocks.promptSession
+      .mockImplementationOnce(
+        () => new Promise((resolve) => {
+          releasePrompt = () => resolve({ text: "done", error: undefined });
+        })
+      )
+      .mockResolvedValueOnce({ text: "done second", error: undefined });
 
     const firstCall = handleFeishuMessage({});
     await vi.waitFor(() => {
@@ -126,12 +128,27 @@ describe("handleFeishuMessage 运行锁", () => {
     });
     mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "second", localFiles: [] });
 
-    await handleFeishuMessage({});
+    const secondCall = handleFeishuMessage({});
 
-    expect(mocks.sendTextMessage).not.toHaveBeenCalled();
-    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(mocks.promptSession).toHaveBeenCalledTimes(1);
 
     releasePrompt?.();
     await firstCall;
+    await secondCall;
+
+    expect(mocks.promptSession).toHaveBeenCalledTimes(2);
+    expect(mocks.prepareFeishuPromptInput).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        messageId: "om_2",
+        text: "second",
+      }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(mocks.sendTextMessage).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,7 @@ describe("createPromptService", () => {
   const isDraining = vi.fn();
   const downloadResource = vi.fn();
   const readQuotedMessage = vi.fn();
+  const readCachedQuotedMessage = vi.fn();
 
   beforeEach(() => {
     preparePromptInput.mockReset();
@@ -28,6 +29,7 @@ describe("createPromptService", () => {
     isDraining.mockReset();
     downloadResource.mockReset();
     readQuotedMessage.mockReset();
+    readCachedQuotedMessage.mockReset();
 
     acquireLock.mockReturnValue(true);
     setAbortHandler.mockResolvedValue(false);
@@ -51,6 +53,7 @@ describe("createPromptService", () => {
       messageType: "text",
       text: "上一条消息内容",
     });
+    readCachedQuotedMessage.mockResolvedValue(null);
   });
 
   it("应把显式资源下载器透传给 prompt 输入预处理", async () => {
@@ -87,6 +90,9 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
       },
       downloadResource,
       readQuotedMessage,
@@ -167,6 +173,9 @@ describe("createPromptService", () => {
       messenger: {
         sendTextMessage,
       },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
       downloadResource,
       readQuotedMessage,
       preparePromptInput,
@@ -210,6 +219,85 @@ describe("createPromptService", () => {
     );
   });
 
+  it("引用机器人卡片消息时应优先读取本地缓存正文，不再依赖飞书返回 card_id", async () => {
+    readCachedQuotedMessage.mockResolvedValue({
+      messageId: "om_parent_card_1",
+      messageType: "interactive",
+      text: "机器人上一条完整回复正文",
+    });
+
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        STREAMING_ENABLED: true,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_quoted_cached_1",
+        parentMessageId: "om_parent_card_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: "{\"text\":\"继续\"}",
+        text: "继续",
+      },
+    );
+
+    expect(readCachedQuotedMessage).toHaveBeenCalledWith("om_parent_card_1");
+    expect(readQuotedMessage).not.toHaveBeenCalled();
+    expect(preparePromptInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        quotedMessage: {
+          messageId: "om_parent_card_1",
+          messageType: "interactive",
+          text: "机器人上一条完整回复正文",
+        },
+      }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it("收到停止请求后，不应继续执行 prompt，也不该回错误消息", async () => {
     setAbortHandler.mockResolvedValue(true);
 
@@ -246,6 +334,9 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
       },
       downloadResource,
       readQuotedMessage,
@@ -307,6 +398,9 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
       },
       downloadResource,
       readQuotedMessage,
