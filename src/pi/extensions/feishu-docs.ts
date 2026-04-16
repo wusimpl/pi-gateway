@@ -6,17 +6,29 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { FeishuDocsService } from "../../feishu/doc-service.js";
 
-const SHARED_DOC_GUIDELINES = [
+const DOCX_ONLY_GUIDELINES = [
   "这些飞书文档工具只支持新版文档 docx，不支持 wiki 链接或知识库节点。",
   "修改已有文档前，优先先读取当前内容，避免误删用户已有正文。",
 ];
 
-const DOCUMENT_REF_FIELDS = {
+const DOCX_DOCUMENT_REF_FIELDS = {
   document_id: Type.Optional(
     Type.String({ description: "飞书 docx document_id。和 document_url 二选一。" }),
   ),
   document_url: Type.Optional(
     Type.String({ description: "飞书 docx 文档链接。只支持 /docx/... 链接，不支持 wiki。" }),
+  ),
+};
+
+const READABLE_DOCUMENT_REF_FIELDS = {
+  document_id: Type.Optional(
+    Type.String({ description: "飞书 docx document_id。和 document_url 二选一。" }),
+  ),
+  document_url: Type.Optional(
+    Type.String({
+      description:
+        "飞书文档链接。支持 /docx/... 文档链接，也支持 /wiki/... 知识库节点链接。",
+    }),
   ),
 };
 
@@ -55,7 +67,7 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
     description:
       "创建飞书新版文档 docx。可选直接写入 markdown/html 正文。只支持 docx，不支持 wiki。",
     promptSnippet: "feishu_doc_create: 创建飞书 docx 文档，可选一次性写入 markdown/html 正文。",
-    promptGuidelines: SHARED_DOC_GUIDELINES,
+    promptGuidelines: DOCX_ONLY_GUIDELINES,
     parameters: Type.Object({
       title: Type.Optional(Type.String({ description: "文档标题。" })),
       content: Type.Optional(Type.String({ description: "要写入正文的内容。" })),
@@ -83,10 +95,15 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
     name: "feishu_doc_read",
     label: "Feishu Doc Read",
     description:
-      "读取飞书新版文档 docx 的标题、revision_id 和纯文本正文。只支持 docx，不支持 wiki。",
-    promptSnippet: "feishu_doc_read: 读取飞书 docx 文档标题、版本号和纯文本正文。",
-    promptGuidelines: SHARED_DOC_GUIDELINES,
-    parameters: Type.Object(DOCUMENT_REF_FIELDS),
+      "读取飞书新版文档 docx 的标题、revision_id 和纯文本正文。支持 /docx/... 文档链接，也支持 /wiki/... 知识库节点链接。",
+    promptSnippet:
+      "feishu_doc_read: 读取飞书 docx 文档标题、版本号和纯文本正文，也支持 wiki 链接自动解析后读取。",
+    promptGuidelines: [
+      "读取工具支持新版文档 docx，也支持 wiki 链接或知识库节点链接。",
+      "如果传入 wiki 链接，工具会先解析出真实 docx token，再读取正文。",
+      "修改已有文档前，优先先读取当前内容，避免误删用户已有正文。",
+    ],
+    parameters: Type.Object(READABLE_DOCUMENT_REF_FIELDS),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params) {
       const result = await service.readDocument({
@@ -105,9 +122,9 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
     description:
       "往飞书新版文档 docx 的根节点末尾追加正文内容。只支持 docx，不支持 wiki。",
     promptSnippet: "feishu_doc_append: 往飞书 docx 文档末尾追加 markdown/html 内容。",
-    promptGuidelines: SHARED_DOC_GUIDELINES,
+    promptGuidelines: DOCX_ONLY_GUIDELINES,
     parameters: Type.Object({
-      ...DOCUMENT_REF_FIELDS,
+      ...DOCX_DOCUMENT_REF_FIELDS,
       content: Type.String({ description: "要追加进去的正文内容。" }),
       format: Type.Optional(
         Type.String({ description: "正文格式。默认 markdown，可选 html。" }),
@@ -133,9 +150,9 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
     description:
       "整篇替换飞书新版文档 docx 的正文内容。会先写入新正文，确认成功后再删旧内容。只支持 docx，不支持 wiki。",
     promptSnippet: "feishu_doc_replace: 整篇替换飞书 docx 正文，会先写新内容再删旧内容。",
-    promptGuidelines: SHARED_DOC_GUIDELINES,
+    promptGuidelines: DOCX_ONLY_GUIDELINES,
     parameters: Type.Object({
-      ...DOCUMENT_REF_FIELDS,
+      ...DOCX_DOCUMENT_REF_FIELDS,
       content: Type.String({ description: "替换后的完整正文内容。" }),
       format: Type.Optional(
         Type.String({ description: "正文格式。默认 markdown，可选 html。" }),
@@ -162,9 +179,9 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
       "删除飞书新版文档 docx 根级块的一个区间。end_index 是右开区间，也就是不包含 end_index 本身。只支持 docx，不支持 wiki。",
     promptSnippet:
       "feishu_doc_delete_blocks: 删除飞书 docx 根级块区间，end_index 按右开区间处理。",
-    promptGuidelines: SHARED_DOC_GUIDELINES,
+    promptGuidelines: DOCX_ONLY_GUIDELINES,
     parameters: Type.Object({
-      ...DOCUMENT_REF_FIELDS,
+      ...DOCX_DOCUMENT_REF_FIELDS,
       start_index: Type.Number({ description: "起始块下标，包含这个位置。" }),
       end_index: Type.Number({ description: "结束块下标，右开，不包含这个位置。" }),
     }),
@@ -190,12 +207,12 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
     promptSnippet:
       "feishu_doc_delete_document: 删除整篇飞书 docx 文档，必须先拿到用户明确确认。",
     promptGuidelines: [
-      ...SHARED_DOC_GUIDELINES,
+      ...DOCX_ONLY_GUIDELINES,
       "删除整篇文档前，必须先拿到用户明确确认，再传 confirm=true 调这个工具。",
       "只有当用户在对话里明确表达“确认删除整篇文档”这类意思时，才允许真的删除。",
     ],
     parameters: Type.Object({
-      ...DOCUMENT_REF_FIELDS,
+      ...DOCX_DOCUMENT_REF_FIELDS,
       confirm: Type.Optional(
         Type.Boolean({
           description: "只有在用户已经明确确认要删除整篇文档时，才传 true。",

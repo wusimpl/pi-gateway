@@ -105,6 +105,16 @@ describe("feishu docs extension", () => {
     });
   });
 
+  it("读取工具会明确标注支持 wiki，写工具仍保持 docx 限制", () => {
+    const { tools } = collectTools();
+    const readTool = tools.find((tool) => tool.name === "feishu_doc_read");
+    const appendTool = tools.find((tool) => tool.name === "feishu_doc_append");
+
+    expect(readTool.description).toContain("/wiki/");
+    expect(JSON.stringify(readTool.parameters)).toContain("/wiki/");
+    expect(appendTool.description).toContain("只支持 docx，不支持 wiki");
+  });
+
   it("删整篇文档时，没有 confirm=true 就会直接拦住", async () => {
     const { tools, service } = collectTools();
     const deleteTool = tools.find((tool) => tool.name === "feishu_doc_delete_document");

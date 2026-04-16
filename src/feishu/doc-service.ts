@@ -177,6 +177,25 @@ export interface FeishuDocsClient {
       };
     };
   };
+  wiki: {
+    v2: {
+      space: {
+        getNode(payload?: {
+          params: {
+            token: string;
+            obj_type?: "doc" | "docx" | "sheet" | "mindnote" | "bitable" | "file" | "slides" | "wiki";
+          };
+        }): Promise<{
+          data?: {
+            node?: {
+              obj_token?: string;
+              obj_type?: "doc" | "sheet" | "mindnote" | "bitable" | "file" | "docx" | "slides";
+            };
+          };
+        }>;
+      };
+    };
+  };
   drive: {
     v1: {
       media: {
@@ -295,7 +314,7 @@ export interface FeishuDocsService {
 }
 
 const DOCX_URL_PATTERN = /\/docx\/([A-Za-z0-9]+)(?:[/?#]|$)/i;
-const WIKI_URL_PATTERN = /\/wiki\//i;
+const WIKI_URL_PATTERN = /\/wiki\/([A-Za-z0-9]+)(?:[/?#]|$)/i;
 const MAX_BLOCKS_PER_BATCH = 1000;
 const MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024;
 const IMAGE_REPLACE_BATCH_SIZE = 100;
@@ -391,7 +410,7 @@ export function createFeishuDocsService(
   }
 
   async function readDocument(input: FeishuDocRefInput): Promise<FeishuDocReadResult> {
-    const documentId = resolveDocumentId(input);
+    const documentId = await resolveReadableDocumentId(input);
     const [meta, rawContentResponse] = await Promise.all([
       getDocumentMetaById(documentId),
       client.docx.v1.document.rawContent({
@@ -928,6 +947,45 @@ export function createFeishuDocsService(
 
   function buildDocumentUrl(documentId: string): string {
     return buildFeishuDocUrl(documentId, feishuDomain);
+  }
+
+  async function resolveReadableDocumentId(input: FeishuDocRefInput): Promise<string> {
+    if (typeof input.document_id === "string" && input.document_id.trim()) {
+      return input.document_id.trim();
+    }
+
+    if (typeof input.document_url !== "string" || !input.document_url.trim()) {
+      throw new Error("必须提供 document_id 或 document_url");
+    }
+
+    return resolveReadableDocumentIdFromValue(input.document_url.trim());
+  }
+
+  async function resolveReadableDocumentIdFromValue(value: string): Promise<string> {
+    const docxMatch = value.match(DOCX_URL_PATTERN);
+    if (docxMatch?.[1]) {
+      return docxMatch[1];
+    }
+
+    const wikiMatch = value.match(WIKI_URL_PATTERN);
+    if (wikiMatch?.[1]) {
+      const response = await client.wiki.v2.space.getNode({
+        params: {
+          token: wikiMatch[1],
+        },
+      });
+      const node = response.data?.node;
+      if (node?.obj_type !== "docx" || !node.obj_token) {
+        throw new Error("当前 wiki 节点不是 docx 文档，暂不支持读取");
+      }
+      return node.obj_token;
+    }
+
+    if (/^https?:\/\//i.test(value)) {
+      throw new Error("只支持 docx 或 wiki 文档链接，当前链接里没解析出 document_id");
+    }
+
+    return value;
   }
 }
 

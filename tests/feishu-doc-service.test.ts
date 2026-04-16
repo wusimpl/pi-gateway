@@ -27,6 +27,13 @@ function createClient(): FeishuDocsClient {
         },
       },
     },
+    wiki: {
+      v2: {
+        space: {
+          getNode: vi.fn(),
+        },
+      },
+    },
     drive: {
       v1: {
         media: {
@@ -63,6 +70,60 @@ describe("FeishuDocsService", () => {
         document_url: "https://example.feishu.cn/wiki/abc123",
       }),
     ).toThrow();
+  });
+
+  it("读取 wiki 链接时会先解析出真实 docx token 再读取正文", async () => {
+    const client = createClient();
+    client.wiki.v2.space.getNode = vi.fn().mockResolvedValue({
+      data: {
+        node: {
+          obj_type: "docx",
+          obj_token: "doxcnWikiDoc1",
+        },
+      },
+    });
+    client.docx.v1.document.get = vi.fn().mockResolvedValue({
+      data: {
+        document: {
+          document_id: "doxcnWikiDoc1",
+          title: "知识库文档",
+          revision_id: 9,
+        },
+      },
+    });
+    client.docx.v1.document.rawContent = vi.fn().mockResolvedValue({
+      data: {
+        content: "wiki 正文",
+      },
+    });
+
+    const service = createFeishuDocsService(client);
+    const result = await service.readDocument({
+      document_url: "https://example.feishu.cn/wiki/abc123?from=copy",
+    });
+
+    expect(client.wiki.v2.space.getNode).toHaveBeenCalledWith({
+      params: {
+        token: "abc123",
+      },
+    });
+    expect(client.docx.v1.document.get).toHaveBeenCalledWith({
+      path: {
+        document_id: "doxcnWikiDoc1",
+      },
+    });
+    expect(client.docx.v1.document.rawContent).toHaveBeenCalledWith({
+      path: {
+        document_id: "doxcnWikiDoc1",
+      },
+    });
+    expect(result).toEqual({
+      document_id: "doxcnWikiDoc1",
+      document_url: "https://feishu.cn/docx/doxcnWikiDoc1",
+      title: "知识库文档",
+      revision_id: 9,
+      raw_content: "wiki 正文",
+    });
   });
 
   it("创建文档时会先建 docx，再把 markdown 转成块插进去", async () => {
