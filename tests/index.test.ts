@@ -36,6 +36,29 @@ const mocks = vi.hoisted(() => {
     createPromptRunner: vi.fn(() => ({
       promptSession: vi.fn(),
     })),
+    cronRunner: { tag: "cron-runner" },
+    cronService: {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+      isEnabled: vi.fn(() => true),
+      getDefaultTimezone: vi.fn(() => "Asia/Shanghai"),
+      listJobs: vi.fn(),
+      addJob: vi.fn(),
+      removeJob: vi.fn(),
+      runJobNow: vi.fn(),
+    },
+    createCronRunner: vi.fn(() => ({ tag: "cron-runner" })),
+    createCronService: vi.fn(() => ({
+      start: mocks.cronService.start,
+      stop: mocks.cronService.stop,
+      isEnabled: mocks.cronService.isEnabled,
+      getDefaultTimezone: mocks.cronService.getDefaultTimezone,
+      listJobs: mocks.cronService.listJobs,
+      addJob: mocks.cronService.addJob,
+      removeJob: mocks.cronService.removeJob,
+      runJobNow: mocks.cronService.runJobNow,
+    })),
+    createCronTaskExtension: vi.fn(() => "cron-extension-factory"),
     createSessionService: vi.fn(() => ({
       disposeAllSessions: vi.fn(),
       getOrCreateActiveSession: vi.fn(),
@@ -85,6 +108,9 @@ vi.mock("../src/config.js", () => ({
     DATA_DIR: "/tmp/pi-gateway-data",
     PI_WORKSPACE_ROOT: "/tmp/pi-gateway-workspace",
     PI_DISABLE_GLOBAL_AGENTS: true,
+    CRON_ENABLED: true,
+    CRON_DEFAULT_TZ: "Asia/Shanghai",
+    CRON_JOB_TIMEOUT_MS: 30000,
     LOG_LEVEL: "info",
   }),
 }));
@@ -120,6 +146,18 @@ vi.mock("../src/feishu/send.js", () => ({
 
 vi.mock("../src/pi/stream.js", () => ({
   createPromptRunner: mocks.createPromptRunner,
+}));
+
+vi.mock("../src/cron/runner.js", () => ({
+  createCronRunner: mocks.createCronRunner,
+}));
+
+vi.mock("../src/cron/service.js", () => ({
+  createCronService: mocks.createCronService,
+}));
+
+vi.mock("../src/pi/extensions/cron-task.js", () => ({
+  createCronTaskExtension: mocks.createCronTaskExtension,
 }));
 
 vi.mock("../src/pi/sessions.js", () => ({
@@ -170,6 +208,11 @@ describe("index wiring", () => {
     mocks.createFeishuResourceDownloader.mockClear();
     mocks.createFeishuMessenger.mockClear();
     mocks.createPromptRunner.mockClear();
+    mocks.createCronRunner.mockClear();
+    mocks.createCronService.mockClear();
+    mocks.createCronTaskExtension.mockClear();
+    mocks.cronService.start.mockClear();
+    mocks.cronService.stop.mockClear();
     mocks.createSessionService.mockClear();
     mocks.createCommandService.mockClear();
     mocks.createPromptService.mockClear();
@@ -197,9 +240,14 @@ describe("index wiring", () => {
     expect(mocks.createPiRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
         disableGlobalAgents: true,
-        extensionFactories: expect.any(Array),
+        extensionFactories: expect.arrayContaining([
+          "cron-extension-factory",
+        ]),
       }),
     );
+    expect(mocks.createCronRunner).toHaveBeenCalledTimes(1);
+    expect(mocks.createCronService).toHaveBeenCalledTimes(1);
+    expect(mocks.cronService.start).toHaveBeenCalledTimes(1);
     expect(mocks.setQuotedMessageDataDir).toHaveBeenCalledWith("/tmp/pi-gateway-data");
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.downloadResource).toBe(downloadResource);
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.readQuotedMessage).toBe(readQuotedMessage);

@@ -11,6 +11,7 @@
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.60.0",
     "@mariozechner/pi-coding-agent": "latest",
+    "croner": "^10.0.1",
     "dotenv": "^16.4.0",
     "marked": "^18.0.0",
     "zod": "^3.23.0"

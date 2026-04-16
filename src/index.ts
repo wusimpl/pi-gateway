@@ -5,6 +5,9 @@ import { createPromptService } from "./app/prompt-service.js";
 import { createRestartService, signalRestartReadyIfNeeded } from "./app/restart.js";
 import { createMessageRouter } from "./app/router.js";
 import { createRuntimeStateStore, type RuntimeStateStore } from "./app/state.js";
+import { createCronRunner } from "./cron/runner.js";
+import { createCronService, type CronService } from "./cron/service.js";
+import { createCronStore } from "./cron/store.js";
 import { ensureDir } from "./storage/files.js";
 import { createFeishuConnection } from "./feishu/client.js";
 import {
@@ -16,6 +19,7 @@ import { createFeishuResourceDownloader, type FeishuResourceClient } from "./fei
 import { createFeishuMessenger, type FeishuApiClient } from "./feishu/send.js";
 import { createFeishuDocsExtension } from "./pi/extensions/feishu-docs.js";
 import { createFeishuFilesExtension } from "./pi/extensions/feishu-files.js";
+import { createCronTaskExtension } from "./pi/extensions/cron-task.js";
 import { findAvailableModel, listAvailableModels } from "./pi/models.js";
 import { createPiRuntime, type PiRuntime } from "./pi/runtime.js";
 import { createSessionService, type SessionService } from "./pi/sessions.js";
@@ -35,6 +39,8 @@ async function main() {
     disableGlobalAgents: config.PI_DISABLE_GLOBAL_AGENTS,
     logLevel: config.LOG_LEVEL,
     processingReactionEnabled: Boolean(config.FEISHU_PROCESSING_REACTION_TYPE),
+    cronEnabled: config.CRON_ENABLED,
+    cronDefaultTz: config.CRON_DEFAULT_TZ,
   });
 
   await ensureDir(config.DATA_DIR);
@@ -66,6 +72,7 @@ async function main() {
     { feishuDomain: config.FEISHU_DOMAIN },
   );
 
+  let cronService: CronService | null = null;
   let piRuntime: PiRuntime;
   try {
     piRuntime = createPiRuntime({
@@ -73,6 +80,11 @@ async function main() {
       extensionFactories: [
         createFeishuDocsExtension(feishuDocsService),
         createFeishuFilesExtension(feishuMessenger),
+        ...(config.CRON_ENABLED
+          ? [
+              createCronTaskExtension(() => cronService),
+            ]
+          : []),
       ],
     });
     logger.info("Pi 运行时就绪");
@@ -100,6 +112,24 @@ async function main() {
     feishuConnection.client as unknown as FeishuResourceClient,
   );
   const promptRunner = createPromptRunner(feishuMessenger);
+  if (config.CRON_ENABLED) {
+    const cronStore = createCronStore(config.DATA_DIR);
+    const cronRunner = createCronRunner({
+      config,
+      runtime: piRuntime,
+      runtimeState,
+      workspaceService,
+      promptRunner,
+      messenger: feishuMessenger,
+    });
+    cronService = createCronService({
+      store: cronStore,
+      runner: cronRunner,
+      defaultTz: config.CRON_DEFAULT_TZ,
+      enabled: config.CRON_ENABLED,
+    });
+    await cronService.start();
+  }
   const sessionService = createSessionService({
     runtime: piRuntime,
     userStateStore,
@@ -115,6 +145,7 @@ async function main() {
     restartService: createRestartService(),
     listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
     findAvailableModel: (rawRef: string) => findAvailableModel(rawRef, piRuntime.getModelRegistry()),
+    cronService: cronService ?? undefined,
   });
   const promptService = createPromptService({
     config,
@@ -133,7 +164,7 @@ async function main() {
   });
   logger.info("消息路由就绪");
 
-  registerShutdown(sessionService, runtimeState);
+  registerShutdown(sessionService, runtimeState, cronService);
 
   try {
     await feishuConnection.startMessageConnection(router.handleFeishuMessage);
@@ -150,7 +181,11 @@ async function checkPiModels(runtime: PiRuntime): Promise<Array<{ provider: stri
   return runtime.getModelRegistry().getAvailable();
 }
 
-function registerShutdown(sessionService: Pick<SessionService, "disposeAllSessions">, runtimeState: Pick<RuntimeStateStore, "clearAllState">) {
+function registerShutdown(
+  sessionService: Pick<SessionService, "disposeAllSessions">,
+  runtimeState: Pick<RuntimeStateStore, "clearAllState">,
+  cronService?: Pick<CronService, "stop"> | null,
+) {
   let shuttingDown = false;
 
   const shutdown = async (signal: string) => {
@@ -159,6 +194,7 @@ function registerShutdown(sessionService: Pick<SessionService, "disposeAllSessio
     logger.info(`收到 ${signal}，开始优雅关停...`);
 
     try {
+      await cronService?.stop?.();
       sessionService.disposeAllSessions();
       runtimeState.clearAllState();
       logger.info("优雅关停完成");

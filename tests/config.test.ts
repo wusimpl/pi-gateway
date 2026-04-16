@@ -52,6 +52,15 @@ describe("loadConfig", () => {
     expect(loadConfig().PI_DISABLE_GLOBAL_AGENTS).toBe(false);
   });
 
+  it("CRON 默认应启用并使用上海时区", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.CRON_ENABLED).toBe(true);
+    expect(config.CRON_DEFAULT_TZ).toBe("Asia/Shanghai");
+  });
+
   it("PI_DISABLE_GLOBAL_AGENTS=true 时应禁用全局 context 文件", async () => {
     applyBaseEnv({ PI_DISABLE_GLOBAL_AGENTS: "true" });
     const { loadConfig } = await import("../src/config.js");

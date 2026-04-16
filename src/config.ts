@@ -21,6 +21,12 @@ const envSchema = z.object({
     .string()
     .transform((v) => v === "true")
     .default("false"),
+  CRON_ENABLED: z
+    .string()
+    .transform((v) => v === "true")
+    .default("true"),
+  CRON_DEFAULT_TZ: z.string().default("Asia/Shanghai"),
+  CRON_JOB_TIMEOUT_MS: z.coerce.number().int().positive().default(30 * 60 * 1000),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   STREAMING_ENABLED: z
     .string()

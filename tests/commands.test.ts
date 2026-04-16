@@ -64,6 +64,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /cron with args", () => {
+    expect(parseBridgeCommand("/cron list")).toEqual({
+      name: "cron",
+      args: "list",
+    });
+  });
+
   it("should return null for plain text", () => {
     expect(parseBridgeCommand("hello")).toBeNull();
   });

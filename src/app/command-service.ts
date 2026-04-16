@@ -14,13 +14,23 @@ import { handleBridgeCommand, type BridgeCommand } from "./commands.js";
 import { logger } from "./logger.js";
 import type { RestartService } from "./restart.js";
 import type { RuntimeStateStore } from "./state.js";
+import type { CronService } from "../cron/service.js";
+import {
+  formatCronHelp,
+  formatCronJobAdded,
+  formatCronJobList,
+  formatCronJobRemoved,
+  formatCronJobRunResult,
+  parseCronBridgeCommand,
+} from "../cron/commands.js";
+import { parseScheduleInput } from "../cron/schedule.js";
 
 export interface CommandService {
   handleBridgeCommand(identity: UserIdentity, command: BridgeCommand): Promise<void>;
 }
 
 interface CommandServiceDeps {
-  config: Pick<Config, "TEXT_CHUNK_LIMIT">;
+  config: Pick<Config, "TEXT_CHUNK_LIMIT" | "CRON_DEFAULT_TZ">;
   messenger: Pick<FeishuMessenger, "sendRenderedMessage" | "sendTextMessage">;
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession" | "listSessions" | "resumeSession">;
   userStateStore: Pick<UserStateStore, "readUserState">;
@@ -32,6 +42,7 @@ interface CommandServiceDeps {
   restartService: Pick<RestartService, "restartGateway">;
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
+  cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "removeJob" | "runJobNow">;
 }
 
 export function createCommandService(deps: CommandServiceDeps): CommandService {
@@ -87,11 +98,16 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           await deps.messenger.sendTextMessage(openId, pageResult.error);
           return;
         }
+        const page = pageResult.page;
+        if (page === undefined) {
+          await deps.messenger.sendTextMessage(openId, "页码解析失败。");
+          return;
+        }
 
         const sessions = await deps.sessionService.listSessions(identity);
         const totalCount = sessions.length;
         const totalPages = Math.max(1, Math.ceil(totalCount / SESSION_PAGE_SIZE));
-        if (totalCount > 0 && pageResult.page > totalPages) {
+        if (totalCount > 0 && page > totalPages) {
           await deps.messenger.sendTextMessage(
             openId,
             `页码超出范围，目前只有 ${totalPages} 页。\n\n用 /sessions 看第一页，或用 /sessions -n <页码> 翻页。`,
@@ -99,11 +115,11 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           return;
         }
 
-        const startIndex = (pageResult.page - 1) * SESSION_PAGE_SIZE;
+        const startIndex = (page - 1) * SESSION_PAGE_SIZE;
         const reply = handleBridgeCommand(command, {
           openId,
           sessions: sessions.slice(startIndex, startIndex + SESSION_PAGE_SIZE),
-          sessionsPage: pageResult.page,
+          sessionsPage: page,
           sessionsTotalPages: totalPages,
           sessionsTotalCount: totalCount,
         });
@@ -112,6 +128,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleResumeCommand(identity, command);
       } else if (command.name === "model") {
         await handleModelCommand(identity, command);
+      } else if (command.name === "cron") {
+        await handleCronCommand(identity, command);
       } else if (command.name === "stop") {
         await handleStopCommand(identity, command);
       } else if (command.name === "restart") {
@@ -230,6 +248,90 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         return;
       }
       throw error;
+    }
+  }
+
+  async function handleCronCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    const cronService = deps.cronService;
+    if (!cronService?.isEnabled()) {
+      await deps.messenger.sendTextMessage(openId, "当前网关没有开启定时任务。");
+      return;
+    }
+
+    const parsed = parseCronBridgeCommand(command.args);
+    if (parsed.error) {
+      await deps.messenger.sendTextMessage(openId, parsed.error);
+      return;
+    }
+
+    const defaultTz = cronService.getDefaultTimezone?.() ?? deps.config.CRON_DEFAULT_TZ;
+    switch (parsed.command?.action) {
+      case "help":
+        await sendCommandReply(openId, formatCronHelp(defaultTz));
+        return;
+      case "list": {
+        const jobs = await cronService.listJobs(openId);
+        await sendCommandReply(openId, formatCronJobList(jobs, defaultTz));
+        return;
+      }
+      case "add": {
+        const parsedSchedule = parseScheduleInput(
+          parsed.command.time,
+          parsed.command.tz?.trim() || defaultTz,
+        );
+        const schedule =
+          parsedSchedule.schedule.kind === "cron" && parsed.command.tz?.trim()
+            ? {
+                ...parsedSchedule.schedule,
+                tz: parsed.command.tz.trim(),
+              }
+            : parsedSchedule.schedule;
+        const job = await cronService.addJob({
+          openId,
+          userId: identity.userId,
+          name: parsed.command.name,
+          prompt: parsed.command.prompt,
+          schedule,
+          deleteAfterRun: parsedSchedule.deleteAfterRun,
+        });
+        await sendCommandReply(openId, formatCronJobAdded(job, defaultTz));
+        return;
+      }
+      case "remove": {
+        try {
+          const removed = await cronService.removeJob(openId, parsed.command.jobId);
+          if (!removed) {
+            await deps.messenger.sendTextMessage(openId, "没找到这个定时任务。");
+            return;
+          }
+          await sendCommandReply(openId, formatCronJobRemoved(removed));
+        } catch (error) {
+          if ((error instanceof Error ? error.message : String(error)) === "CRON_JOB_RUNNING") {
+            await deps.messenger.sendTextMessage(openId, "这个定时任务正在执行，先用 /stop 停掉再删。");
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
+      case "run": {
+        try {
+          const result = await cronService.runJobNow(openId, parsed.command.jobId);
+          await sendCommandReply(openId, formatCronJobRunResult(result, defaultTz));
+        } catch (error) {
+          const code = error instanceof Error ? error.message : String(error);
+          if (code === "CRON_JOB_NOT_FOUND") {
+            await deps.messenger.sendTextMessage(openId, "没找到这个定时任务。");
+            return;
+          }
+          if (code === "CRON_JOB_RUNNING") {
+            await deps.messenger.sendTextMessage(openId, "这个定时任务已经在执行中了。");
+            return;
+          }
+          throw error;
+        }
+      }
     }
   }
 
