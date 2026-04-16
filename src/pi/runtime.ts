@@ -96,7 +96,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
     sessionFile: string,
     cwd: string,
   ): Promise<AgentSession> {
-    const sessionManager = SessionManager.open(sessionFile);
+    const sessionManager = SessionManager.open(sessionFile, undefined, cwd);
     const resourceLoader = await createResourceLoader(cwd);
     const { session } = await createAgentSession({
       cwd,

@@ -73,13 +73,20 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       try {
         const workspaceDir = await ensureWorkspaceForIdentity(identity);
         const session = await deps.runtime.openPiSession(state.piSessionFile, workspaceDir);
+        const activeSessionId = session.sessionId;
         sessionCache.set(openId, session);
+        if (state.activeSessionId !== activeSessionId || state.piSessionFile !== session.sessionFile) {
+          state.activeSessionId = activeSessionId;
+          state.piSessionFile = session.sessionFile ?? undefined;
+          state.updatedAt = new Date().toISOString();
+          await deps.userStateStore.writeUserState(openId, state);
+        }
         logger.info("Pi session 从指定文件恢复", {
           openId,
-          sessionId: state.activeSessionId,
-          sessionFile: state.piSessionFile,
+          sessionId: activeSessionId,
+          sessionFile: session.sessionFile ?? state.piSessionFile,
         });
-        return { activeSessionId: state.activeSessionId, piSession: session };
+        return { activeSessionId, piSession: session };
       } catch (err) {
         logger.warn("Pi session 指定文件恢复失败，尝试最近会话兜底", {
           openId,
@@ -95,15 +102,17 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         const workspaceDir = await ensureWorkspaceForIdentity(identity);
         const result = await deps.runtime.continueRecentPiSession(workspaceDir, sessionDir);
         if (result) {
+          const activeSessionId = result.session.sessionId;
           sessionCache.set(openId, result.session);
+          state.activeSessionId = activeSessionId;
           state.piSessionFile = result.session.sessionFile ?? undefined;
           await deps.userStateStore.writeUserState(openId, state);
           logger.info("Pi session 从用户目录最近会话恢复", {
             openId,
-            sessionId: state.activeSessionId,
+            sessionId: activeSessionId,
             sessionFile: result.session.sessionFile,
           });
-          return { activeSessionId: state.activeSessionId, piSession: result.session };
+          return { activeSessionId, piSession: result.session };
         }
       } catch (err) {
         logger.warn("Pi session 用户目录恢复失败，将创建新 session", { openId, error: String(err) });
@@ -126,7 +135,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const sessionDir = deps.userStateStore.userSessionsDir(openId);
     const workspaceDir = await ensureWorkspaceForIdentity(identity);
     const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir);
-    const newSessionId = generateSessionId();
+    const newSessionId = piSession.sessionId;
 
     const existing = await deps.userStateStore.readUserState(openId);
     if (existing) {
@@ -185,19 +194,20 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     disposeCachedSession(openId);
 
     const piSession = await deps.runtime.openPiSession(target.sessionFile, workspaceDir);
+    const activeSessionId = piSession.sessionId;
     sessionCache.set(openId, piSession);
 
     const now = new Date().toISOString();
     const state = await deps.userStateStore.readUserState(openId);
     if (state) {
-      state.activeSessionId = target.sessionId;
-      state.piSessionFile = target.sessionFile;
+      state.activeSessionId = activeSessionId;
+      state.piSessionFile = piSession.sessionFile ?? target.sessionFile;
       state.updatedAt = now;
       state.lastActiveAt = now;
       await deps.userStateStore.writeUserState(openId, state);
     } else {
-      const created = await deps.userStateStore.createUserState(openId, target.sessionId);
-      created.piSessionFile = target.sessionFile;
+      const created = await deps.userStateStore.createUserState(openId, activeSessionId);
+      created.piSessionFile = piSession.sessionFile ?? target.sessionFile;
       created.updatedAt = now;
       created.lastActiveAt = now;
       await deps.userStateStore.writeUserState(openId, created);
@@ -205,11 +215,11 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 
     logger.info("Pi session 已切换到历史会话", {
       openId,
-      sessionId: target.sessionId,
-      sessionFile: target.sessionFile,
+      sessionId: activeSessionId,
+      sessionFile: piSession.sessionFile ?? target.sessionFile,
     });
     return {
-      activeSessionId: target.sessionId,
+      activeSessionId,
       piSession,
     };
   }
@@ -272,16 +282,6 @@ function resolveTargetSession(sessions: ListedSession[], ref: string): ListedSes
   }
 
   return null;
-}
-
-/**
- * 生成 session ID，附带毫秒和随机后缀，避免同一秒内 /new 连点时覆盖旧会话状态。
- */
-function generateSessionId(): string {
-  const now = new Date();
-  const pad = (n: number, width = 2) => n.toString().padStart(width, "0");
-  const randomSuffix = Math.random().toString(36).slice(2, 8);
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${pad(now.getMilliseconds(), 3)}-${randomSuffix}`;
 }
 
 function getDefaultSessionService(): SessionService {

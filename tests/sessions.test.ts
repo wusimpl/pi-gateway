@@ -31,10 +31,17 @@ describe("session service", () => {
   it("连续快速创建新会话时，sessionId 不应重复", async () => {
     const deps = createDeps();
     const dispose = vi.fn();
-    deps.runtime.createPiSession.mockResolvedValue({
-      sessionFile: "/tmp/sessions/ou_1/session.json",
-      dispose,
-    });
+    deps.runtime.createPiSession
+      .mockResolvedValueOnce({
+        sessionId: "pi-session-1",
+        sessionFile: "/tmp/sessions/ou_1/session.json",
+        dispose,
+      })
+      .mockResolvedValueOnce({
+        sessionId: "pi-session-2",
+        sessionFile: "/tmp/sessions/ou_1/session-2.json",
+        dispose,
+      });
     deps.userStateStore.createUserState.mockImplementation(async (_openId: string, sessionId: string) => ({
       openId: "ou_1",
       activeSessionId: sessionId,
@@ -54,6 +61,30 @@ describe("session service", () => {
     expect(first.activeSessionId).not.toBe(second.activeSessionId);
     expect(deps.runtime.createPiSession).toHaveBeenCalledTimes(2);
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("创建新会话时应直接使用 Pi sessionId 作为 activeSessionId", async () => {
+    const deps = createDeps();
+    deps.runtime.createPiSession.mockResolvedValue({
+      sessionId: "pi-session-123",
+      sessionFile: "/tmp/sessions/ou_1/session.json",
+      dispose: vi.fn(),
+    });
+    deps.userStateStore.createUserState.mockImplementation(async (_openId: string, sessionId: string) => ({
+      openId: "ou_1",
+      activeSessionId: sessionId,
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+      lastMessageId: undefined,
+      piSessionFile: undefined,
+    }));
+
+    const service = createSessionService(deps as any);
+    const result = await service.createNewSession({ openId: "ou_1", userId: "u_1" });
+
+    expect(result.activeSessionId).toBe("pi-session-123");
+    expect(deps.userStateStore.createUserState).toHaveBeenCalledWith("ou_1", "pi-session-123");
   });
 
   it("创建新会话时会把 workspace 绑定到当前用户 identity", async () => {
@@ -150,6 +181,7 @@ describe("session service", () => {
       },
     ]);
     deps.runtime.openPiSession.mockResolvedValue({
+      sessionId: "session_2",
       sessionFile: "/tmp/sessions/ou_1/session_2.jsonl",
       model: { provider: "rightcodes", id: "gpt-5.4-high" },
       dispose: vi.fn(),
@@ -185,6 +217,7 @@ describe("session service", () => {
       },
     ]);
     deps.runtime.openPiSession.mockResolvedValue({
+      sessionId: "abc123xyz",
       sessionFile: "/tmp/sessions/ou_1/abc123xyz.jsonl",
       dispose: vi.fn(),
     });
@@ -194,5 +227,35 @@ describe("session service", () => {
 
     expect(result.activeSessionId).toBe("abc123xyz");
     expect(deps.runtime.openPiSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("从指定文件恢复时应把旧 activeSessionId 对齐到真实 sessionId", async () => {
+    const deps = createDeps();
+    deps.userStateStore.readUserState.mockResolvedValue({
+      openId: "ou_1",
+      activeSessionId: "legacy-session-id",
+      piSessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+      lastMessageId: undefined,
+    });
+    deps.runtime.openPiSession.mockResolvedValue({
+      sessionId: "pi-session-789",
+      sessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      dispose: vi.fn(),
+    });
+
+    const service = createSessionService(deps as any);
+    const result = await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
+
+    expect(result.activeSessionId).toBe("pi-session-789");
+    expect(deps.userStateStore.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({
+        activeSessionId: "pi-session-789",
+        piSessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      }),
+    );
   });
 });

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
     authStorage: { tag: "auth-storage" },
     modelRegistry: { tag: "model-registry" },
     sessionManager: { tag: "session-manager" },
+    sessionManagerOpen: vi.fn(),
     getAgentDir: vi.fn(() => "/Users/test/.pi/agent"),
     loaderReload: vi.fn().mockResolvedValue(undefined),
     createAgentSession: vi.fn().mockResolvedValue({
@@ -35,7 +36,10 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   SessionManager: {
     create: vi.fn(() => mocks.sessionManager),
     continueRecent: vi.fn(() => mocks.sessionManager),
-    open: vi.fn(() => mocks.sessionManager),
+    open: vi.fn((...args: unknown[]) => {
+      mocks.sessionManagerOpen(...args);
+      return mocks.sessionManager;
+    }),
   },
   DefaultResourceLoader: vi.fn(function DefaultResourceLoader(options: Record<string, unknown>) {
     const instance = {
@@ -60,6 +64,7 @@ describe("pi runtime", () => {
     mocks.loaderInstances.length = 0;
     mocks.loaderReload.mockClear();
     mocks.createAgentSession.mockClear();
+    mocks.sessionManagerOpen.mockClear();
     mocks.getAgentDir.mockClear();
     mocks.logger.info.mockClear();
     mocks.logger.warn.mockClear();
@@ -117,5 +122,17 @@ describe("pi runtime", () => {
     ).toEqual([
       { path: "/tmp/workspace/AGENTS.md", content: "project agents" },
     ]);
+  });
+
+  it("打开历史 session 时应把当前 workspace cwd 传给 SessionManager.open", async () => {
+    const runtime = createPiRuntime();
+
+    await runtime.openPiSession("/tmp/sessions/ou_1/session.jsonl", "/tmp/workspace/new-ou_1");
+
+    expect(mocks.sessionManagerOpen).toHaveBeenCalledWith(
+      "/tmp/sessions/ou_1/session.jsonl",
+      undefined,
+      "/tmp/workspace/new-ou_1",
+    );
   });
 });
