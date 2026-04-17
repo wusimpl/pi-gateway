@@ -331,4 +331,37 @@ describe("handleFeishuMessage 会话历史命令", () => {
       2000,
     );
   });
+
+  it("`/resume` 历史摘要应兼容旧的本地转写标记", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/resume 1"}',
+      text: "/resume 1",
+    });
+    mocks.resumeSession.mockResolvedValue({
+      activeSessionId: "session_002",
+      piSession: {
+        messages: [
+          {
+            role: "user",
+            content:
+              "用户发来了一段语音，音频已保存到本地：/tmp/pi-workspace/user/.feishu-inbox/om_2/audio.m4a\n语音时长：3200ms\n以下是本地转写结果：\n帮我继续排查这个报错",
+          },
+          { role: "assistant", content: [{ type: "text", text: "先把完整日志贴出来" }] },
+        ],
+      },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "✅ 已切换到会话: session_002\n\n历史消息：\nuser input: 帮我继续排查这个报错\nmodel output: 先把完整日志贴出来",
+      2000,
+    );
+  });
 });

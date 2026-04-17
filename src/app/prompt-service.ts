@@ -193,6 +193,10 @@ function formatPromptPreparationError(error: unknown): string | undefined {
     return "豆包语音未配置 API Key，请先在 .env 设置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY。";
   }
 
+  if (message.includes("豆包语音暂不支持当前音频格式")) {
+    return lines.find((line) => line.includes("豆包语音暂不支持当前音频格式"));
+  }
+
   if (message.includes("豆包语音转写失败：")) {
     return lines.find((line) => line.includes("豆包语音转写失败："));
   }

@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
@@ -18,6 +19,17 @@ const DOUBAO_RESOURCE_ID = "volc.bigasr.auc_turbo";
 const DOUBAO_SUCCESS_STATUS_CODE = "20000000";
 const DOUBAO_UID = "pi-gateway";
 const DOUBAO_MODEL_NAME = "bigmodel";
+const DOUBAO_SUPPORTED_AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".opus"]);
+const DOUBAO_SUPPORTED_AUDIO_MIME_TYPES = new Set([
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/ogg",
+  "application/ogg",
+  "audio/opus",
+]);
 
 interface DoubaoFlashResponse {
   result?: {
@@ -95,7 +107,7 @@ export async function prepareFeishuPromptInput(
         fileKey: message.fileKey,
         resourceType: "audio",
       });
-      const transcript = await transcribeAudio(resource.filePath, options);
+      const transcript = await transcribeAudio(resource.filePath, options, resource.mimeType);
       const durationLine = typeof message.durationMs === "number" ? `\n语音时长：${message.durationMs}ms` : "";
       return {
         text: withQuotedMessageContext(
@@ -156,13 +168,14 @@ export async function transcribeAudioFile(
     | "audioTranscribeSenseVoiceDevice"
     | "audioTranscribeDoubaoApiKey"
   >,
+  audioMimeType?: string,
 ): Promise<string> {
   if (options.audioTranscribeProvider === "sensevoice") {
     return transcribeAudioWithSenseVoice(audioPath, options);
   }
 
   if (options.audioTranscribeProvider === "doubao") {
-    return transcribeAudioWithDoubao(audioPath, options);
+    return transcribeAudioWithDoubao(audioPath, options, audioMimeType);
   }
 
   return transcribeAudioWithScript(audioPath, options);
@@ -235,11 +248,14 @@ async function transcribeAudioWithSenseVoice(
 async function transcribeAudioWithDoubao(
   audioPath: string,
   options: Pick<FeishuMediaProcessingOptions, "audioTranscribeDoubaoApiKey">,
+  audioMimeType?: string,
 ): Promise<string> {
   const apiKey = options.audioTranscribeDoubaoApiKey.trim();
   if (!apiKey) {
     throw new Error("豆包语音未配置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY");
   }
+
+  ensureDoubaoAudioFormatSupported(audioPath, audioMimeType);
 
   const audioData = await readFile(audioPath);
   const response = await fetch(DOUBAO_FLASH_ENDPOINT, {
@@ -294,6 +310,32 @@ async function transcribeAudioWithDoubao(
   }
 
   return transcript;
+}
+
+function ensureDoubaoAudioFormatSupported(audioPath: string, audioMimeType?: string): void {
+  const normalizedMimeType = audioMimeType?.split(";")[0]?.trim().toLowerCase();
+  const normalizedExtension = extname(audioPath).trim().toLowerCase();
+
+  if (normalizedMimeType && DOUBAO_SUPPORTED_AUDIO_MIME_TYPES.has(normalizedMimeType)) {
+    return;
+  }
+
+  if (
+    (!normalizedMimeType || normalizedMimeType === "application/octet-stream") &&
+    normalizedExtension &&
+    DOUBAO_SUPPORTED_AUDIO_EXTENSIONS.has(normalizedExtension)
+  ) {
+    return;
+  }
+
+  const formatLabel =
+    [normalizedMimeType, normalizedExtension]
+      .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index)
+      .join(" / ") || "未知格式";
+
+  throw new Error(
+    `豆包语音暂不支持当前音频格式（${formatLabel}），请先改用 WAV、MP3 或 OGG/OPUS。`,
+  );
 }
 
 function extractDoubaoTranscript(payload: DoubaoFlashResponse | null): string {

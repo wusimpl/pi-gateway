@@ -24,6 +24,7 @@ function createDeps() {
     config: {
       TEXT_CHUNK_LIMIT: 2000,
       CRON_DEFAULT_TZ: "Asia/Shanghai",
+      FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
     },
     messenger,
     sessionService: {
@@ -106,4 +107,3 @@ describe("command service /cron", () => {
     );
   });
 });
-

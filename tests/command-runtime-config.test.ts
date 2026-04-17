@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createCommandService } from "../src/app/command-service.js";
 import { createRuntimeConfigStore } from "../src/app/runtime-config.js";
 
-function createDeps() {
+function createDeps(options: { doubaoApiKey?: string } = {}) {
   const messenger = {
     sendRenderedMessage: vi.fn().mockResolvedValue(undefined),
     sendTextMessage: vi.fn().mockResolvedValue(undefined),
@@ -17,6 +17,7 @@ function createDeps() {
     config: {
       TEXT_CHUNK_LIMIT: 2000,
       CRON_DEFAULT_TZ: "Asia/Shanghai",
+      FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: options.doubaoApiKey ?? "doubao-api-key",
     },
     runtimeConfig,
     messenger,
@@ -68,6 +69,22 @@ describe("command service runtime config", () => {
       "✅ 语音转写已切到 doubao。",
       2000,
     );
+  });
+
+  it("没配豆包 key 时不允许切到 doubao", async () => {
+    const { service, messenger, runtimeConfig } = createDeps({ doubaoApiKey: "" });
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "stt", args: "provider doubao" },
+    );
+
+    expect(runtimeConfig.getAudioTranscribeProvider()).toBe("whisper");
+    expect(messenger.sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "当前 .env 里没配置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY，不能切到 doubao。",
+    );
+    expect(messenger.sendRenderedMessage).not.toHaveBeenCalled();
   });
 
   it("/stream off 会关闭流式回复", async () => {
@@ -122,6 +139,7 @@ describe("command service runtime config", () => {
       config: {
         TEXT_CHUNK_LIMIT: 2000,
         CRON_DEFAULT_TZ: "Asia/Shanghai",
+        FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
       },
       runtimeConfig: createRuntimeConfigStore({}),
       messenger,

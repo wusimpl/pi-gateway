@@ -453,6 +453,77 @@ describe("createPromptService", () => {
     expect(releaseLock).toHaveBeenCalledWith("ou_1");
   });
 
+  it("豆包不支持的音频格式应直接返回具体错误", async () => {
+    preparePromptInput.mockRejectedValue(
+      new Error("豆包语音暂不支持当前音频格式（audio/mp4 / .m4a），请先改用 WAV、MP3 或 OGG/OPUS。"),
+    );
+
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "doubao",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "doubao-api-key",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "audio",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_audio_unsupported",
+        messageType: "audio",
+        createTime: "123",
+        rawContent: '{"file_key":"file_123","duration":3200}',
+        fileKey: "file_123",
+        durationMs: 3200,
+      },
+    );
+
+    expect(promptSession).not.toHaveBeenCalled();
+    expect(sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "❌ 错误: 豆包语音暂不支持当前音频格式（audio/mp4 / .m4a），请先改用 WAV、MP3 或 OGG/OPUS。",
+    );
+    expect(releaseLock).toHaveBeenCalledWith("ou_1");
+  });
+
   it("排空期间应拒绝启动新任务并提示稍后再试", async () => {
     isDraining.mockReturnValue(true);
 

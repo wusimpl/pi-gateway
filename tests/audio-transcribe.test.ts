@@ -140,4 +140,30 @@ describe("transcribeAudioFile", () => {
     );
     expect(body.audio.data).toBe(Buffer.from("fake-audio").toString("base64"));
   });
+
+  it("provider=doubao 时应在请求前拦截不支持的 m4a 格式", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "pi-gateway-doubao-m4a-"));
+    const audioPath = join(workdir, "audio.m4a");
+    await writeFile(audioPath, Buffer.from("fake-audio"));
+
+    const { transcribeAudioFile } = await import("../src/feishu/inbound/transform.js");
+
+    await expect(
+      transcribeAudioFile(
+        audioPath,
+        {
+          audioTranscribeProvider: "doubao",
+          audioTranscribeScript: "/tmp/transcribe.sh",
+          audioLanguage: "zh",
+          audioTranscribeSenseVoicePython: "/tmp/.venv-sensevoice/bin/python",
+          audioTranscribeSenseVoiceModel: "iic/SenseVoiceSmall",
+          audioTranscribeSenseVoiceDevice: "cpu",
+          audioTranscribeDoubaoApiKey: "doubao-api-key",
+        },
+        "audio/mp4",
+      ),
+    ).rejects.toThrow("豆包语音暂不支持当前音频格式");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

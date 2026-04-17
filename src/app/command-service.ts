@@ -31,7 +31,7 @@ export interface CommandService {
 }
 
 interface CommandServiceDeps {
-  config: Pick<Config, "TEXT_CHUNK_LIMIT" | "CRON_DEFAULT_TZ">;
+  config: Pick<Config, "TEXT_CHUNK_LIMIT" | "CRON_DEFAULT_TZ" | "FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY">;
   messenger: Pick<FeishuMessenger, "sendRenderedMessage" | "sendTextMessage">;
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession" | "listSessions" | "resumeSession">;
   userStateStore: Pick<UserStateStore, "readUserState">;
@@ -364,6 +364,19 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       return;
     }
 
+    if (!parsed.provider) {
+      await deps.messenger.sendTextMessage(openId, "语音转写 provider 解析失败。");
+      return;
+    }
+
+    if (parsed.provider === "doubao" && !deps.config.FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY.trim()) {
+      await deps.messenger.sendTextMessage(
+        openId,
+        "当前 .env 里没配置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY，不能切到 doubao。",
+      );
+      return;
+    }
+
     deps.runtimeConfig.setAudioTranscribeProvider(parsed.provider);
     await sendCommandReply(openId, `✅ 语音转写已切到 ${parsed.provider}。`);
   }
@@ -378,6 +391,11 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     const parsed = parseOnOffArgs(command.args, "stream");
     if (parsed.error) {
       await deps.messenger.sendTextMessage(openId, parsed.error);
+      return;
+    }
+
+    if (parsed.enabled === undefined) {
+      await deps.messenger.sendTextMessage(openId, "stream 开关解析失败。");
       return;
     }
 
@@ -681,17 +699,18 @@ function extractQuotedCurrentMessage(text: string): string | null {
 
 function extractAudioTranscript(text: string): string | null {
   const prefix = "用户发来了一段语音，音频已保存到本地：";
-  const marker = "\n以下是语音转写结果：\n";
   if (!text.startsWith(prefix)) {
     return null;
   }
 
-  const markerIndex = text.indexOf(marker);
-  if (markerIndex === -1) {
-    return "";
+  for (const marker of ["\n以下是语音转写结果：\n", "\n以下是本地转写结果：\n"]) {
+    const markerIndex = text.indexOf(marker);
+    if (markerIndex !== -1) {
+      return normalizeHistoryText(text.slice(markerIndex + marker.length));
+    }
   }
 
-  return normalizeHistoryText(text.slice(markerIndex + marker.length));
+  return "";
 }
 
 function isImagePrompt(text: string): boolean {
