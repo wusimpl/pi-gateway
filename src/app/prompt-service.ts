@@ -144,7 +144,10 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       logger.info("Pi prompt 完成", logCtx);
     } catch (err) {
       logger.error("Pi prompt 处理失败", { openId, messageId, error: String(err) });
-      await deps.messenger.sendTextMessage(openId, formatError("处理失败，请稍后重试或使用 /new 新建会话"));
+      await deps.messenger.sendTextMessage(
+        openId,
+        formatError(formatPromptPreparationError(err) ?? "处理失败，请稍后重试或使用 /new 新建会话"),
+      );
     } finally {
       deps.runtimeState.releaseLock(openId);
     }
@@ -153,6 +156,42 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
   return {
     handleUserPrompt,
   };
+}
+
+function formatPromptPreparationError(error: unknown): string | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  const lines = message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const senseVoiceFailure = lines.find((line) => line.startsWith("SenseVoice transcription failed:"));
+  if (senseVoiceFailure) {
+    const reason = senseVoiceFailure.slice("SenseVoice transcription failed:".length).trim();
+    if (reason === "No module named 'torchaudio'") {
+      return "SenseVoice 不可用：当前环境缺少 torchaudio，请先安装后再试。";
+    }
+    return `SenseVoice 转写失败：${reason || "请稍后重试。"}`;
+  }
+
+  const ocrFailure = lines.find((line) => line.startsWith("OCR 请求失败:"));
+  if (ocrFailure) {
+    return `图片识别失败：${ocrFailure.slice("OCR 请求失败:".length).trim()}`;
+  }
+
+  if (message.includes("OCR 没返回可用结果")) {
+    return "图片识别失败：OCR 没返回可用结果。";
+  }
+
+  if (message.includes("SenseVoice 语音转写没有产出文本")) {
+    return "SenseVoice 转写失败：没有产出文本。";
+  }
+
+  if (message.includes("语音转写没有产出文本")) {
+    return "语音转写失败：没有产出文本。";
+  }
+
+  return undefined;
 }
 
 async function attachQuotedMessage(
