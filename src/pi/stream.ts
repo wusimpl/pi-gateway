@@ -22,10 +22,13 @@ export interface PromptResult {
   error?: string;
   /** 是否为用户主动停止 */
   aborted?: boolean;
+  /** 是否已经向用户展示过结果消息 */
+  displayed?: boolean;
 }
 
 export interface PromptInput {
   text: string;
+  preludeText?: string;
   images?: ImageContent[];
 }
 
@@ -91,6 +94,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let reactionId: string | null = null;
       let streamingMessage: FeishuStreamingMessage | null = null;
       let streamingBroken = false;
+      const preludeText = normalizedPrompt.preludeText ?? "";
       let flushedBody = "";
       let flushedTools = "";
       let pendingTimer: NodeJS.Timeout | null = null;
@@ -108,20 +112,26 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       async function ensureStreamingMessage(
         initialBody: string = stripLeadingBlankLines(fullText),
         initialTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "",
+        initialPrelude: string = preludeText,
       ): Promise<void> {
         if (
           !streamingEnabled ||
           streamingBroken ||
           streamingMessage ||
           streamingInitAttempted ||
-          !hasVisibleStreamingContent(fullText, initialTools)
+          !hasVisibleStreamingContent(fullText, initialTools, initialPrelude)
         ) {
           return;
         }
 
         streamingInitAttempted = true;
         try {
-          streamingMessage = await messenger.startStreamingMessage(openId, initialBody, initialTools);
+          streamingMessage = await messenger.startStreamingMessage(
+            openId,
+            initialBody,
+            initialTools,
+            initialPrelude,
+          );
           if (streamingMessage) {
             flushedBody = initialBody;
             flushedTools = initialTools;
@@ -137,7 +147,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       function queueStreamingFlush(force: boolean = false): void {
         const toolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "";
-        if (!streamingEnabled || streamingBroken || !hasVisibleStreamingContent(fullText, toolsSnapshot)) return;
+        if (!streamingEnabled || streamingBroken || !hasVisibleStreamingContent(fullText, toolsSnapshot, preludeText)) {
+          return;
+        }
         if (force) {
           const bodySnapshot = stripLeadingBlankLines(fullText);
           const forcedToolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "";
@@ -214,6 +226,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       // 启动初始空闲计时器
       resetIdleTimer();
+
+      if (preludeText) {
+        await ensureStreamingMessage("", "", preludeText);
+      }
 
       const unsubscribe = session.subscribe((event) => {
         switch (event.type) {
@@ -317,6 +333,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           hasVisibleStreamingContent(
             fullText,
             showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "",
+            preludeText,
           )
         ) {
           flushChain = flushChain.then(() => flushStreamingState());
@@ -331,8 +348,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       }
 
       const displayText =
-        lastError && !abortedByUser && hasVisibleAssistantText(fullText)
-          ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
+        lastError && !abortedByUser
+          ? (hasVisibleAssistantText(fullText)
+              ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
+              : (preludeText ? `⚠️ 回复中断: ${lastError}` : ""))
           : fullText;
       const footer = formatPromptFooter(session);
       const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), footer);
@@ -340,14 +359,19 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const finalOutputText = abortedByUser
         ? (streamingMessage ? STOP_MESSAGE : "")
         : finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
-      const hasFinalOutput = Boolean(finalOutputText || finalToolsText);
-      if ((!lastError || hasVisibleAssistantText(fullText) || abortedByUser) && hasFinalOutput) {
+      const hasFinalOutput = Boolean(finalOutputText || finalToolsText || preludeText);
+      const shouldFinalize =
+        (!lastError || hasVisibleAssistantText(fullText) || abortedByUser || Boolean(preludeText)) && hasFinalOutput;
+      const suppressFollowupErrorMessage =
+        shouldFinalize && Boolean(lastError) && !hasVisibleAssistantText(fullText) && Boolean(preludeText);
+      if (shouldFinalize) {
         await finalizeMessage(
           messenger,
           openId,
           finalOutputText,
           textChunkLimit,
           finalToolsText,
+          preludeText,
           streamingMessage,
           streamingBroken,
         );
@@ -358,6 +382,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         text: fullText,
         error: abortedByUser ? undefined : lastError,
         ...(abortedByUser ? { aborted: true } : {}),
+        ...(suppressFollowupErrorMessage ? { displayed: true } : {}),
       };
     },
   };
@@ -404,12 +429,13 @@ async function finalizeMessage(
   fullText: string,
   textChunkLimit: number,
   toolsText: string = "",
+  preludeText: string = "",
   streamingMessage?: FeishuStreamingMessage | null,
   streamingBroken: boolean = false,
 ): Promise<void> {
   if (streamingMessage && !streamingBroken) {
     try {
-      await streamingMessage.finish(fullText, textChunkLimit, toolsText);
+      await streamingMessage.finish(fullText, textChunkLimit, toolsText, preludeText);
       return;
     } catch (err) {
       logger.error("飞书流式卡片收口失败，回退到最终消息发送", {
@@ -418,8 +444,8 @@ async function finalizeMessage(
       });
     }
   }
-  if (!fullText && !toolsText) return;
-  await messenger.sendRenderedMessage(openId, appendToolCallsSection(fullText, toolsText), textChunkLimit);
+  if (!fullText && !toolsText && !preludeText) return;
+  await messenger.sendRenderedMessage(openId, appendDisplayedSections(fullText, preludeText, toolsText), textChunkLimit);
 }
 
 async function sendCollectedDocPreviewCards(
@@ -532,12 +558,16 @@ function hasVisibleAssistantText(text: string): boolean {
   return stripLeadingBlankLines(text).length > 0;
 }
 
-function hasVisibleStreamingContent(text: string, toolsText: string): boolean {
-  return hasVisibleAssistantText(text) || hasVisibleToolText(toolsText);
+function hasVisibleStreamingContent(text: string, toolsText: string, preludeText: string): boolean {
+  return hasVisibleAssistantText(text) || hasVisibleToolText(toolsText) || hasVisiblePreludeText(preludeText);
 }
 
 function hasVisibleToolText(toolsText: string): boolean {
   return toolsText.trim().length > 0;
+}
+
+function hasVisiblePreludeText(preludeText: string): boolean {
+  return preludeText.trim().length > 0;
 }
 
 function appendMessageFooter(text: string, footer?: string): string {
@@ -548,6 +578,10 @@ function appendMessageFooter(text: string, footer?: string): string {
 function appendToolCallsSection(text: string, toolsText: string): string {
   if (!toolsText) return text;
   return text ? `${text}\n\n${toolsText}` : toolsText;
+}
+
+function appendDisplayedSections(text: string, preludeText: string, toolsText: string): string {
+  return [preludeText, text, toolsText].filter((section) => Boolean(section)).join("\n\n");
 }
 
 function formatToolCallsSection(toolCallMap: ReadonlyMap<string, ToolCallState>): string {

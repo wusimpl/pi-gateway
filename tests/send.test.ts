@@ -290,6 +290,31 @@ describe("send helpers", () => {
     });
   });
 
+  it("startStreamingMessage: 有预处理结果时应把它放在正文区前面", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_prelude_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_prelude_1" } });
+    const { startStreamingMessage } = await import("../src/feishu/send.js");
+
+    await startStreamingMessage("ou_1", "", "", " ---\n**语音转录结果**\n你好");
+
+    const cardPayload = mockCardCreate.mock.calls[0][0];
+    const cardJson = JSON.parse(cardPayload.data.data);
+    expect(cardJson.body.elements).toEqual([
+      expect.objectContaining({
+        element_id: "stream_prelude",
+        content: " ---\n**语音转录结果**\n你好",
+      }),
+      expect.objectContaining({
+        element_id: "stream_body",
+        content: "",
+      }),
+      expect.objectContaining({
+        element_id: "stream_tools",
+        content: "",
+      }),
+    ]);
+  });
+
   it("startStreamingMessage: 只更新正文并在结束时关闭流式模式", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
@@ -620,6 +645,65 @@ describe("send helpers", () => {
       messageId: "om_stream_cache_1",
       messageType: "interactive",
       text: "最终完整正文\n\n ---\n**工具调用**\nread 完成: src/index.ts",
+    });
+  });
+
+  it("startStreamingMessage.finish: 有预处理结果时应按预处理结果-正文-工具调用的顺序缓存", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_cache_2" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_cache_2" } });
+    mockCardUpdate.mockResolvedValue({});
+    mockCardContent.mockResolvedValue({});
+    mockCardSettings.mockResolvedValue({});
+    const quotedMessageStore = {
+      writeQuotedMessage: vi.fn().mockResolvedValue(undefined),
+      readQuotedMessage: vi.fn(),
+    };
+    const { createFeishuMessenger } = await import("../src/feishu/send.js");
+
+    const messenger = createFeishuMessenger(
+      {
+        im: {
+          file: {
+            create: mockFileCreate,
+          },
+          message: {
+            create: mockCreate,
+          },
+          messageReaction: {
+            create: mockReactionCreate,
+            delete: mockReactionDelete,
+          },
+        },
+        cardkit: {
+          v1: {
+            card: {
+              create: mockCardCreate,
+              update: mockCardUpdate,
+              settings: mockCardSettings,
+            },
+            cardElement: {
+              content: mockCardContent,
+            },
+          },
+        },
+      } as any,
+      {
+        quotedMessageStore,
+      },
+    );
+
+    const stream = await messenger.startStreamingMessage("ou_1", "", "", " ---\n**语音转录结果**\n你好");
+    await stream!.finish(
+      "最终完整正文",
+      2000,
+      " ---\n**工具调用**\nread 完成: src/index.ts",
+      " ---\n**语音转录结果**\n你好",
+    );
+
+    expect(quotedMessageStore.writeQuotedMessage).toHaveBeenCalledWith({
+      messageId: "om_stream_cache_2",
+      messageType: "interactive",
+      text: "---\n**语音转录结果**\n你好\n\n最终完整正文\n\n ---\n**工具调用**\nread 完成: src/index.ts",
     });
   });
 });

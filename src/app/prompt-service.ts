@@ -138,7 +138,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         () => deps.runtimeState.isStopRequested(openId, messageId),
       );
 
-      if (result.error && !result.text && !result.aborted) {
+      if (result.error && !result.text && !result.aborted && !result.displayed) {
         await deps.messenger.sendTextMessage(openId, formatError(result.error));
       }
 

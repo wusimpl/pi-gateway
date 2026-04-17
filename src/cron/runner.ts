@@ -104,7 +104,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       }
 
       if (result.error) {
-        if (!result.text) {
+        if (!result.text && !result.displayed) {
           await deps.messenger.sendTextMessage(
             openId,
             formatError(`定时任务「${job.name}」执行失败：${result.error}`),
@@ -160,4 +160,3 @@ function sanitizeSegment(value: string): string {
   const normalized = value.trim().replace(/[^a-zA-Z0-9._-]/g, "_");
   return normalized || "unknown";
 }
-

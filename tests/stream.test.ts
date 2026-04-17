@@ -76,7 +76,7 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "hello world", error: undefined });
     expect(mockAddProcessingReaction).toHaveBeenCalledWith("om_source_1", "SMILE");
-    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world", "");
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world", "", "");
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
     expect(mockSendRenderedMessage).toHaveBeenCalledTimes(1);
     expect(mockSendRenderedMessage).toHaveBeenCalledWith(
@@ -161,12 +161,52 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "hello world", error: undefined });
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
-    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world", "");
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith("ou_1", "hello world", "", "");
     expect(mockStreamingMessage.updateBody).not.toHaveBeenCalledWith("hello world");
     expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
       "hello world\n\n4.1%/200k | 模型: rightcodes/gpt-5.4-high",
       2000,
       "",
+      "",
+    );
+  });
+
+  it("有语音转录结果时，应先展示转录区块再流式更新正文", async () => {
+    const mockStreamingMessage = {
+      updateBody: vi.fn().mockResolvedValue(undefined),
+      updateTools: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+    };
+    mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "收到，你这段话的意思是" } },
+      { type: "message_end" },
+    ]);
+
+    await promptSession(
+      session as any,
+      {
+        text: "用户的语音转写",
+        preludeText: " ---\n**语音转录结果**\n用户的语音转写",
+      },
+      "ou_1",
+      "om_source_1",
+      undefined,
+      true,
+    );
+
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "",
+      "",
+      " ---\n**语音转录结果**\n用户的语音转写",
+    );
+    expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
+      "收到，你这段话的意思是",
+      2000,
+      "",
+      " ---\n**语音转录结果**\n用户的语音转写",
     );
   });
 
@@ -212,6 +252,7 @@ describe("promptSession", () => {
       "ou_1",
       "",
       " ---\n**工具调用**\nread 运行中: src/index.ts",
+      "",
     );
     expect(mockStreamingMessage.updateTools).toHaveBeenCalledWith(
       " ---\n**工具调用**\nread 运行中: import { loadConfig } from \"./config.js\";",
@@ -220,6 +261,35 @@ describe("promptSession", () => {
       "我先看了入口文件。",
       2000,
       " ---\n**工具调用**\nread 完成: import { loadConfig } from \"./config.js\";",
+      "",
+    );
+  });
+
+  it("非流式时应把预处理结果放在正文前面", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "我已经看过转录内容了" } },
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(
+      session as any,
+      {
+        text: "帮我总结一下",
+        preludeText: " ---\n**语音转录结果**\n帮我总结一下",
+      },
+      "ou_1",
+      "om_source_1",
+      undefined,
+      false,
+      2000,
+    );
+
+    expect(result).toEqual({ text: "我已经看过转录内容了", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      " ---\n**语音转录结果**\n帮我总结一下\n\n我已经看过转录内容了",
+      2000,
     );
   });
 
@@ -502,6 +572,46 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "", error: "boom" });
     expect(mockStartStreamingMessage).not.toHaveBeenCalled();
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("先展示了转录结果后再失败时，应在同一条消息里收口错误提示", async () => {
+    const mockStreamingMessage = {
+      updateBody: vi.fn().mockResolvedValue(undefined),
+      updateTools: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+    };
+    mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([], async () => {
+      throw new Error("boom");
+    });
+
+    const result = await promptSession(
+      session as any,
+      {
+        text: "用户语音",
+        preludeText: " ---\n**语音转录结果**\n用户语音",
+      },
+      "ou_1",
+      "om_source_1",
+      undefined,
+      true,
+    );
+
+    expect(result).toEqual({ text: "", error: "boom", displayed: true });
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "",
+      "",
+      " ---\n**语音转录结果**\n用户语音",
+    );
+    expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
+      "⚠️ 回复中断: boom",
+      2000,
+      "",
+      " ---\n**语音转录结果**\n用户语音",
+    );
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
   });
 

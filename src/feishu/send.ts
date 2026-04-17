@@ -124,7 +124,7 @@ export interface FeishuApiClient {
 export interface FeishuStreamingMessage {
   updateBody(text: string): Promise<void>;
   updateTools(text: string): Promise<void>;
-  finish(bodyText: string, textChunkLimit: number, toolsText?: string): Promise<void>;
+  finish(bodyText: string, textChunkLimit: number, toolsText?: string, preludeText?: string): Promise<void>;
 }
 
 export type { FeishuDocPreviewCardInput } from "./doc-preview-card.js";
@@ -135,7 +135,12 @@ export interface FeishuMessenger {
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
   sendLocalFileMessage(openId: string, input: SendLocalFileInput): Promise<SentFeishuFile>;
   sendDocPreviewCard(openId: string, input: FeishuDocPreviewCardInput): Promise<string | null>;
-  startStreamingMessage(openId: string, bodyText?: string, toolsText?: string): Promise<FeishuStreamingMessage | null>;
+  startStreamingMessage(
+    openId: string,
+    bodyText?: string,
+    toolsText?: string,
+    preludeText?: string,
+  ): Promise<FeishuStreamingMessage | null>;
   addProcessingReaction(messageId: string, reactionType?: string): Promise<string | null>;
   removeReaction(messageId: string, reactionId: string): Promise<boolean>;
 }
@@ -320,12 +325,14 @@ export function createFeishuMessenger(
     openId: string,
     bodyText: string = "",
     toolsText: string = "",
+    preludeText: string = "",
   ): Promise<FeishuStreamingMessage | null> {
     try {
       const createResp = await retryRequest("飞书流式卡片创建", { openId }, () => client.cardkit.v1.card.create({
         data: {
           type: "card_json",
           data: buildStreamingCardData({
+            preludeText,
             bodyText,
             toolsText,
           }),
@@ -406,8 +413,13 @@ export function createFeishuMessenger(
           updateElement(getStreamingBodyElementId(), nextBodyText),
         updateTools: (nextToolsText: string) =>
           updateElement(getStreamingToolsElementId(), nextToolsText),
-        async finish(finalBodyText: string, textChunkLimit: number, toolsText: string = ""): Promise<void> {
-          const finalText = toolsText ? `${finalBodyText}\n\n${toolsText}` : finalBodyText;
+        async finish(
+          finalBodyText: string,
+          textChunkLimit: number,
+          toolsText: string = "",
+          finalPreludeText: string = preludeText,
+        ): Promise<void> {
+          const finalText = appendDisplayedSections(finalBodyText, finalPreludeText, toolsText);
           await cacheQuotedMessage(
             quotedMessageStore,
             messageId,
@@ -419,18 +431,18 @@ export function createFeishuMessenger(
           if (renderedMessages.length === 1 && renderedMessages[0].msgType === "interactive") {
             await updateCard(buildFinalStreamingCardData({
               finalMessage: renderedMessages[0],
-              summaryText: buildStreamingSummary(finalText),
+              summaryText: buildStreamingSummary(finalBodyText || finalPreludeText || toolsText),
             }));
             return;
           }
 
-          await updateElement(getStreamingBodyElementId(), finalText);
+          await updateElement(getStreamingBodyElementId(), appendBodyAndTools(finalBodyText, toolsText));
           if (toolsText) {
             await updateElement(getStreamingToolsElementId(), "");
           }
           await updateSettings(buildStreamingCardSettings({
             streamingMode: false,
-            summaryText: buildStreamingSummary(finalText),
+            summaryText: buildStreamingSummary(finalBodyText || finalPreludeText || toolsText),
           }));
         },
       };
@@ -537,8 +549,21 @@ export async function startStreamingMessage(
   openId: string,
   bodyText: string = "",
   toolsText: string = "",
+  preludeText: string = "",
 ): Promise<FeishuStreamingMessage | null> {
-  return getDefaultFeishuMessenger().startStreamingMessage(openId, bodyText, toolsText);
+  return getDefaultFeishuMessenger().startStreamingMessage(openId, bodyText, toolsText, preludeText);
+}
+
+function appendDisplayedSections(
+  bodyText: string,
+  preludeText: string,
+  toolsText: string,
+): string {
+  return [preludeText, bodyText, toolsText].filter((section) => Boolean(section)).join("\n\n");
+}
+
+function appendBodyAndTools(bodyText: string, toolsText: string): string {
+  return [bodyText, toolsText].filter((section) => Boolean(section)).join("\n\n");
 }
 
 export async function addProcessingReaction(

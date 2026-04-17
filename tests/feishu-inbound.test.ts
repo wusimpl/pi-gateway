@@ -235,6 +235,7 @@ describe("prepareFeishuPromptInput", () => {
     expect(result.images).toBeUndefined();
     expect(result.text).toContain("当前模型不支持直接看图");
     expect(result.text).toContain("图片里写着：你好世界");
+    expect(result.preludeText).toBe(" ---\n**OCR 识别结果**\n图片里写着：你好世界");
   });
 
   it("语音消息应先转成文字", async () => {
@@ -268,6 +269,7 @@ describe("prepareFeishuPromptInput", () => {
     expect(result.text).toContain("以下是语音转写结果");
     expect(result.text).toContain("帮我看下这段代码哪里有问题");
     expect(result.text).toContain("3200ms");
+    expect(result.preludeText).toBe(" ---\n**语音转录结果**\n帮我看下这段代码哪里有问题");
   });
 });
 

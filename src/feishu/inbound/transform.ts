@@ -84,6 +84,7 @@ export async function prepareFeishuPromptInput(
           message,
           `用户发来了一张图片，图片已保存到本地：${resource.filePath}\n当前模型不支持直接看图，以下是本地 OCR/视觉结果：\n${ocrText}`,
         ),
+        preludeText: formatDisplaySection("OCR 识别结果", ocrText),
         localFiles: [resource.filePath],
       };
     }
@@ -101,6 +102,7 @@ export async function prepareFeishuPromptInput(
           message,
           `用户发来了一段语音，音频已保存到本地：${resource.filePath}${durationLine}\n以下是语音转写结果：\n${transcript}`,
         ),
+        preludeText: formatDisplaySection("语音转录结果", transcript),
         localFiles: [resource.filePath],
       };
     }
@@ -311,6 +313,10 @@ function extractDoubaoTranscript(payload: DoubaoFlashResponse | null): string {
 
 function formatDoubaoFailure(reason: string, logId?: string): string {
   return `豆包语音转写失败：${reason}${logId ? `（logid: ${logId}）` : ""}`;
+}
+
+function formatDisplaySection(title: string, content: string): string {
+  return ` ---\n**${title}**\n${content}`;
 }
 
 function withQuotedMessageContext(message: FeishuInboundMessage, currentMessageText: string): string {

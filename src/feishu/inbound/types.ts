@@ -63,6 +63,7 @@ export interface FeishuMediaProcessingOptions {
 
 export interface PreparedPromptInput {
   text: string;
+  preludeText?: string;
   images?: ImageContent[];
   localFiles: string[];
 }
