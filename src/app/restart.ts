@@ -1,12 +1,17 @@
 import { spawn, type SpawnOptions } from "node:child_process";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { FeishuMessenger } from "../feishu/send.js";
 import { logger } from "./logger.js";
 
 export const RESTART_MESSAGE = "🔄 正在重启网关...";
+export const RESTART_READY_MESSAGE = "✅ 网关已重启完成，已经重新上线。";
 
 const RESTART_EXIT_DELAY_MS = 150;
 const RESTART_READY_TIMEOUT_MS = 30_000;
 const RESTART_READY_SIGNAL_ENV = "PI_GATEWAY_RESTART_READY_SIGNAL";
 const RESTART_READY_IPC_MESSAGE_TYPE = "pi-gateway-ready";
+const RESTART_READY_NOTIFICATION_FILE = "ready-notification.json";
 
 export interface RestartService {
   restartGateway(): Promise<void>;
@@ -33,6 +38,11 @@ interface RestartSnapshot {
   cwd: string;
   env: NodeJS.ProcessEnv;
   pid: number;
+}
+
+interface RestartReadyNotification {
+  openId: string;
+  requestedAt: string;
 }
 
 export function createRestartService(options: RestartServiceOptions = {}): RestartService {
@@ -68,8 +78,110 @@ export function createRestartService(options: RestartServiceOptions = {}): Resta
   };
 }
 
+export async function recordRestartReadyNotification(dataDir: string, openId: string): Promise<void> {
+  const filePath = restartReadyNotificationPath(dataDir);
+  await mkdir(restartReadyNotificationDir(dataDir), { recursive: true });
+  await writeFile(
+    filePath,
+    JSON.stringify(
+      {
+        openId,
+        requestedAt: new Date().toISOString(),
+      } satisfies RestartReadyNotification,
+      null,
+      2,
+    ),
+    "utf-8",
+  );
+  logger.debug("重启完成通知已记录", { openId, filePath });
+}
+
+export async function clearRestartReadyNotification(dataDir: string): Promise<void> {
+  try {
+    await rm(restartReadyNotificationPath(dataDir), { force: true });
+  } catch (error) {
+    logger.warn("清理重启完成通知失败", { error: String(error) });
+  }
+}
+
+export async function notifyRestartReadyIfNeeded(
+  dataDir: string,
+  messenger: Pick<FeishuMessenger, "sendTextMessage">,
+): Promise<void> {
+  const notification = await consumeRestartReadyNotification(dataDir);
+  if (!notification) {
+    return;
+  }
+
+  try {
+    const messageId = await messenger.sendTextMessage(notification.openId, RESTART_READY_MESSAGE);
+    if (!messageId) {
+      logger.warn("重启完成通知发送失败", { openId: notification.openId });
+    }
+  } catch (error) {
+    logger.warn("重启完成通知发送失败", {
+      openId: notification.openId,
+      error: String(error),
+    });
+  }
+}
+
 function detectPm2(env: NodeJS.ProcessEnv): boolean {
   return typeof env.pm_id === "string" && env.pm_id.length > 0;
+}
+
+async function consumeRestartReadyNotification(dataDir: string): Promise<RestartReadyNotification | null> {
+  const notification = await readRestartReadyNotification(dataDir);
+  if (!notification) {
+    return null;
+  }
+
+  await clearRestartReadyNotification(dataDir);
+  return notification;
+}
+
+async function readRestartReadyNotification(dataDir: string): Promise<RestartReadyNotification | null> {
+  try {
+    const raw = await readFile(restartReadyNotificationPath(dataDir), "utf-8");
+    const parsed = JSON.parse(raw);
+    if (isRestartReadyNotification(parsed)) {
+      return parsed;
+    }
+
+    logger.warn("重启完成通知记录格式无效，已忽略");
+    await clearRestartReadyNotification(dataDir);
+    return null;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      logger.warn("重启完成通知记录格式无效，已忽略");
+      await clearRestartReadyNotification(dataDir);
+      return null;
+    }
+
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      logger.warn("读取重启完成通知失败", { error: String(error) });
+    }
+    return null;
+  }
+}
+
+function isRestartReadyNotification(value: unknown): value is RestartReadyNotification {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return (
+    typeof Reflect.get(value, "openId") === "string"
+    && typeof Reflect.get(value, "requestedAt") === "string"
+  );
+}
+
+function restartReadyNotificationDir(dataDir: string): string {
+  return join(dataDir, "restart");
+}
+
+function restartReadyNotificationPath(dataDir: string): string {
+  return join(restartReadyNotificationDir(dataDir), RESTART_READY_NOTIFICATION_FILE);
 }
 
 async function spawnReplacementProcess(

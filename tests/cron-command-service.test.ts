@@ -25,6 +25,7 @@ function createDeps() {
       TEXT_CHUNK_LIMIT: 2000,
       CRON_DEFAULT_TZ: "Asia/Shanghai",
       FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
+      DATA_DIR: "/tmp/pi-gateway-data",
     },
     messenger,
     sessionService: {

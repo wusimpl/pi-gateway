@@ -12,7 +12,11 @@ import type { UserStateStore } from "../storage/users.js";
 import type { UserIdentity } from "../types.js";
 import { handleBridgeCommand, type BridgeCommand } from "./commands.js";
 import { logger } from "./logger.js";
-import type { RestartService } from "./restart.js";
+import {
+  clearRestartReadyNotification,
+  recordRestartReadyNotification,
+  type RestartService,
+} from "./restart.js";
 import type { RuntimeStateStore } from "./state.js";
 import type { CronService } from "../cron/service.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
@@ -31,7 +35,10 @@ export interface CommandService {
 }
 
 interface CommandServiceDeps {
-  config: Pick<Config, "TEXT_CHUNK_LIMIT" | "CRON_DEFAULT_TZ" | "FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY">;
+  config: Pick<
+    Config,
+    "TEXT_CHUNK_LIMIT" | "CRON_DEFAULT_TZ" | "FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY" | "DATA_DIR"
+  >;
   messenger: Pick<FeishuMessenger, "sendRenderedMessage" | "sendTextMessage">;
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession" | "listSessions" | "resumeSession">;
   userStateStore: Pick<UserStateStore, "readUserState">;
@@ -177,11 +184,13 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
 
     try {
+      await recordRestartReadyNotification(deps.config.DATA_DIR, openId);
       const reply = handleBridgeCommand(command, { openId });
       await sendCommandReply(openId, reply);
       await deps.restartService.restartGateway();
     } catch (error) {
       deps.runtimeState.cancelRestartDrain();
+      await clearRestartReadyNotification(deps.config.DATA_DIR);
       throw error;
     }
   }

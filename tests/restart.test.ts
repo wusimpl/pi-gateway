@@ -1,6 +1,14 @@
 import { EventEmitter } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRestartService } from "../src/app/restart.js";
+import {
+  createRestartService,
+  notifyRestartReadyIfNeeded,
+  recordRestartReadyNotification,
+  RESTART_READY_MESSAGE,
+} from "../src/app/restart.js";
 
 function createChildProcessDouble() {
   const child = new EventEmitter() as EventEmitter & {
@@ -141,5 +149,23 @@ describe("restart service", () => {
     await vi.advanceTimersByTimeAsync(20);
 
     expect(killProcess).toHaveBeenCalledWith(1234, "SIGTERM");
+  });
+
+  it("新进程启动后会给重启发起人发送上线通知，并清理记录", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "pi-gateway-restart-"));
+    const messenger = {
+      sendTextMessage: vi.fn().mockResolvedValue("om_ready"),
+    };
+
+    try {
+      await recordRestartReadyNotification(dataDir, "ou_1");
+      await notifyRestartReadyIfNeeded(dataDir, messenger);
+      await notifyRestartReadyIfNeeded(dataDir, messenger);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+
+    expect(messenger.sendTextMessage).toHaveBeenCalledTimes(1);
+    expect(messenger.sendTextMessage).toHaveBeenCalledWith("ou_1", RESTART_READY_MESSAGE);
   });
 });

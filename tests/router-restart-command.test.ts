@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   listAvailableModels: vi.fn(),
   findAvailableModel: vi.fn(),
   restartGateway: vi.fn(),
+  recordRestartReadyNotification: vi.fn(),
+  clearRestartReadyNotification: vi.fn(),
 }));
 
 vi.mock("../src/feishu/send.js", () => ({
@@ -72,6 +74,8 @@ vi.mock("../src/pi/models.js", () => ({
 
 vi.mock("../src/app/restart.js", () => ({
   RESTART_MESSAGE: "🔄 正在重启网关...",
+  recordRestartReadyNotification: mocks.recordRestartReadyNotification,
+  clearRestartReadyNotification: mocks.clearRestartReadyNotification,
   createRestartService: () => ({
     restartGateway: mocks.restartGateway,
   }),
@@ -105,8 +109,11 @@ describe("handleFeishuMessage /restart", () => {
     mocks.listAvailableModels.mockReset();
     mocks.findAvailableModel.mockReset();
     mocks.restartGateway.mockReset();
+    mocks.recordRestartReadyNotification.mockReset();
+    mocks.clearRestartReadyNotification.mockReset();
 
     initRouter({
+      DATA_DIR: "/tmp/pi-gateway-data",
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,
@@ -117,6 +124,8 @@ describe("handleFeishuMessage /restart", () => {
     mocks.sendRenderedMessage.mockResolvedValue(undefined);
     mocks.sendTextMessage.mockResolvedValue("om_reply");
     mocks.restartGateway.mockResolvedValue(undefined);
+    mocks.recordRestartReadyNotification.mockResolvedValue(undefined);
+    mocks.clearRestartReadyNotification.mockResolvedValue(undefined);
   });
 
   it("空闲时会先回复，再触发网关重启", async () => {
@@ -132,8 +141,10 @@ describe("handleFeishuMessage /restart", () => {
 
     await handleFeishuMessage({});
 
+    expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith("/tmp/pi-gateway-data", "ou_1");
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith("ou_1", "🔄 正在重启网关...", 2000);
     expect(mocks.restartGateway).toHaveBeenCalledTimes(1);
+    expect(mocks.clearRestartReadyNotification).not.toHaveBeenCalled();
   });
 
   it("只要还有任何用户任务在跑，就拒绝重启", async () => {
@@ -155,6 +166,7 @@ describe("handleFeishuMessage /restart", () => {
       "当前还有任务在跑，等这条回复结束后再重启网关。",
     );
     expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
+    expect(mocks.recordRestartReadyNotification).not.toHaveBeenCalled();
     expect(mocks.restartGateway).not.toHaveBeenCalled();
   });
 
@@ -188,5 +200,24 @@ describe("handleFeishuMessage /restart", () => {
       "网关正在重启，暂时不接新任务，请稍后再试。",
     );
     expect(mocks.promptSession).not.toHaveBeenCalled();
+  });
+
+  it("重启触发失败时会清掉上线通知记录", async () => {
+    mocks.restartGateway.mockRejectedValue(new Error("restart failed"));
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_3",
+      messageType: "text",
+      createTime: "127",
+      rawContent: '{"text":"/restart"}',
+      text: "/restart",
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith("/tmp/pi-gateway-data", "ou_1");
+    expect(mocks.clearRestartReadyNotification).toHaveBeenCalledWith("/tmp/pi-gateway-data");
+    expect(mocks.sendTextMessage).toHaveBeenCalledWith("ou_1", "❌ 错误: 命令处理失败，请稍后重试");
   });
 });

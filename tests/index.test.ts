@@ -67,6 +67,11 @@ const mocks = vi.hoisted(() => {
     createCommandService: vi.fn(() => ({
       handleBridgeCommand: vi.fn(),
     })),
+    createRestartService: vi.fn(() => ({
+      restartGateway: vi.fn(),
+    })),
+    signalRestartReadyIfNeeded: vi.fn().mockResolvedValue(undefined),
+    notifyRestartReadyIfNeeded: vi.fn().mockResolvedValue(undefined),
     createPromptService: vi.fn(() => ({
       handleUserPrompt: vi.fn(),
     })),
@@ -169,6 +174,12 @@ vi.mock("../src/app/command-service.js", () => ({
   createCommandService: mocks.createCommandService,
 }));
 
+vi.mock("../src/app/restart.js", () => ({
+  createRestartService: mocks.createRestartService,
+  signalRestartReadyIfNeeded: mocks.signalRestartReadyIfNeeded,
+  notifyRestartReadyIfNeeded: mocks.notifyRestartReadyIfNeeded,
+}));
+
 vi.mock("../src/app/prompt-service.js", () => ({
   createPromptService: mocks.createPromptService,
 }));
@@ -216,6 +227,9 @@ describe("index wiring", () => {
     mocks.cronService.stop.mockClear();
     mocks.createSessionService.mockClear();
     mocks.createCommandService.mockClear();
+    mocks.createRestartService.mockClear();
+    mocks.signalRestartReadyIfNeeded.mockClear();
+    mocks.notifyRestartReadyIfNeeded.mockClear();
     mocks.createPromptService.mockClear();
     mocks.createMessageRouter.mockClear();
     mocks.createRuntimeStateStore.mockClear();
@@ -253,5 +267,7 @@ describe("index wiring", () => {
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.downloadResource).toBe(downloadResource);
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.readQuotedMessage).toBe(readQuotedMessage);
     expect(mocks.startMessageConnection).toHaveBeenCalledTimes(1);
+    expect(mocks.signalRestartReadyIfNeeded).toHaveBeenCalledTimes(1);
+    expect(mocks.notifyRestartReadyIfNeeded).toHaveBeenCalledTimes(1);
   });
 });
