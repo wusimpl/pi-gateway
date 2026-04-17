@@ -11,6 +11,7 @@ import type { WorkspaceService } from "../pi/workspace.js";
 import type { QuotedMessageStore } from "../storage/quoted-messages.js";
 import { readQuotedMessage as readCachedQuotedMessage } from "../storage/quoted-messages.js";
 import type { UserIdentity } from "../types.js";
+import type { DeferredCronRunService } from "../cron/deferred-run.js";
 import { logger } from "./logger.js";
 import type { RuntimeStateStore } from "./state.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
@@ -52,6 +53,7 @@ interface PromptServiceDeps {
     RuntimeConfigStore,
     "getAudioTranscribeProvider" | "getStreamingEnabled" | "getProcessingReactionType"
   >;
+  deferredCronRunService?: Pick<DeferredCronRunService, "flush">;
 }
 
 export function createPromptService(deps: PromptServiceDeps): PromptService {
@@ -67,6 +69,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
   ): Promise<void> {
     const openId = identity.openId;
     const messageId = message.messageId;
+    let lockAcquired = false;
     if (deps.runtimeState.isDraining()) {
       await deps.messenger.sendTextMessage(openId, "网关正在重启，暂时不接新任务，请稍后再试。");
       return;
@@ -80,6 +83,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       logger.info("用户消息因已有处理中任务被忽略", { openId, messageId });
       return;
     }
+    lockAcquired = true;
 
     try {
       const { activeSessionId, piSession } = await deps.sessionService.getOrCreateActiveSession(identity);
@@ -151,7 +155,10 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         formatError(formatPromptPreparationError(err) ?? "处理失败，请稍后重试或使用 /new 新建会话"),
       );
     } finally {
-      deps.runtimeState.releaseLock(openId);
+      if (lockAcquired) {
+        deps.runtimeState.releaseLock(openId);
+        await deps.deferredCronRunService?.flush(openId);
+      }
     }
   }
 

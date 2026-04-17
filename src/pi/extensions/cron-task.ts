@@ -6,6 +6,7 @@ import {
 import { getWorkspaceIdentity } from "../workspace-identity.js";
 import { parseScheduleInput } from "../../cron/schedule.js";
 import type { CronService } from "../../cron/service.js";
+import type { DeferredCronRunService } from "../../cron/deferred-run.js";
 import type { UserIdentity } from "../../types.js";
 
 function toToolResult(details: unknown) {
@@ -35,6 +36,7 @@ function normalizeArgs(args: unknown): Record<string, unknown> {
 export function createCronTaskExtension(
   getCronService: () => CronService | null,
   resolveIdentityByWorkspace: (cwd: string) => UserIdentity | null = getWorkspaceIdentity,
+  getDeferredCronRunService: () => DeferredCronRunService | null = () => null,
 ): ExtensionFactory {
   const cronTaskTool = defineTool({
     name: "cron_task",
@@ -49,6 +51,7 @@ export function createCronTaskExtension(
       "time 支持相对时间（如 20m、1h30m）、ISO 时间、cron 表达式（如 0 9 * * *）。",
       "cron 表达式默认使用网关时区；如果用户明确给了时区，再传 tz。",
       "删除或立即执行时，先用 list 拿到 job_id，再调用 remove 或 run。",
+      "action=run 只代表已安排执行；当前回复结束后才会真正开始跑，不能声称已经拿到了执行结果。",
     ],
     parameters: Type.Object({
       action: Type.String({ description: "add、list、remove、run 之一。" }),
@@ -131,10 +134,17 @@ export function createCronTaskExtension(
           if (typeof params.job_id !== "string" || !params.job_id.trim()) {
             throw new Error("action=run 时必须提供 job_id");
           }
-          const result = await cronService.runJobNow(identity.openId, params.job_id.trim());
+          const deferredCronRunService = getDeferredCronRunService();
+          const result = deferredCronRunService
+            ? await deferredCronRunService.queueRun(identity.openId, params.job_id.trim())
+            : await cronService.runJobNow(identity.openId, params.job_id.trim());
           return toToolResult({
             action,
             result,
+            note:
+              result.status === "queued"
+                ? "当前回复结束后才会开始执行，执行结果会稍后单独发给用户。"
+                : undefined,
           });
         }
         default:

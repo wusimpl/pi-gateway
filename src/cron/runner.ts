@@ -10,6 +10,7 @@ import type { WorkspaceService } from "../pi/workspace.js";
 import type { UserIdentity } from "../types.js";
 import { logger } from "../app/logger.js";
 import type { RuntimeStateStore } from "../app/state.js";
+import type { DeferredCronRunService } from "./deferred-run.js";
 import type { CronJob, CronJobRunResult } from "./types.js";
 
 export interface CronRunner {
@@ -26,6 +27,7 @@ interface CronRunnerDeps {
   workspaceService: Pick<WorkspaceService, "ensureUserWorkspace">;
   promptRunner: Pick<PromptRunner, "promptSession">;
   messenger: Pick<FeishuMessenger, "sendTextMessage">;
+  deferredCronRunService?: Pick<DeferredCronRunService, "flush">;
 }
 
 export function createCronRunner(deps: CronRunnerDeps): CronRunner {
@@ -144,6 +146,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
         // ignore
       }
       deps.runtimeState.releaseLock(openId);
+      await deps.deferredCronRunService?.flush(openId);
     }
   }
 

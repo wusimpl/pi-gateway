@@ -13,6 +13,7 @@ describe("createPromptService", () => {
   const setAbortHandler = vi.fn();
   const isStopRequested = vi.fn();
   const isDraining = vi.fn();
+  const flushDeferredCronRuns = vi.fn();
   const downloadResource = vi.fn();
   const readQuotedMessage = vi.fn();
   const readCachedQuotedMessage = vi.fn();
@@ -28,6 +29,7 @@ describe("createPromptService", () => {
     setAbortHandler.mockReset();
     isStopRequested.mockReset();
     isDraining.mockReset();
+    flushDeferredCronRuns.mockReset();
     downloadResource.mockReset();
     readQuotedMessage.mockReset();
     readCachedQuotedMessage.mockReset();
@@ -36,6 +38,7 @@ describe("createPromptService", () => {
     setAbortHandler.mockResolvedValue(false);
     isStopRequested.mockReturnValue(false);
     isDraining.mockReturnValue(false);
+    flushDeferredCronRuns.mockResolvedValue(undefined);
     getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
       piSession: {
@@ -138,6 +141,73 @@ describe("createPromptService", () => {
     expect(promptSession).toHaveBeenCalled();
     expect(sendTextMessage).not.toHaveBeenCalled();
     expect(releaseLock).toHaveBeenCalledWith("ou_1");
+  });
+
+  it("回复结束释放锁后会触发延后补跑的 cron", async () => {
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+      deferredCronRunService: {
+        flush: flushDeferredCronRuns,
+      },
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_flush_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"hello"}',
+        text: "hello",
+      },
+    );
+
+    expect(releaseLock).toHaveBeenCalledWith("ou_1");
+    expect(flushDeferredCronRuns).toHaveBeenCalledWith("ou_1");
+    expect(releaseLock.mock.invocationCallOrder[0]).toBeLessThan(
+      flushDeferredCronRuns.mock.invocationCallOrder[0],
+    );
   });
 
   it("运行中配置应覆盖启动时的 stream、reaction 和 stt provider", async () => {

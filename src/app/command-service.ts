@@ -19,6 +19,7 @@ import {
 } from "./restart.js";
 import type { RuntimeStateStore } from "./state.js";
 import type { CronService } from "../cron/service.js";
+import type { DeferredCronRunService } from "../cron/deferred-run.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
 import {
   formatCronHelp,
@@ -51,6 +52,7 @@ interface CommandServiceDeps {
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
   cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "removeJob" | "runJobNow">;
+  deferredCronRunService?: Pick<DeferredCronRunService, "queueRun">;
   runtimeConfig?: Pick<
     RuntimeConfigStore,
     | "getAudioTranscribeProvider"
@@ -342,7 +344,10 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       }
       case "run": {
         try {
-          const result = await cronService.runJobNow(openId, parsed.command.jobId);
+          const result =
+            deps.runtimeState.isLocked(openId) && deps.deferredCronRunService
+              ? await deps.deferredCronRunService.queueRun(openId, parsed.command.jobId)
+              : await cronService.runJobNow(openId, parsed.command.jobId);
           await sendCommandReply(openId, formatCronJobRunResult(result, defaultTz));
         } catch (error) {
           const code = error instanceof Error ? error.message : String(error);

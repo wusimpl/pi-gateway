@@ -9,7 +9,7 @@ export type CronSchedule =
       tz: string;
     };
 
-export type CronRunStatus = "success" | "error" | "aborted" | "busy";
+export type CronRunStatus = "success" | "error" | "aborted" | "busy" | "queued";
 
 export interface CronJobState {
   nextRunAtMs?: number;
@@ -52,5 +52,5 @@ export interface CronJobRunResult {
 export interface CronManualRunResult extends CronJobRunResult {
   removed: boolean;
   job?: CronJob;
+  queued?: boolean;
 }
-

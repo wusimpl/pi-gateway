@@ -126,6 +126,14 @@ export function formatCronJobRunResult(
   defaultTz: string,
 ): string {
   const job = result.job;
+  if (result.status === "queued") {
+    const jobLabel = job?.name ?? result.jobId;
+    return [
+      `⏳ 已安排稍后执行：${jobLabel}`,
+      `ID: ${result.jobId}`,
+      "会在当前这条回复结束后开始执行，结果会像普通定时任务一样单独发给你。",
+    ].join("\n");
+  }
   if (!job) {
     return `✅ 已执行定时任务：${result.jobId}`;
   }
@@ -248,4 +256,3 @@ function formatCronJobStatus(job: CronJob, timeZone: string): string {
   }
   return "启用中";
 }
-

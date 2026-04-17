@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCronTaskExtension } from "../src/pi/extensions/cron-task.js";
 
-function collectTools(resolveIdentityByWorkspace = () => ({ openId: "ou_1", userId: "u_1" })) {
+function collectTools(
+  resolveIdentityByWorkspace = () => ({ openId: "ou_1", userId: "u_1" }),
+) {
   const cronService = {
     isEnabled: () => true,
     getDefaultTimezone: () => "Asia/Shanghai",
@@ -24,15 +26,31 @@ function collectTools(resolveIdentityByWorkspace = () => ({ openId: "ou_1", user
       },
     }),
   };
+  const deferredCronRunService = {
+    queueRun: vi.fn().mockResolvedValue({
+      jobId: "cron_1",
+      status: "queued",
+      queued: true,
+      removed: false,
+      job: {
+        id: "cron_1",
+        name: "提醒我喝水",
+      },
+    }),
+  };
 
   const tools: any[] = [];
-  createCronTaskExtension(() => cronService as any, resolveIdentityByWorkspace as any)({
+  createCronTaskExtension(
+    () => cronService as any,
+    resolveIdentityByWorkspace as any,
+    () => deferredCronRunService as any,
+  )({
     registerTool(tool) {
       tools.push(tool);
     },
   } as any);
 
-  return { cronService, tools };
+  return { cronService, deferredCronRunService, tools };
 }
 
 describe("cron task extension", () => {
@@ -93,5 +111,32 @@ describe("cron task extension", () => {
       ),
     ).rejects.toThrow("当前 workspace 没有关联到飞书用户");
   });
-});
 
+  it("run 会先安排在当前回复结束后执行", async () => {
+    const { tools, cronService, deferredCronRunService } = collectTools();
+    const tool = tools[0];
+
+    const result = await tool.execute(
+      "call-1",
+      tool.prepareArguments({
+        action: "run",
+        job_id: "cron_1",
+      }),
+      undefined,
+      undefined,
+      {
+        cwd: "/tmp/workspace/u_1",
+      },
+    );
+
+    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith("ou_1", "cron_1");
+    expect(cronService.runJobNow).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      action: "run",
+      result: {
+        jobId: "cron_1",
+        status: "queued",
+      },
+    });
+  });
+});

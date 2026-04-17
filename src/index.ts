@@ -6,6 +6,7 @@ import { createRestartService, notifyRestartReadyIfNeeded, signalRestartReadyIfN
 import { createMessageRouter } from "./app/router.js";
 import { createRuntimeStateStore, type RuntimeStateStore } from "./app/state.js";
 import { createCronRunner } from "./cron/runner.js";
+import { createDeferredCronRunService } from "./cron/deferred-run.js";
 import { createCronService, type CronService } from "./cron/service.js";
 import { createCronStore } from "./cron/store.js";
 import { ensureDir } from "./storage/files.js";
@@ -75,6 +76,11 @@ async function main() {
   );
 
   let cronService: CronService | null = null;
+  const deferredCronRunService = createDeferredCronRunService({
+    getCronService: () => cronService,
+    runtimeState,
+    messenger: feishuMessenger,
+  });
   let piRuntime: PiRuntime;
   try {
     piRuntime = createPiRuntime({
@@ -84,7 +90,7 @@ async function main() {
         createFeishuFilesExtension(feishuMessenger),
         ...(config.CRON_ENABLED
           ? [
-              createCronTaskExtension(() => cronService),
+              createCronTaskExtension(() => cronService, undefined, () => deferredCronRunService),
             ]
           : []),
       ],
@@ -123,6 +129,7 @@ async function main() {
       workspaceService,
       promptRunner,
       messenger: feishuMessenger,
+      deferredCronRunService,
     });
     cronService = createCronService({
       store: cronStore,
@@ -148,6 +155,7 @@ async function main() {
     listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
     findAvailableModel: (rawRef: string) => findAvailableModel(rawRef, piRuntime.getModelRegistry()),
     cronService: cronService ?? undefined,
+    deferredCronRunService,
     runtimeConfig,
   });
   const promptService = createPromptService({
@@ -160,6 +168,7 @@ async function main() {
     messenger: feishuMessenger,
     downloadResource: feishuResourceDownloader,
     readQuotedMessage: feishuMessageReader,
+    deferredCronRunService,
   });
   const router = createMessageRouter({
     stateStore: runtimeState,

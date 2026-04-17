@@ -6,6 +6,18 @@ function createDeps() {
     sendRenderedMessage: vi.fn().mockResolvedValue(undefined),
     sendTextMessage: vi.fn().mockResolvedValue(undefined),
   };
+  const deferredCronRunService = {
+    queueRun: vi.fn().mockResolvedValue({
+      jobId: "cron_1",
+      status: "queued",
+      queued: true,
+      removed: false,
+      job: {
+        id: "cron_1",
+        name: "早报",
+      },
+    }),
+  };
   const cronService = {
     isEnabled: () => true,
     getDefaultTimezone: () => "Asia/Shanghai",
@@ -18,6 +30,13 @@ function createDeps() {
     }),
     removeJob: vi.fn(),
     runJobNow: vi.fn(),
+  };
+  const runtimeState = {
+    isLocked: vi.fn(() => false),
+    hasActiveLocks: vi.fn(),
+    beginRestartDrain: vi.fn(),
+    cancelRestartDrain: vi.fn(),
+    requestStop: vi.fn(),
   };
 
   const service = createCommandService({
@@ -40,25 +59,22 @@ function createDeps() {
     workspaceService: {
       getUserWorkspaceDir: vi.fn(),
     },
-    runtimeState: {
-      isLocked: vi.fn(),
-      hasActiveLocks: vi.fn(),
-      beginRestartDrain: vi.fn(),
-      cancelRestartDrain: vi.fn(),
-      requestStop: vi.fn(),
-    },
+    runtimeState,
     restartService: {
       restartGateway: vi.fn(),
     },
     listAvailableModels: vi.fn(),
     findAvailableModel: vi.fn(),
     cronService,
+    deferredCronRunService,
   });
 
   return {
     service,
     messenger,
     cronService,
+    deferredCronRunService,
+    runtimeState,
   };
 }
 
@@ -104,6 +120,24 @@ describe("command service /cron", () => {
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
       expect.stringContaining("已创建定时任务"),
+      2000,
+    );
+  });
+
+  it("run 在当前有任务时会改成稍后执行", async () => {
+    const { service, messenger, cronService, deferredCronRunService, runtimeState } = createDeps();
+    runtimeState.isLocked.mockReturnValue(true);
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "cron", args: "run cron_1" },
+    );
+
+    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith("ou_1", "cron_1");
+    expect(cronService.runJobNow).not.toHaveBeenCalled();
+    expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      expect.stringContaining("已安排稍后执行"),
       2000,
     );
   });
