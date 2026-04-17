@@ -9,10 +9,10 @@ describe("createRuntimeConfigStore", () => {
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
     });
 
-    store.setAudioTranscribeProvider("sensevoice");
+    store.setAudioTranscribeProvider("doubao");
     store.setStreamingEnabled(false);
 
-    expect(store.getAudioTranscribeProvider()).toBe("sensevoice");
+    expect(store.getAudioTranscribeProvider()).toBe("doubao");
     expect(store.getStreamingEnabled()).toBe(false);
   });
 

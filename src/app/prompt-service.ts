@@ -30,6 +30,7 @@ interface PromptServiceDeps {
     | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON"
     | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL"
     | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE"
+    | "FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY"
     | "FEISHU_PROCESSING_REACTION_TYPE"
     | "STREAMING_ENABLED"
     | "PI_SHOW_TOOL_CALLS_IN_REPLY"
@@ -114,6 +115,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         audioTranscribeSenseVoicePython: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON,
         audioTranscribeSenseVoiceModel: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL,
         audioTranscribeSenseVoiceDevice: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE,
+        audioTranscribeDoubaoApiKey: deps.config.FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY,
       }, {
         downloadResource: deps.downloadResource,
       });
@@ -185,6 +187,18 @@ function formatPromptPreparationError(error: unknown): string | undefined {
 
   if (message.includes("SenseVoice 语音转写没有产出文本")) {
     return "SenseVoice 转写失败：没有产出文本。";
+  }
+
+  if (message.includes("豆包语音未配置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY")) {
+    return "豆包语音未配置 API Key，请先在 .env 设置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY。";
+  }
+
+  if (message.includes("豆包语音转写失败：")) {
+    return lines.find((line) => line.includes("豆包语音转写失败："));
+  }
+
+  if (message.includes("豆包语音转写没有产出文本")) {
+    return "豆包语音转写失败：没有产出文本。";
   }
 
   if (message.includes("语音转写没有产出文本")) {

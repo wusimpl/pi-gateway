@@ -105,6 +105,7 @@ vi.mock("../src/config.js", () => ({
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+    FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
     DATA_DIR: "/tmp/pi-gateway-data",
     PI_WORKSPACE_ROOT: "/tmp/pi-gateway-workspace",
     PI_DISABLE_GLOBAL_AGENTS: true,

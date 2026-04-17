@@ -52,12 +52,13 @@ export interface FeishuMediaProcessingOptions {
   workspaceDir: string;
   ollamaBaseUrl: string;
   ocrModel: string;
-  audioTranscribeProvider: "whisper" | "sensevoice";
+  audioTranscribeProvider: "whisper" | "sensevoice" | "doubao";
   audioTranscribeScript: string;
   audioLanguage: string;
   audioTranscribeSenseVoicePython: string;
   audioTranscribeSenseVoiceModel: string;
   audioTranscribeSenseVoiceDevice: string;
+  audioTranscribeDoubaoApiKey: string;
 }
 
 export interface PreparedPromptInput {

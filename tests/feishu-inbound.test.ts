@@ -12,6 +12,7 @@ const baseOptions = {
   audioTranscribeSenseVoicePython: "/tmp/.venv-sensevoice/bin/python",
   audioTranscribeSenseVoiceModel: "iic/SenseVoiceSmall",
   audioTranscribeSenseVoiceDevice: "cpu",
+  audioTranscribeDoubaoApiKey: "",
 };
 
 describe("normalizeFeishuInboundMessage", () => {
@@ -264,7 +265,7 @@ describe("prepareFeishuPromptInput", () => {
     );
 
     expect(result.images).toBeUndefined();
-    expect(result.text).toContain("以下是本地转写结果");
+    expect(result.text).toContain("以下是语音转写结果");
     expect(result.text).toContain("帮我看下这段代码哪里有问题");
     expect(result.text).toContain("3200ms");
   });

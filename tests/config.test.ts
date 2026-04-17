@@ -98,4 +98,16 @@ describe("loadConfig", () => {
       "/tmp/test-home/.cache/modelscope/iic/SenseVoiceSmall",
     );
   });
+
+  it("豆包 provider 和 API Key 应能正常读取", async () => {
+    applyBaseEnv({
+      FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "doubao",
+      FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "test-doubao-key",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER).toBe("doubao");
+    expect(config.FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY).toBe("test-doubao-key");
+  });
 });

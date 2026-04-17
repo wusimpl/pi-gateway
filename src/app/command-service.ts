@@ -447,14 +447,14 @@ function parseSessionsPage(args: string): { page: number; error?: undefined } | 
 
 function parseSttProviderArgs(
   args: string,
-): { provider: "sensevoice" | "whisper"; error?: undefined } | { provider?: undefined; error: string } {
-  const matched = args.trim().match(/^provider\s+(sensevoice|whisper)$/i);
+): { provider: "sensevoice" | "whisper" | "doubao"; error?: undefined } | { provider?: undefined; error: string } {
+  const matched = args.trim().match(/^provider\s+(sensevoice|whisper|doubao)$/i);
   if (!matched) {
-    return { error: "用法：/stt provider sensevoice|whisper。" };
+    return { error: "用法：/stt provider sensevoice|whisper|doubao。" };
   }
 
   return {
-    provider: matched[1]!.toLowerCase() as "sensevoice" | "whisper",
+    provider: matched[1]!.toLowerCase() as "sensevoice" | "whisper" | "doubao",
   };
 }
 
@@ -681,7 +681,7 @@ function extractQuotedCurrentMessage(text: string): string | null {
 
 function extractAudioTranscript(text: string): string | null {
   const prefix = "用户发来了一段语音，音频已保存到本地：";
-  const marker = "\n以下是本地转写结果：\n";
+  const marker = "\n以下是语音转写结果：\n";
   if (!text.startsWith(prefix)) {
     return null;
   }

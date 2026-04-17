@@ -59,13 +59,13 @@ describe("command service runtime config", () => {
 
     await service.handleBridgeCommand(
       { openId: "ou_1", userId: "u_1" },
-      { name: "stt", args: "provider sensevoice" },
+      { name: "stt", args: "provider doubao" },
     );
 
-    expect(runtimeConfig.getAudioTranscribeProvider()).toBe("sensevoice");
+    expect(runtimeConfig.getAudioTranscribeProvider()).toBe("doubao");
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "✅ 语音转写已切到 sensevoice。",
+      "✅ 语音转写已切到 doubao。",
       2000,
     );
   });

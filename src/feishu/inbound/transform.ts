@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -12,6 +13,20 @@ const EXTERNAL_PROCESS_TIMEOUT_MS = 10 * 60 * 1000;
 const SENSEVOICE_TRANSCRIBE_SCRIPT = fileURLToPath(
   new URL("../../../scripts/sensevoice_transcribe.py", import.meta.url),
 );
+const DOUBAO_FLASH_ENDPOINT = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash";
+const DOUBAO_RESOURCE_ID = "volc.bigasr.auc_turbo";
+const DOUBAO_SUCCESS_STATUS_CODE = "20000000";
+const DOUBAO_UID = "pi-gateway";
+const DOUBAO_MODEL_NAME = "bigmodel";
+
+interface DoubaoFlashResponse {
+  result?: {
+    text?: string;
+    utterances?: Array<{
+      text?: string;
+    }>;
+  };
+}
 
 interface TransformDeps {
   downloadResource?: typeof downloadFeishuResource;
@@ -84,7 +99,7 @@ export async function prepareFeishuPromptInput(
       return {
         text: withQuotedMessageContext(
           message,
-          `用户发来了一段语音，音频已保存到本地：${resource.filePath}${durationLine}\n以下是本地转写结果：\n${transcript}`,
+          `用户发来了一段语音，音频已保存到本地：${resource.filePath}${durationLine}\n以下是语音转写结果：\n${transcript}`,
         ),
         localFiles: [resource.filePath],
       };
@@ -137,10 +152,15 @@ export async function transcribeAudioFile(
     | "audioTranscribeSenseVoicePython"
     | "audioTranscribeSenseVoiceModel"
     | "audioTranscribeSenseVoiceDevice"
+    | "audioTranscribeDoubaoApiKey"
   >,
 ): Promise<string> {
   if (options.audioTranscribeProvider === "sensevoice") {
     return transcribeAudioWithSenseVoice(audioPath, options);
+  }
+
+  if (options.audioTranscribeProvider === "doubao") {
+    return transcribeAudioWithDoubao(audioPath, options);
   }
 
   return transcribeAudioWithScript(audioPath, options);
@@ -208,6 +228,89 @@ async function transcribeAudioWithSenseVoice(
   }
 
   return transcript;
+}
+
+async function transcribeAudioWithDoubao(
+  audioPath: string,
+  options: Pick<FeishuMediaProcessingOptions, "audioTranscribeDoubaoApiKey">,
+): Promise<string> {
+  const apiKey = options.audioTranscribeDoubaoApiKey.trim();
+  if (!apiKey) {
+    throw new Error("豆包语音未配置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY");
+  }
+
+  const audioData = await readFile(audioPath);
+  const response = await fetch(DOUBAO_FLASH_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Api-Key": apiKey,
+      "X-Api-Resource-Id": DOUBAO_RESOURCE_ID,
+      "X-Api-Request-Id": randomUUID(),
+      "X-Api-Sequence": "-1",
+    },
+    body: JSON.stringify({
+      user: {
+        uid: DOUBAO_UID,
+      },
+      audio: {
+        data: audioData.toString("base64"),
+      },
+      request: {
+        model_name: DOUBAO_MODEL_NAME,
+      },
+    }),
+    signal: AbortSignal.timeout(EXTERNAL_PROCESS_TIMEOUT_MS),
+  });
+
+  const statusCode = response.headers.get("X-Api-Status-Code")?.trim();
+  const apiMessage = response.headers.get("X-Api-Message")?.trim();
+  const logId = response.headers.get("X-Tt-Logid")?.trim();
+  const responseText = await response.text();
+
+  let payload: DoubaoFlashResponse | null = null;
+  if (responseText.trim()) {
+    try {
+      payload = JSON.parse(responseText) as DoubaoFlashResponse;
+    } catch {
+      throw new Error(formatDoubaoFailure("服务返回格式不正确", logId));
+    }
+  }
+
+  if (!response.ok) {
+    const reason = apiMessage || `HTTP ${response.status}`;
+    throw new Error(formatDoubaoFailure(reason, logId));
+  }
+
+  if (statusCode && statusCode !== DOUBAO_SUCCESS_STATUS_CODE) {
+    throw new Error(formatDoubaoFailure(apiMessage || `状态码 ${statusCode}`, logId));
+  }
+
+  const transcript = extractDoubaoTranscript(payload);
+  if (!transcript) {
+    throw new Error(`豆包语音转写没有产出文本${logId ? `（logid: ${logId}）` : ""}`);
+  }
+
+  return transcript;
+}
+
+function extractDoubaoTranscript(payload: DoubaoFlashResponse | null): string {
+  const text = payload?.result?.text?.trim();
+  if (text) {
+    return text;
+  }
+
+  return (
+    payload?.result?.utterances
+      ?.map((utterance) => utterance.text?.trim())
+      .filter((text): text is string => Boolean(text))
+      .join("\n")
+      .trim() || ""
+  );
+}
+
+function formatDoubaoFailure(reason: string, logId?: string): string {
+  return `豆包语音转写失败：${reason}${logId ? `（logid: ${logId}）` : ""}`;
 }
 
 function withQuotedMessageContext(message: FeishuInboundMessage, currentMessageText: string): string {
