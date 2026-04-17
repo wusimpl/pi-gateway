@@ -581,7 +581,7 @@ function appendToolCallsSection(text: string, toolsText: string): string {
 }
 
 function appendDisplayedSections(text: string, preludeText: string, toolsText: string): string {
-  return [preludeText, text, toolsText].filter((section) => Boolean(section)).join("\n\n");
+  return [text, preludeText, toolsText].filter((section) => Boolean(section)).join("\n\n");
 }
 
 function formatToolCallsSection(toolCallMap: ReadonlyMap<string, ToolCallState>): string {

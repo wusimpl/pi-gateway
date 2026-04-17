@@ -436,10 +436,8 @@ export function createFeishuMessenger(
             return;
           }
 
-          await updateElement(getStreamingBodyElementId(), appendBodyAndTools(finalBodyText, toolsText));
-          if (toolsText) {
-            await updateElement(getStreamingToolsElementId(), "");
-          }
+          await updateElement(getStreamingBodyElementId(), finalBodyText);
+          await updateElement(getStreamingToolsElementId(), toolsText);
           await updateSettings(buildStreamingCardSettings({
             streamingMode: false,
             summaryText: buildStreamingSummary(finalBodyText || finalPreludeText || toolsText),
@@ -559,11 +557,7 @@ function appendDisplayedSections(
   preludeText: string,
   toolsText: string,
 ): string {
-  return [preludeText, bodyText, toolsText].filter((section) => Boolean(section)).join("\n\n");
-}
-
-function appendBodyAndTools(bodyText: string, toolsText: string): string {
-  return [bodyText, toolsText].filter((section) => Boolean(section)).join("\n\n");
+  return [bodyText, preludeText, toolsText].filter((section) => Boolean(section)).join("\n\n");
 }
 
 export async function addProcessingReaction(

@@ -171,7 +171,7 @@ describe("promptSession", () => {
     );
   });
 
-  it("有语音转录结果时，应先展示转录区块再流式更新正文", async () => {
+  it("有语音转录结果时，应单独保留转录区块并在收口时把正文放前面", async () => {
     const mockStreamingMessage = {
       updateBody: vi.fn().mockResolvedValue(undefined),
       updateTools: vi.fn().mockResolvedValue(undefined),
@@ -265,7 +265,7 @@ describe("promptSession", () => {
     );
   });
 
-  it("非流式时应把预处理结果放在正文前面", async () => {
+  it("非流式时应把预处理结果放在正文后面", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([
       { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "我已经看过转录内容了" } },
@@ -288,7 +288,7 @@ describe("promptSession", () => {
     expect(result).toEqual({ text: "我已经看过转录内容了", error: undefined });
     expect(mockSendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      " ---\n**语音转录结果**\n帮我总结一下\n\n我已经看过转录内容了",
+      "我已经看过转录内容了\n\n ---\n**语音转录结果**\n帮我总结一下",
       2000,
     );
   });

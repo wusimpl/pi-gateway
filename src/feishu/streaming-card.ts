@@ -28,14 +28,11 @@ export function buildStreamingCardData({
   toolsText = "",
   summaryText = "",
 }: BuildStreamingCardOptions): string {
-  const elements = [];
+  const elements = [buildMarkdownElement(bodyText, STREAMING_BODY_ELEMENT_ID)];
   if (preludeText) {
     elements.push(buildMarkdownElement(preludeText, STREAMING_PRELUDE_ELEMENT_ID));
   }
-  elements.push(
-    buildMarkdownElement(bodyText, STREAMING_BODY_ELEMENT_ID),
-    buildMarkdownElement(toolsText, STREAMING_TOOLS_ELEMENT_ID),
-  );
+  elements.push(buildMarkdownElement(toolsText, STREAMING_TOOLS_ELEMENT_ID));
   return JSON.stringify({
     schema: "2.0",
     config: buildStreamingCardConfig(true, summaryText),

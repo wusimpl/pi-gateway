@@ -290,7 +290,7 @@ describe("send helpers", () => {
     });
   });
 
-  it("startStreamingMessage: 有预处理结果时应把它放在正文区前面", async () => {
+  it("startStreamingMessage: 有预处理结果时应把它放在正文区后面", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_prelude_1" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_prelude_1" } });
     const { startStreamingMessage } = await import("../src/feishu/send.js");
@@ -301,12 +301,12 @@ describe("send helpers", () => {
     const cardJson = JSON.parse(cardPayload.data.data);
     expect(cardJson.body.elements).toEqual([
       expect.objectContaining({
-        element_id: "stream_prelude",
-        content: " ---\n**语音转录结果**\n你好",
-      }),
-      expect.objectContaining({
         element_id: "stream_body",
         content: "",
+      }),
+      expect.objectContaining({
+        element_id: "stream_prelude",
+        content: " ---\n**语音转录结果**\n你好",
       }),
       expect.objectContaining({
         element_id: "stream_tools",
@@ -363,12 +363,23 @@ describe("send helpers", () => {
         uuid: expect.any(String),
       }),
     });
+    expect(mockCardContent).toHaveBeenNthCalledWith(4, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_tools",
+      },
+      data: expect.objectContaining({
+        content: "",
+        sequence: 4,
+        uuid: expect.any(String),
+      }),
+    });
     expect(mockCardSettings).toHaveBeenCalledWith({
       path: {
         card_id: "card_1",
       },
       data: expect.objectContaining({
-        sequence: 4,
+        sequence: 5,
         uuid: expect.any(String),
       }),
     });
@@ -377,7 +388,7 @@ describe("send helpers", () => {
     expect(settingsJson.config.summary.content).toBe("hello world");
   });
 
-  it("startStreamingMessage: 收口把工具状态拼进正文时，应清空原工具区避免重复展示", async () => {
+  it("startStreamingMessage: 收口时应保留正文在前、工具区在后", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
     mockCardUpdate.mockResolvedValue({});
@@ -409,7 +420,7 @@ describe("send helpers", () => {
         element_id: "stream_body",
       },
       data: expect.objectContaining({
-        content: `${longBody}\n\n ---\n**工具调用**\nread 完成: package.json`,
+        content: longBody,
         sequence: 2,
         uuid: expect.any(String),
       }),
@@ -420,7 +431,7 @@ describe("send helpers", () => {
         element_id: "stream_tools",
       },
       data: expect.objectContaining({
-        content: "",
+        content: " ---\n**工具调用**\nread 完成: package.json",
         sequence: 3,
         uuid: expect.any(String),
       }),
@@ -648,7 +659,7 @@ describe("send helpers", () => {
     });
   });
 
-  it("startStreamingMessage.finish: 有预处理结果时应按预处理结果-正文-工具调用的顺序缓存", async () => {
+  it("startStreamingMessage.finish: 有预处理结果时应按正文-预处理结果-工具调用的顺序缓存", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_cache_2" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_cache_2" } });
     mockCardUpdate.mockResolvedValue({});
@@ -703,7 +714,7 @@ describe("send helpers", () => {
     expect(quotedMessageStore.writeQuotedMessage).toHaveBeenCalledWith({
       messageId: "om_stream_cache_2",
       messageType: "interactive",
-      text: "---\n**语音转录结果**\n你好\n\n最终完整正文\n\n ---\n**工具调用**\nread 完成: src/index.ts",
+      text: "最终完整正文\n\n ---\n**语音转录结果**\n你好\n\n ---\n**工具调用**\nread 完成: src/index.ts",
     });
   });
 });
