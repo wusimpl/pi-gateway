@@ -770,7 +770,12 @@ function formatContextUsageFooter(
     return undefined;
   }
 
-  return `${contextUsage.percent.toFixed(1)}%/${formatCompactTokenCount(contextUsage.contextWindow)}`;
+  const usedTokens = Math.max(
+    0,
+    Math.round((contextUsage.contextWindow * contextUsage.percent) / 100),
+  );
+
+  return `${contextUsage.percent.toFixed(1)}% ${formatCompactTokenCount(usedTokens)}/${formatCompactTokenCount(contextUsage.contextWindow)}`;
 }
 
 function formatCurrentModelFooter(

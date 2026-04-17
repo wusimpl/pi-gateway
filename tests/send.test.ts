@@ -734,7 +734,7 @@ describe("send helpers", () => {
     } as any);
 
     const stream = await messenger.startStreamingMessage("ou_1", "初始正文");
-    await stream!.finish("最终完整正文\n\n4.8%/200k | 模型: rightcodes/gpt-5.4-high", 2000);
+    await stream!.finish("最终完整正文\n\n4.8% 9.6k/200k | 模型: rightcodes/gpt-5.4-high", 2000);
 
     const updatedElementIds = mockCardContent.mock.calls.map((call) => call[0].path.element_id);
     expect(updatedElementIds).toEqual(["stream_body"]);
