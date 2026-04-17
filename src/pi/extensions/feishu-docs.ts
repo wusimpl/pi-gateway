@@ -5,6 +5,8 @@ import {
   type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
 import type { FeishuDocsService } from "../../feishu/doc-service.js";
+import { getWorkspaceIdentity } from "../workspace-identity.js";
+import type { UserIdentity } from "../../types.js";
 
 const DOCX_ONLY_GUIDELINES = [
   "这些飞书文档工具只支持新版文档 docx，不支持 wiki 链接或知识库节点。",
@@ -60,14 +62,21 @@ function normalizeArgs(args: unknown): Record<string, unknown> {
   };
 }
 
-export function createFeishuDocsExtension(service: FeishuDocsService): ExtensionFactory {
+export function createFeishuDocsExtension(
+  service: FeishuDocsService,
+  resolveIdentityByWorkspace: (cwd: string) => UserIdentity | null = getWorkspaceIdentity,
+): ExtensionFactory {
   const createTool = defineTool({
     name: "feishu_doc_create",
     label: "Feishu Doc Create",
     description:
       "创建飞书新版文档 docx。可选直接写入 markdown/html 正文。只支持 docx，不支持 wiki。",
     promptSnippet: "feishu_doc_create: 创建飞书 docx 文档，可选一次性写入 markdown/html 正文。",
-    promptGuidelines: DOCX_ONLY_GUIDELINES,
+    promptGuidelines: [
+      ...DOCX_ONLY_GUIDELINES,
+      "新建文档后，默认会尝试把文档所有权转给当前飞书私聊用户，同时给应用自己保留管理权限。",
+      "如果所有权转移失败，要明确告诉用户文档虽然已创建，但当前仍不是用户本人所有。",
+    ],
     parameters: Type.Object({
       title: Type.Optional(Type.String({ description: "文档标题。" })),
       content: Type.Optional(Type.String({ description: "要写入正文的内容。" })),
@@ -79,7 +88,7 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
       ),
     }),
     prepareArguments: normalizeArgs as any,
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await service.createDocument({
         title: typeof params.title === "string" ? params.title : undefined,
         content: typeof params.content === "string" ? params.content : undefined,
@@ -87,7 +96,41 @@ export function createFeishuDocsExtension(service: FeishuDocsService): Extension
         folder_token:
           typeof params.folder_token === "string" ? params.folder_token : undefined,
       });
-      return toToolResult(result);
+
+      const identity = resolveIdentityByWorkspace(ctx.cwd);
+      if (!identity?.openId) {
+        return toToolResult({
+          ...result,
+          owner_transfer: {
+            status: "skipped_no_identity",
+          },
+        });
+      }
+
+      try {
+        const transfer = await service.transferDocumentOwner({
+          document_id: result.document_id,
+          member_id: identity.openId,
+          member_type: "openid",
+          remove_old_owner: false,
+          old_owner_perm: "full_access",
+          stay_put: false,
+        });
+
+        return toToolResult({
+          ...result,
+          owner_transfer: {
+            status: "transferred",
+            member_id: transfer.member_id,
+            member_type: transfer.member_type,
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `文档已创建，但转给当前飞书用户失败：${message}。文档链接：${result.document_url}`,
+        );
+      }
     },
   });
 

@@ -39,6 +39,9 @@ function createClient(): FeishuDocsClient {
         media: {
           uploadAll: vi.fn(),
         },
+        permissionMember: {
+          transferOwner: vi.fn(),
+        },
         file: {
           delete: vi.fn(),
           createFolder: vi.fn(),
@@ -202,6 +205,46 @@ describe("FeishuDocsService", () => {
       title: "周报",
       revision_id: 12,
       inserted_block_ids: ["real-block-1"],
+    });
+  });
+
+  it("可以把新文档所有者转给指定 open_id，并保留应用自身权限配置参数", async () => {
+    const client = createClient();
+    client.drive.v1.permissionMember.transferOwner = vi.fn().mockResolvedValue({
+      data: {},
+    });
+
+    const service = createFeishuDocsService(client);
+    const result = await service.transferDocumentOwner({
+      document_id: "doxcn_owner_1",
+      member_id: "ou_user_1",
+      member_type: "openid",
+      remove_old_owner: false,
+      old_owner_perm: "full_access",
+      stay_put: false,
+    });
+
+    expect(client.drive.v1.permissionMember.transferOwner).toHaveBeenCalledWith({
+      path: {
+        token: "doxcn_owner_1",
+      },
+      params: {
+        type: "docx",
+        need_notification: undefined,
+        remove_old_owner: false,
+        stay_put: false,
+        old_owner_perm: "full_access",
+      },
+      data: {
+        member_id: "ou_user_1",
+        member_type: "openid",
+      },
+    });
+    expect(result).toEqual({
+      document_id: "doxcn_owner_1",
+      document_url: "https://feishu.cn/docx/doxcn_owner_1",
+      member_id: "ou_user_1",
+      member_type: "openid",
     });
   });
 

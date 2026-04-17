@@ -1,12 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFeishuDocsExtension } from "../src/pi/extensions/feishu-docs.js";
 
-function collectTools(serviceOverrides?: Record<string, unknown>) {
+function collectTools(
+  serviceOverrides?: Record<string, unknown>,
+  resolveIdentityByWorkspace?: (cwd: string) => { openId: string; userId?: string } | null,
+) {
   const service = {
     createDocument: vi.fn().mockResolvedValue({
       document_id: "doxcn_1",
       revision_id: 1,
+      document_url: "https://feishu.cn/docx/doxcn_1",
       inserted_block_ids: [],
+    }),
+    transferDocumentOwner: vi.fn().mockResolvedValue({
+      document_id: "doxcn_1",
+      document_url: "https://feishu.cn/docx/doxcn_1",
+      member_id: "ou_1",
+      member_type: "openid",
     }),
     readDocument: vi.fn().mockResolvedValue({
       document_id: "doxcn_1",
@@ -41,7 +51,7 @@ function collectTools(serviceOverrides?: Record<string, unknown>) {
   };
 
   const tools: any[] = [];
-  createFeishuDocsExtension(service as any)({
+  createFeishuDocsExtension(service as any, resolveIdentityByWorkspace as any)({
     registerTool(tool) {
       tools.push(tool);
     },
@@ -50,7 +60,7 @@ function collectTools(serviceOverrides?: Record<string, unknown>) {
   return { service, tools };
 }
 
-function createToolContext(lastUserText?: string) {
+function createToolContext(lastUserText?: string, cwd = "/tmp/workspace/ou_1") {
   const branch = lastUserText
     ? [
         {
@@ -64,6 +74,7 @@ function createToolContext(lastUserText?: string) {
     : [];
 
   return {
+    cwd,
     sessionManager: {
       getBranch: () => branch,
     },
@@ -103,6 +114,82 @@ describe("feishu docs extension", () => {
       format: undefined,
       folder_token: "folder-123",
     });
+  });
+
+  it("新建文档后会把所有权转给当前 workspace 对应的飞书用户", async () => {
+    const { tools, service } = collectTools(
+      undefined,
+      (cwd) => (cwd === "/tmp/workspace/ou_1" ? { openId: "ou_1" } : null),
+    );
+    const createTool = tools.find((tool) => tool.name === "feishu_doc_create");
+
+    const result = await createTool.execute(
+      "call-1",
+      {
+        title: "日报",
+      },
+      undefined,
+      undefined,
+      createToolContext(undefined, "/tmp/workspace/ou_1"),
+    );
+
+    expect(service.transferDocumentOwner).toHaveBeenCalledWith({
+      document_id: "doxcn_1",
+      member_id: "ou_1",
+      member_type: "openid",
+      remove_old_owner: false,
+      old_owner_perm: "full_access",
+      stay_put: false,
+    });
+    expect(result.details.owner_transfer).toEqual({
+      status: "transferred",
+      member_id: "ou_1",
+      member_type: "openid",
+    });
+  });
+
+  it("如果当前 workspace 没有关联飞书用户，就跳过所有权转移", async () => {
+    const { tools, service } = collectTools(undefined, () => null);
+    const createTool = tools.find((tool) => tool.name === "feishu_doc_create");
+
+    const result = await createTool.execute(
+      "call-1",
+      {
+        title: "日报",
+      },
+      undefined,
+      undefined,
+      createToolContext(undefined, "/tmp/workspace/unknown"),
+    );
+
+    expect(service.transferDocumentOwner).not.toHaveBeenCalled();
+    expect(result.details.owner_transfer).toEqual({
+      status: "skipped_no_identity",
+    });
+  });
+
+  it("所有权转移失败时，会明确告诉用户文档虽然建好了但仍没转成功", async () => {
+    const { tools } = collectTools(
+      {
+        transferDocumentOwner: vi.fn().mockRejectedValue(new Error("permission denied")),
+      },
+      () => ({ openId: "ou_1" }),
+    );
+    const createTool = tools.find((tool) => tool.name === "feishu_doc_create");
+
+    await expect(
+      createTool.execute(
+        "call-1",
+        {
+          title: "日报",
+        },
+        undefined,
+        undefined,
+        createToolContext(undefined, "/tmp/workspace/ou_1"),
+      ),
+    ).rejects.toThrow(
+      "文档已创建，但转给当前飞书用户失败：permission denied。文档链接：https://feishu.cn/docx/doxcn_1",
+    );
   });
 
   it("读取工具会明确标注支持 wiki，写工具仍保持 docx 限制", () => {

@@ -212,6 +212,26 @@ export interface FeishuDocsClient {
           file_token?: string;
         } | null>;
       };
+      permissionMember: {
+        transferOwner(payload?: {
+          data: {
+            member_type: "email" | "openid" | "userid";
+            member_id: string;
+          };
+          params: {
+            type: "docx";
+            need_notification?: boolean;
+            remove_old_owner?: boolean;
+            stay_put?: boolean;
+            old_owner_perm?: "view" | "edit" | "full_access";
+          };
+          path: {
+            token: string;
+          };
+        }): Promise<{
+          data?: Record<string, never>;
+        }>;
+      };
       file: {
         delete(payload?: {
           params: {
@@ -301,6 +321,20 @@ export interface FeishuFolderCreateResult {
   url?: string;
 }
 
+export interface FeishuDocTransferOwnerInput extends FeishuDocRefInput {
+  member_id: string;
+  member_type?: "email" | "openid" | "userid";
+  need_notification?: boolean;
+  remove_old_owner?: boolean;
+  stay_put?: boolean;
+  old_owner_perm?: "view" | "edit" | "full_access";
+}
+
+export interface FeishuDocTransferOwnerResult extends FeishuDocMeta {
+  member_id: string;
+  member_type: "email" | "openid" | "userid";
+}
+
 export interface FeishuDocsService {
   resolveDocumentId(input: FeishuDocRefInput | string): string;
   createDocument(input: FeishuDocCreateInput): Promise<FeishuDocCreateResult>;
@@ -311,6 +345,7 @@ export interface FeishuDocsService {
   deleteRootChildRange(input: FeishuDocDeleteBlocksInput): Promise<FeishuDocDeleteBlocksResult>;
   deleteDocument(input: FeishuDocRefInput): Promise<FeishuDocDeleteDocumentResult>;
   createFolder(input: FeishuFolderCreateInput): Promise<FeishuFolderCreateResult>;
+  transferDocumentOwner(input: FeishuDocTransferOwnerInput): Promise<FeishuDocTransferOwnerResult>;
 }
 
 const DOCX_URL_PATTERN = /\/docx\/([A-Za-z0-9]+)(?:[/?#]|$)/i;
@@ -570,6 +605,47 @@ export function createFeishuDocsService(
     return {
       token: response.data?.token,
       url: response.data?.url,
+    };
+  }
+
+  async function transferDocumentOwner(
+    input: FeishuDocTransferOwnerInput,
+  ): Promise<FeishuDocTransferOwnerResult> {
+    const documentId = resolveDocumentId(input);
+    const memberId = input.member_id.trim();
+    if (!memberId) {
+      throw new Error("member_id 不能为空");
+    }
+
+    const memberType = input.member_type ?? "openid";
+    await client.drive.v1.permissionMember.transferOwner({
+      path: {
+        token: documentId,
+      },
+      params: {
+        type: "docx",
+        need_notification: input.need_notification,
+        remove_old_owner: input.remove_old_owner,
+        stay_put: input.stay_put,
+        old_owner_perm: input.old_owner_perm,
+      },
+      data: {
+        member_id: memberId,
+        member_type: memberType,
+      },
+    });
+
+    logger.info("飞书 docx 文档所有者已转移", {
+      documentId,
+      memberId,
+      memberType,
+    });
+
+    return {
+      document_id: documentId,
+      document_url: buildDocumentUrl(documentId),
+      member_id: memberId,
+      member_type: memberType,
     };
   }
 
@@ -943,6 +1019,7 @@ export function createFeishuDocsService(
     deleteRootChildRange,
     deleteDocument,
     createFolder,
+    transferDocumentOwner,
   };
 
   function buildDocumentUrl(documentId: string): string {
