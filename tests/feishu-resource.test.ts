@@ -90,6 +90,33 @@ describe("downloadFeishuResource", () => {
     expect(await readFile(result.filePath, "utf8")).toBe("audio-binary");
   });
 
+  it("普通文件资源应使用 file 下载类型并优先采用消息里的文件名", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "pi-gateway-file-"));
+    tempDirs.push(workspaceDir);
+    mocks.getResource.mockResolvedValue({
+      headers: { "content-type": "application/pdf" },
+      writeFile: async (filePath: string) => {
+        await writeFile(filePath, "file-binary");
+      },
+    });
+
+    const result = await downloadFeishuResource({
+      workspaceDir,
+      messageId: "om_file_1",
+      fileKey: "file_v2_123",
+      resourceType: "file",
+      fileNameHint: "report.pdf",
+    });
+
+    expect(mocks.getResource).toHaveBeenCalledWith({
+      params: { type: "file" },
+      path: { message_id: "om_file_1", file_key: "file_v2_123" },
+    });
+    expect(result.fileName).toBe("report.pdf");
+    expect(result.mimeType).toBe("application/pdf");
+    expect(await readFile(result.filePath, "utf8")).toBe("file-binary");
+  });
+
   it("显式资源下载器应优先使用传入的 client", async () => {
     const workspaceDir = await mkdtemp(join(tmpdir(), "pi-gateway-explicit-"));
     tempDirs.push(workspaceDir);
@@ -131,5 +158,6 @@ describe("resource helper", () => {
   it("应把资源类型映射成飞书下载类型", () => {
     expect(resolveDownloadType("image")).toBe("image");
     expect(resolveDownloadType("audio")).toBe("file");
+    expect(resolveDownloadType("file")).toBe("file");
   });
 });

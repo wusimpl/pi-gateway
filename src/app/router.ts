@@ -265,5 +265,10 @@ function buildMessageLogPayload(message: FeishuInboundMessage): Record<string, n
         fileKey: message.fileKey,
         durationMs: message.durationMs ?? 0,
       };
+    case "file":
+      return {
+        fileKey: message.fileKey,
+        fileName: message.fileName ?? "",
+      };
   }
 }

@@ -67,6 +67,21 @@ export function normalizeFeishuInboundMessage(event: FeishuMessageEvent): Feishu
         durationMs: asOptionalNumber(payload.duration),
       };
     }
+    case "file": {
+      const payload = parseContentObject(event.message.content);
+      const fileKey = asString(payload.file_key ?? payload.fileKey);
+      if (!fileKey) {
+        return null;
+      }
+      const fileName = asString(payload.file_name ?? payload.fileName).trim();
+      return {
+        ...base,
+        kind: "file",
+        messageType: "file",
+        fileKey,
+        fileName: fileName || undefined,
+      };
+    }
     default:
       return null;
   }

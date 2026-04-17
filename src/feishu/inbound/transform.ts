@@ -118,6 +118,23 @@ export async function prepareFeishuPromptInput(
         localFiles: [resource.filePath],
       };
     }
+    case "file": {
+      const resource = await downloadResource({
+        workspaceDir: options.workspaceDir,
+        messageId: message.messageId,
+        fileKey: message.fileKey,
+        resourceType: "file",
+        fileNameHint: message.fileName,
+      });
+      const fileNameLine = message.fileName ? `文件名：${message.fileName}\n` : "";
+      return {
+        text: withQuotedMessageContext(
+          message,
+          `用户发来了一个文件。\n${fileNameLine}文件已保存到本地，请使用这个路径查看文件并继续处理：\n${resource.filePath}`,
+        ),
+        localFiles: [resource.filePath],
+      };
+    }
   }
 }
 

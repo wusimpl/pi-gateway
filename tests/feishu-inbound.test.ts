@@ -85,6 +85,41 @@ describe("normalizeFeishuInboundMessage", () => {
     });
   });
 
+  it("应把文件消息标准化", () => {
+    const result = normalizeFeishuInboundMessage({
+      sender: {
+        senderId: { openId: "ou_1", userId: "u_1", unionId: "on_1" },
+        senderType: "user",
+        tenantKey: "tk",
+      },
+      message: {
+        messageId: "om_file_1",
+        rootId: "om_root_file_1",
+        parentId: "om_parent_file_1",
+        threadId: "omt_file_1",
+        chatId: "oc_1",
+        chatType: "p2p",
+        messageType: "file",
+        content: '{"file_key":"file_v2_123","file_name":"report.pdf"}',
+        createTime: "567",
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "file",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_file_1",
+      rootMessageId: "om_root_file_1",
+      parentMessageId: "om_parent_file_1",
+      threadId: "omt_file_1",
+      messageType: "file",
+      createTime: "567",
+      rawContent: '{"file_key":"file_v2_123","file_name":"report.pdf"}',
+      fileKey: "file_v2_123",
+      fileName: "report.pdf",
+    });
+  });
+
   it("应把富文本消息压平成可继续对话的文本", () => {
     const result = normalizeFeishuInboundMessage({
       sender: {
@@ -270,6 +305,48 @@ describe("prepareFeishuPromptInput", () => {
     expect(result.text).toContain("帮我看下这段代码哪里有问题");
     expect(result.text).toContain("3200ms");
     expect(result.preludeText).toBe(" ---\n**语音转录结果**\n帮我看下这段代码哪里有问题");
+  });
+
+  it("文件消息应下载到 workspace 并把路径放进 prompt", async () => {
+    const result = await prepareFeishuPromptInput(
+      {
+        kind: "file",
+        identity: { openId: "ou_1" },
+        messageId: "om_file_1",
+        messageType: "file",
+        createTime: "567",
+        rawContent: '{"file_key":"file_v2_123","file_name":"report.pdf"}',
+        fileKey: "file_v2_123",
+        fileName: "report.pdf",
+      },
+      { model: { input: ["text"] } } as any,
+      baseOptions,
+      {
+        downloadResource: async (options) => {
+          expect(options).toMatchObject({
+            workspaceDir: "/tmp/pi-workspace/user",
+            messageId: "om_file_1",
+            fileKey: "file_v2_123",
+            resourceType: "file",
+            fileNameHint: "report.pdf",
+          });
+          return {
+            resourceType: "file",
+            downloadType: "file",
+            fileKey: "file_v2_123",
+            filePath: "/tmp/pi-workspace/user/.feishu-inbox/om_file_1/report.pdf",
+            fileName: "report.pdf",
+            mimeType: "application/pdf",
+          };
+        },
+      },
+    );
+
+    expect(result.images).toBeUndefined();
+    expect(result.preludeText).toBeUndefined();
+    expect(result.localFiles).toEqual(["/tmp/pi-workspace/user/.feishu-inbox/om_file_1/report.pdf"]);
+    expect(result.text).toContain("report.pdf");
+    expect(result.text.endsWith("/tmp/pi-workspace/user/.feishu-inbox/om_file_1/report.pdf")).toBe(true);
   });
 });
 

@@ -33,6 +33,7 @@ export interface DownloadFeishuResourceOptions {
 const DEFAULT_EXTENSIONS: Record<DownloadedFeishuResource["resourceType"], string> = {
   image: ".png",
   audio: ".ogg",
+  file: ".bin",
 };
 
 const MIME_EXTENSIONS: Record<string, string> = {
@@ -133,9 +134,20 @@ function normalizeHeaders(headers: unknown): Record<string, string> {
 
 function normalizeMimeType(value: string | undefined, resourceType: DownloadedFeishuResource["resourceType"]): string {
   if (!value) {
-    return resourceType === "image" ? "image/png" : "audio/ogg";
+    return getDefaultMimeType(resourceType);
   }
-  return value.split(";")[0]?.trim().toLowerCase() || (resourceType === "image" ? "image/png" : "audio/ogg");
+  return value.split(";")[0]?.trim().toLowerCase() || getDefaultMimeType(resourceType);
+}
+
+function getDefaultMimeType(resourceType: DownloadedFeishuResource["resourceType"]): string {
+  switch (resourceType) {
+    case "image":
+      return "image/png";
+    case "audio":
+      return "audio/ogg";
+    case "file":
+      return "application/octet-stream";
+  }
 }
 
 function parseContentDisposition(value: string | undefined): string | undefined {

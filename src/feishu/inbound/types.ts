@@ -37,10 +37,17 @@ export type FeishuInboundMessage =
       messageType: "audio";
       fileKey: string;
       durationMs?: number;
+    }
+  | {
+      kind: "file";
+      } & FeishuInboundMessageBase & {
+      messageType: "file";
+      fileKey: string;
+      fileName?: string;
     };
 
 export interface DownloadedFeishuResource {
-  resourceType: "image" | "audio";
+  resourceType: "image" | "audio" | "file";
   downloadType: "image" | "file";
   fileKey: string;
   filePath: string;

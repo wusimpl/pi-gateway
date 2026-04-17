@@ -1,7 +1,7 @@
 import type { FeishuMessageEvent } from "../types.js";
 import { logger } from "../app/logger.js";
 
-export const SUPPORTED_P2P_MESSAGE_TYPES = ["text", "post", "image", "audio"] as const;
+export const SUPPORTED_P2P_MESSAGE_TYPES = ["text", "post", "image", "audio", "file"] as const;
 
 /**
  * 从飞书事件 payload 中提取消息事件数据

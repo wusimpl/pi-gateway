@@ -117,8 +117,12 @@ describe("isSupportedP2PMessage", () => {
     expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "audio" } })).toBe(true);
   });
 
+  it("私聊文件消息应返回 true", () => {
+    expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "file" } })).toBe(true);
+  });
+
   it("不支持的消息类型应返回 false", () => {
-    expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "file" } })).toBe(false);
+    expect(isSupportedP2PMessage({ ...baseEvent, message: { ...baseEvent.message, messageType: "sticker" } })).toBe(false);
   });
 });
 
