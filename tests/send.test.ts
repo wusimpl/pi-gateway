@@ -352,40 +352,21 @@ describe("send helpers", () => {
         uuid: expect.any(String),
       }),
     });
-    expect(mockCardContent).toHaveBeenNthCalledWith(3, {
+    expect(mockCardContent).toHaveBeenCalledTimes(2);
+    expect(mockCardContent.mock.calls.some((call) => call[0].data.content === "")).toBe(false);
+    expect(mockCardUpdate).toHaveBeenCalledWith({
       path: {
         card_id: "card_1",
-        element_id: "stream_body",
       },
       data: expect.objectContaining({
-        content: "hello world",
         sequence: 3,
         uuid: expect.any(String),
       }),
     });
-    expect(mockCardContent).toHaveBeenNthCalledWith(4, {
-      path: {
-        card_id: "card_1",
-        element_id: "stream_tools",
-      },
-      data: expect.objectContaining({
-        content: "",
-        sequence: 4,
-        uuid: expect.any(String),
-      }),
-    });
-    expect(mockCardSettings).toHaveBeenCalledWith({
-      path: {
-        card_id: "card_1",
-      },
-      data: expect.objectContaining({
-        sequence: 5,
-        uuid: expect.any(String),
-      }),
-    });
-    const settingsJson = JSON.parse(mockCardSettings.mock.calls[0][0].data.settings);
-    expect(settingsJson.config.streaming_mode).toBe(false);
-    expect(settingsJson.config.summary.content).toBe("hello world");
+    const cardJson = JSON.parse(mockCardUpdate.mock.calls[0][0].data.card.data);
+    expect(cardJson.config.streaming_mode).toBe(false);
+    expect(cardJson.config.summary.content).toBe("hello world");
+    expect(mockCardSettings).not.toHaveBeenCalled();
   });
 
   it("startStreamingMessage: 收口时应保留正文在前、工具区在后", async () => {
@@ -716,5 +697,47 @@ describe("send helpers", () => {
       messageType: "interactive",
       text: "最终完整正文\n\n ---\n**语音转录结果**\n你好\n\n ---\n**工具调用**\nread 完成: src/index.ts",
     });
+  });
+
+  it("startStreamingMessage.finish: 没有工具内容时不应更新空工具块", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_plain_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_plain_1" } });
+    mockCardContent.mockResolvedValue({});
+    mockCardSettings.mockResolvedValue({});
+    const { createFeishuMessenger } = await import("../src/feishu/send.js");
+
+    const messenger = createFeishuMessenger({
+      im: {
+        file: {
+          create: mockFileCreate,
+        },
+        message: {
+          create: mockCreate,
+        },
+        messageReaction: {
+          create: mockReactionCreate,
+          delete: mockReactionDelete,
+        },
+      },
+      cardkit: {
+        v1: {
+          card: {
+            create: mockCardCreate,
+            update: mockCardUpdate,
+            settings: mockCardSettings,
+          },
+          cardElement: {
+            content: mockCardContent,
+          },
+        },
+      },
+    } as any);
+
+    const stream = await messenger.startStreamingMessage("ou_1", "初始正文");
+    await stream!.finish("最终完整正文\n\n4.8%/200k | 模型: rightcodes/gpt-5.4-high", 2000);
+
+    const updatedElementIds = mockCardContent.mock.calls.map((call) => call[0].path.element_id);
+    expect(updatedElementIds).toEqual(["stream_body"]);
+    expect(mockCardSettings).toHaveBeenCalledTimes(1);
   });
 });

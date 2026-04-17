@@ -357,6 +357,8 @@ export function createFeishuMessenger(
       }
 
       let sequence = 0;
+      let currentBodyText = bodyText;
+      let currentToolsText = toolsText;
       const nextSequence = () => {
         sequence += 1;
         return sequence;
@@ -409,10 +411,14 @@ export function createFeishuMessenger(
       }
 
       return {
-        updateBody: (nextBodyText: string) =>
-          updateElement(getStreamingBodyElementId(), nextBodyText),
-        updateTools: (nextToolsText: string) =>
-          updateElement(getStreamingToolsElementId(), nextToolsText),
+        async updateBody(nextBodyText: string): Promise<void> {
+          await updateElement(getStreamingBodyElementId(), nextBodyText);
+          currentBodyText = nextBodyText;
+        },
+        async updateTools(nextToolsText: string): Promise<void> {
+          await updateElement(getStreamingToolsElementId(), nextToolsText);
+          currentToolsText = nextToolsText;
+        },
         async finish(
           finalBodyText: string,
           textChunkLimit: number,
@@ -427,20 +433,42 @@ export function createFeishuMessenger(
             finalText.trim(),
           );
 
+          const summaryText = buildStreamingSummary(finalBodyText || finalPreludeText || toolsText);
           const renderedMessages = renderAssistantMessage(finalText, textChunkLimit);
           if (renderedMessages.length === 1 && renderedMessages[0].msgType === "interactive") {
             await updateCard(buildFinalStreamingCardData({
               finalMessage: renderedMessages[0],
-              summaryText: buildStreamingSummary(finalBodyText || finalPreludeText || toolsText),
+              summaryText,
             }));
             return;
           }
 
-          await updateElement(getStreamingBodyElementId(), finalBodyText);
-          await updateElement(getStreamingToolsElementId(), toolsText);
+          if (
+            renderedMessages.length === 1
+            && renderedMessages[0]
+            && (
+              (!finalBodyText.trim() && currentBodyText.trim())
+              || (!toolsText.trim() && currentToolsText.trim())
+            )
+          ) {
+            await updateCard(buildFinalStreamingCardData({
+              finalMessage: renderedMessages[0],
+              summaryText,
+            }));
+            return;
+          }
+
+          if (finalBodyText !== currentBodyText && finalBodyText.trim()) {
+            await updateElement(getStreamingBodyElementId(), finalBodyText);
+            currentBodyText = finalBodyText;
+          }
+          if (toolsText !== currentToolsText && toolsText.trim()) {
+            await updateElement(getStreamingToolsElementId(), toolsText);
+            currentToolsText = toolsText;
+          }
           await updateSettings(buildStreamingCardSettings({
             streamingMode: false,
-            summaryText: buildStreamingSummary(finalBodyText || finalPreludeText || toolsText),
+            summaryText,
           }));
         },
       };
