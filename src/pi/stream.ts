@@ -599,6 +599,12 @@ function formatToolCallLines(toolCall: ToolCallState): string[] {
   const statusLabel = formatToolStatus(toolCall.status);
   const statusText = statusLabel ? ` ${statusLabel}` : "";
   const toolEmoji = "🛠️";
+  if (toolCall.toolName === "read") {
+    const readSummary = toolCall.argsSummary ?? toolCall.resultSummary;
+    const readSuffix = readSummary ? ` : ${readSummary}` : "";
+    return [`${toolEmoji} ${toolCall.toolName}${readSuffix}`];
+  }
+
   const primarySummary = toolCall.showOutputSummary
     ? (toolCall.argsSummary ?? toolCall.resultSummary)
     : (toolCall.resultSummary ?? toolCall.argsSummary);

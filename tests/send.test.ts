@@ -327,7 +327,7 @@ describe("send helpers", () => {
 
     expect(stream).not.toBeNull();
     await stream!.updateBody("hello world");
-    await stream!.updateTools("🛠️ read 运行中: package.json");
+    await stream!.updateTools("🛠️ read : package.json");
     await stream!.finish("hello world", 2000);
 
     expect(mockCardContent).toHaveBeenNthCalledWith(1, {
@@ -347,7 +347,7 @@ describe("send helpers", () => {
         element_id: "stream_tools",
       },
       data: expect.objectContaining({
-        content: "🛠️ read 运行中: package.json",
+        content: "🛠️ read : package.json",
         sequence: 2,
         uuid: expect.any(String),
       }),
@@ -381,8 +381,8 @@ describe("send helpers", () => {
     const stream = await startStreamingMessage("ou_1", "hello");
 
     expect(stream).not.toBeNull();
-    await stream!.updateTools("🛠️ read 运行中: package.json");
-    await stream!.finish(longBody, 2000, " ---\n**工具调用**\n🛠️ read: package.json");
+    await stream!.updateTools("🛠️ read : package.json");
+    await stream!.finish(longBody, 2000, " ---\n**工具调用**\n🛠️ read : package.json");
 
     expect(mockCardContent).toHaveBeenNthCalledWith(1, {
       path: {
@@ -390,7 +390,7 @@ describe("send helpers", () => {
         element_id: "stream_tools",
       },
       data: expect.objectContaining({
-        content: "🛠️ read 运行中: package.json",
+        content: "🛠️ read : package.json",
         sequence: 1,
         uuid: expect.any(String),
       }),
@@ -412,7 +412,7 @@ describe("send helpers", () => {
         element_id: "stream_tools",
       },
       data: expect.objectContaining({
-        content: " ---\n**工具调用**\n🛠️ read: package.json",
+        content: " ---\n**工具调用**\n🛠️ read : package.json",
         sequence: 3,
         uuid: expect.any(String),
       }),
@@ -631,12 +631,12 @@ describe("send helpers", () => {
     );
 
     const stream = await messenger.startStreamingMessage("ou_1", "init");
-    await stream!.finish("最终完整正文", 2000, " ---\n**工具调用**\n🛠️ read: src/index.ts");
+    await stream!.finish("最终完整正文", 2000, " ---\n**工具调用**\n🛠️ read : src/index.ts");
 
     expect(quotedMessageStore.writeQuotedMessage).toHaveBeenCalledWith({
       messageId: "om_stream_cache_1",
       messageType: "interactive",
-      text: "最终完整正文\n\n ---\n**工具调用**\n🛠️ read: src/index.ts",
+      text: "最终完整正文\n\n ---\n**工具调用**\n🛠️ read : src/index.ts",
     });
   });
 
@@ -688,14 +688,14 @@ describe("send helpers", () => {
     await stream!.finish(
       "最终完整正文",
       2000,
-      " ---\n**工具调用**\n🛠️ read: src/index.ts",
+      " ---\n**工具调用**\n🛠️ read : src/index.ts",
       " ---\n**语音转录结果**\n你好",
     );
 
     expect(quotedMessageStore.writeQuotedMessage).toHaveBeenCalledWith({
       messageId: "om_stream_cache_2",
       messageType: "interactive",
-      text: "最终完整正文\n\n ---\n**语音转录结果**\n你好\n\n ---\n**工具调用**\n🛠️ read: src/index.ts",
+      text: "最终完整正文\n\n ---\n**语音转录结果**\n你好\n\n ---\n**工具调用**\n🛠️ read : src/index.ts",
     });
   });
 
