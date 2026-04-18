@@ -39,6 +39,19 @@ const PROMPT_TOTAL_TIMEOUT_MS = 30 * 60 * 1000;
 const STREAMING_UPDATE_INTERVAL_MS = 300;
 const MAX_VISIBLE_TOOL_CALLS = 5;
 const TOOL_SUMMARY_MAX_CHARS = 80;
+const TOOL_PROGRESS_SUMMARY_FIELDS = [
+  "message",
+  "summary",
+  "result",
+  "output",
+  "title",
+  "document_url",
+  "document_id",
+  "file_name",
+  "file_path",
+  "path",
+  "name",
+];
 
 type PromptMessenger = Pick<
   FeishuMessenger,
@@ -537,6 +550,19 @@ function extractToolResultDetails(result: unknown): Record<string, unknown> | un
   return raw;
 }
 
+function extractExplicitToolResultDetails(result: unknown): Record<string, unknown> | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return undefined;
+  }
+
+  const details = (result as Record<string, unknown>).details;
+  if (details && typeof details === "object" && !Array.isArray(details)) {
+    return details as Record<string, unknown>;
+  }
+
+  return undefined;
+}
+
 function readStringField(
   value: Record<string, unknown> | undefined,
   key: string,
@@ -649,25 +675,22 @@ function summarizeToolArgs(args: unknown): string | undefined {
 }
 
 function summarizeToolProgress(result: unknown): string | undefined {
+  const explicitDetails = extractExplicitToolResultDetails(result);
+  const explicitSummary = summarizeToolDetails(explicitDetails);
+  if (explicitSummary) return explicitSummary;
+
   const contentText = extractToolContentText(result);
   if (contentText) return contentText;
 
   const details = extractToolResultDetails(result);
-  const preferred = readPreferredSummaryField(details, [
-    "message",
-    "summary",
-    "result",
-    "output",
-    "title",
-    "document_url",
-    "document_id",
-    "file_name",
-    "file_path",
-    "path",
-  ]);
-  if (preferred) return preferred;
+  const detailsSummary = summarizeToolDetails(details);
+  if (detailsSummary) return detailsSummary;
 
   return summarizeUnknownValue(details);
+}
+
+function summarizeToolDetails(details: Record<string, unknown> | undefined): string | undefined {
+  return readPreferredSummaryField(details, TOOL_PROGRESS_SUMMARY_FIELDS);
 }
 
 function extractToolContentText(result: unknown): string | undefined {
@@ -704,6 +727,25 @@ function readPreferredSummaryField(
   }
 
   const record = value as Record<string, unknown>;
+  const direct = readDirectPreferredSummaryField(record, keys);
+  if (direct) return direct;
+
+  const nested = readNestedPreferredSummaryField(record, keys);
+  if (nested) return nested;
+
+  for (const field of Object.values(record)) {
+    if (typeof field === "string" && field.trim()) {
+      return normalizeToolSummary(field);
+    }
+  }
+
+  return undefined;
+}
+
+function readDirectPreferredSummaryField(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
   for (const key of keys) {
     const field = record[key];
     if (typeof field === "string" && field.trim()) {
@@ -711,10 +753,31 @@ function readPreferredSummaryField(
     }
   }
 
-  for (const field of Object.values(record)) {
-    if (typeof field === "string" && field.trim()) {
-      return normalizeToolSummary(field);
+  return undefined;
+}
+
+function readNestedPreferredSummaryField(
+  value: unknown,
+  keys: string[],
+  depth: number = 0,
+): string | undefined {
+  if (depth >= 2 || !value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const values = Array.isArray(value) ? value : Object.values(value);
+  for (const field of values) {
+    if (!field || typeof field !== "object") {
+      continue;
     }
+
+    if (!Array.isArray(field)) {
+      const preferred = readDirectPreferredSummaryField(field as Record<string, unknown>, keys);
+      if (preferred) return preferred;
+    }
+
+    const nested = readNestedPreferredSummaryField(field, keys, depth + 1);
+    if (nested) return nested;
   }
 
   return undefined;

@@ -387,6 +387,68 @@ describe("promptSession", () => {
     );
   });
 
+  it("结构化工具结果应优先展示 details 摘要而不是整段 JSON", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const fileDetails = {
+      open_id: "ou_f63b0f6d9b91dca7dc09eca00b02c8af",
+      path: "/Users/williamsandy/code/pi-gateway/reports/final.pdf",
+      file_name: "final.pdf",
+      file_key: "file_1",
+      message_id: "om_1",
+    };
+    const cronDetails = {
+      action: "add",
+      job: {
+        id: "cron_1",
+        name: "提醒我喝水",
+      },
+    };
+    const session = createSession([
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_1",
+        toolName: "feishu_file_send",
+        args: { path: "reports/final.pdf" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_1",
+        toolName: "feishu_file_send",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: JSON.stringify(fileDetails, null, 2) }],
+          details: fileDetails,
+        },
+      } as any,
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_2",
+        toolName: "cron_task",
+        args: { action: "add", name: "提醒我喝水" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_2",
+        toolName: "cron_task",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: JSON.stringify(cronDetails, null, 2) }],
+          details: cronDetails,
+        },
+      } as any,
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, false, 2000, true);
+
+    expect(result).toEqual({ text: "", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      " ---\n**工具调用**\n🛠️ feishu_file_send: final.pdf\n🛠️ cron_task: 提醒我喝水",
+      2000,
+    );
+  });
+
   it("reaction 添加失败时，仍应继续处理并发送回复", async () => {
     mockAddProcessingReaction.mockResolvedValue(null);
     const { promptSession } = await import("../src/pi/stream.js");
