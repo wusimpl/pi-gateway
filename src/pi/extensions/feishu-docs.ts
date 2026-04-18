@@ -13,6 +13,11 @@ const DOCX_ONLY_GUIDELINES = [
   "修改已有文档前，优先先读取当前内容，避免误删用户已有正文。",
 ];
 
+const DOCX_IMAGE_GUIDELINES = [
+  "如果正文里包含可直接访问的真实图片 URL 或 data URL，默认应让文档直接嵌图，不要主动改成“保留原图链接”。",
+  "只有在图片不是直链、下载失败、返回的不是图片、需要登录，或写入失败时，才退回成图片链接，并在最终回复里明确说清原因。",
+];
+
 const DOCX_DOCUMENT_REF_FIELDS = {
   document_id: Type.Optional(
     Type.String({ description: "飞书 docx document_id。和 document_url 二选一。" }),
@@ -74,6 +79,7 @@ export function createFeishuDocsExtension(
     promptSnippet: "feishu_doc_create: 创建飞书 docx 文档，可选一次性写入 markdown/html 正文。",
     promptGuidelines: [
       ...DOCX_ONLY_GUIDELINES,
+      ...DOCX_IMAGE_GUIDELINES,
       "新建文档后，默认会尝试把文档所有权转给当前飞书私聊用户，同时给应用自己保留管理权限。",
       "如果所有权转移失败，要明确告诉用户文档虽然已创建，但当前仍不是用户本人所有。",
     ],
@@ -165,7 +171,7 @@ export function createFeishuDocsExtension(
     description:
       "往飞书新版文档 docx 的根节点末尾追加正文内容。只支持 docx，不支持 wiki。",
     promptSnippet: "feishu_doc_append: 往飞书 docx 文档末尾追加 markdown/html 内容。",
-    promptGuidelines: DOCX_ONLY_GUIDELINES,
+    promptGuidelines: [...DOCX_ONLY_GUIDELINES, ...DOCX_IMAGE_GUIDELINES],
     parameters: Type.Object({
       ...DOCX_DOCUMENT_REF_FIELDS,
       content: Type.String({ description: "要追加进去的正文内容。" }),
@@ -193,7 +199,7 @@ export function createFeishuDocsExtension(
     description:
       "整篇替换飞书新版文档 docx 的正文内容。会先写入新正文，确认成功后再删旧内容。只支持 docx，不支持 wiki。",
     promptSnippet: "feishu_doc_replace: 整篇替换飞书 docx 正文，会先写新内容再删旧内容。",
-    promptGuidelines: DOCX_ONLY_GUIDELINES,
+    promptGuidelines: [...DOCX_ONLY_GUIDELINES, ...DOCX_IMAGE_GUIDELINES],
     parameters: Type.Object({
       ...DOCX_DOCUMENT_REF_FIELDS,
       content: Type.String({ description: "替换后的完整正文内容。" }),

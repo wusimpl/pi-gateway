@@ -202,6 +202,22 @@ describe("feishu docs extension", () => {
     expect(appendTool.description).toContain("只支持 docx，不支持 wiki");
   });
 
+  it("创建和写入工具会明确要求优先嵌图，不要默认只留图片链接", () => {
+    const { tools } = collectTools();
+    const createTool = tools.find((tool) => tool.name === "feishu_doc_create");
+    const appendTool = tools.find((tool) => tool.name === "feishu_doc_append");
+    const replaceTool = tools.find((tool) => tool.name === "feishu_doc_replace");
+
+    for (const tool of [createTool, appendTool, replaceTool]) {
+      expect(tool.promptGuidelines).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("默认应让文档直接嵌图"),
+          expect.stringContaining("才退回成图片链接"),
+        ]),
+      );
+    }
+  });
+
   it("删整篇文档时，没有 confirm=true 就会直接拦住", async () => {
     const { tools, service } = collectTools();
     const deleteTool = tools.find((tool) => tool.name === "feishu_doc_delete_document");
