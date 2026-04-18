@@ -251,16 +251,16 @@ describe("promptSession", () => {
     expect(mockStartStreamingMessage).toHaveBeenCalledWith(
       "ou_1",
       "",
-      " ---\n**工具调用**\nread 运行中: src/index.ts",
+      " ---\n**工具调用**\n📖 read 运行中: src/index.ts",
       "",
     );
     expect(mockStreamingMessage.updateTools).toHaveBeenCalledWith(
-      " ---\n**工具调用**\nread 运行中: import { loadConfig } from \"./config.js\";",
+      " ---\n**工具调用**\n📖 read 运行中: import { loadConfig } from \"./config.js\";",
     );
     expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
       "我先看了入口文件。",
       2000,
-      " ---\n**工具调用**\nread 完成: import { loadConfig } from \"./config.js\";",
+      " ---\n**工具调用**\n📖 read: import { loadConfig } from \"./config.js\";",
       "",
     );
   });
@@ -322,7 +322,7 @@ describe("promptSession", () => {
     expect(mockStartStreamingMessage).not.toHaveBeenCalled();
     expect(mockSendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      " ---\n**工具调用**\nread 完成: package.json",
+      " ---\n**工具调用**\n📖 read: package.json",
       2000,
     );
   });
@@ -353,7 +353,7 @@ describe("promptSession", () => {
     expect(result).toEqual({ text: "", error: undefined });
     expect(mockSendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      " ---\n**工具调用**\nbash 完成: ls ~/.pi/agent/skills\noutput: feishu-docs feishu-files obsidian-notes tavily-search",
+      " ---\n**工具调用**\n💻 bash: ls ~/.pi/agent/skills\n📤 output: feishu-docs feishu-files obsidian-notes tavily-search",
       2000,
     );
   });
@@ -384,7 +384,7 @@ describe("promptSession", () => {
     expect(result).toEqual({ text: "", error: undefined });
     expect(mockSendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      " ---\n**工具调用**\nbash 完成: rm -rf /tmp/example\noutput: (no output)",
+      " ---\n**工具调用**\n💻 bash: rm -rf /tmp/example\n📤 output: (no output)",
       2000,
     );
   });

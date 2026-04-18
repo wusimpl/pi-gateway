@@ -597,18 +597,20 @@ function formatToolCallsSection(toolCallMap: ReadonlyMap<string, ToolCallState>)
 
 function formatToolCallLines(toolCall: ToolCallState): string[] {
   const statusLabel = formatToolStatus(toolCall.status);
+  const statusText = statusLabel ? ` ${statusLabel}` : "";
+  const toolEmoji = formatToolEmoji(toolCall.toolName);
   const primarySummary = toolCall.showOutputSummary
     ? (toolCall.argsSummary ?? toolCall.resultSummary)
     : (toolCall.resultSummary ?? toolCall.argsSummary);
   const summary = primarySummary ? `: ${primarySummary}` : "";
-  const lines = [`${toolCall.toolName} ${statusLabel}${summary}`];
+  const lines = [`${toolEmoji} ${toolCall.toolName}${statusText}${summary}`];
 
   if (
     toolCall.showOutputSummary &&
     toolCall.argsSummary &&
     toolCall.resultSummary
   ) {
-    lines.push(`output: ${toolCall.resultSummary}`);
+    lines.push(`📤 output: ${toolCall.resultSummary}`);
   }
 
   return lines;
@@ -619,10 +621,18 @@ function formatToolStatus(status: ToolCallState["status"]): string {
     case "running":
       return "运行中";
     case "done":
-      return "完成";
+      return "";
     case "error":
       return "失败";
   }
+}
+
+function formatToolEmoji(toolName: string): string {
+  if (toolName === "bash") return "💻";
+  if (toolName === "read") return "📖";
+  if (toolName.startsWith("feishu_")) return "📨";
+  if (toolName === "cron_task") return "⏰";
+  return "🛠️";
 }
 
 function summarizeToolArgs(args: unknown): string | undefined {
