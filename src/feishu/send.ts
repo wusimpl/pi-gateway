@@ -28,6 +28,9 @@ import {
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
 const MAX_FEISHU_FILE_SIZE_BYTES = 30 * 1024 * 1024;
+// 飞书会把“旧文本是新文本前缀”的更新做成打字机效果；工具区用零宽字符打断前缀关系，保持即时上屏。
+const INSTANT_TOOL_UPDATE_SEED = "\u200D";
+const INSTANT_TOOL_UPDATE_MARKERS = ["\u200B", "\u200C"];
 
 export { chunkText } from "./text.js";
 
@@ -328,13 +331,14 @@ export function createFeishuMessenger(
     preludeText: string = "",
   ): Promise<FeishuStreamingMessage | null> {
     try {
+      const hasInitialToolsText = toolsText.trim().length > 0;
       const createResp = await retryRequest("飞书流式卡片创建", { openId }, () => client.cardkit.v1.card.create({
         data: {
           type: "card_json",
           data: buildStreamingCardData({
             preludeText,
             bodyText,
-            toolsText,
+            toolsText: hasInitialToolsText ? INSTANT_TOOL_UPDATE_SEED : toolsText,
           }),
         },
       }));
@@ -358,7 +362,9 @@ export function createFeishuMessenger(
 
       let sequence = 0;
       let currentBodyText = bodyText;
-      let currentToolsText = toolsText;
+      let currentToolsText = "";
+      let toolsSeeded = hasInitialToolsText;
+      let toolsUpdateRevision = 0;
       const nextSequence = () => {
         sequence += 1;
         return sequence;
@@ -410,14 +416,27 @@ export function createFeishuMessenger(
           }));
       }
 
+      async function updateToolsElement(nextToolsText: string): Promise<void> {
+        if (nextToolsText.trim() && !toolsSeeded) {
+          await updateElement(getStreamingToolsElementId(), INSTANT_TOOL_UPDATE_SEED);
+          toolsSeeded = true;
+        }
+        await updateElement(getStreamingToolsElementId(), markInstantToolUpdate(nextToolsText, toolsUpdateRevision));
+        toolsUpdateRevision += 1;
+        currentToolsText = nextToolsText;
+      }
+
+      if (hasInitialToolsText) {
+        await updateToolsElement(toolsText);
+      }
+
       return {
         async updateBody(nextBodyText: string): Promise<void> {
           await updateElement(getStreamingBodyElementId(), nextBodyText);
           currentBodyText = nextBodyText;
         },
         async updateTools(nextToolsText: string): Promise<void> {
-          await updateElement(getStreamingToolsElementId(), nextToolsText);
-          currentToolsText = nextToolsText;
+          await updateToolsElement(nextToolsText);
         },
         async finish(
           finalBodyText: string,
@@ -463,8 +482,7 @@ export function createFeishuMessenger(
             currentBodyText = finalBodyText;
           }
           if (toolsText !== currentToolsText && toolsText.trim()) {
-            await updateElement(getStreamingToolsElementId(), toolsText);
-            currentToolsText = toolsText;
+            await updateToolsElement(toolsText);
           }
           await updateSettings(buildStreamingCardSettings({
             streamingMode: false,
@@ -532,6 +550,16 @@ export function createFeishuMessenger(
 
 function getDefaultFeishuMessenger(): FeishuMessenger {
   return createFeishuMessenger(getLarkClient() as unknown as FeishuApiClient);
+}
+
+function markInstantToolUpdate(content: string, revision: number): string {
+  if (!content) return content;
+  const marker = INSTANT_TOOL_UPDATE_MARKERS[revision % INSTANT_TOOL_UPDATE_MARKERS.length];
+  const firstLineBreak = content.indexOf("\n");
+  if (firstLineBreak < 0) {
+    return `${marker}${content}`;
+  }
+  return `${content.slice(0, firstLineBreak + 1)}${marker}${content.slice(firstLineBreak + 1)}`;
 }
 
 export async function sendFeishuMessage(

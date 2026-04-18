@@ -11,6 +11,11 @@ const mockCardCreate = vi.fn();
 const mockCardUpdate = vi.fn();
 const mockCardSettings = vi.fn();
 const mockCardContent = vi.fn();
+const instantToolMarkerPattern = /[\u200B-\u200D]/g;
+
+function stripInstantToolMarkers(content: string): string {
+  return content.replace(instantToolMarkerPattern, "");
+}
 
 vi.mock("../src/feishu/client.js", () => ({
   getLarkClient: () => ({
@@ -315,6 +320,30 @@ describe("send helpers", () => {
     ]);
   });
 
+  it("startStreamingMessage: 初始工具区应即时刷新而不是参与打字机输出", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_tool_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_tool_1" } });
+    mockCardContent.mockResolvedValue({});
+    const { startStreamingMessage } = await import("../src/feishu/send.js");
+    const toolsText = " ---\n**工具调用**\n🛠️ read : package.json";
+
+    await startStreamingMessage("ou_1", "", toolsText);
+
+    const cardPayload = mockCardCreate.mock.calls[0][0];
+    const cardJson = JSON.parse(cardPayload.data.data);
+    const initialTools = cardJson.body.elements.find((element: any) => element.element_id === "stream_tools");
+    expect(stripInstantToolMarkers(initialTools.content)).toBe("");
+
+    expect(mockCardContent).toHaveBeenCalledTimes(1);
+    const updatePayload = mockCardContent.mock.calls[0][0];
+    expect(updatePayload.path).toEqual({
+      card_id: "card_tool_1",
+      element_id: "stream_tools",
+    });
+    expect(stripInstantToolMarkers(updatePayload.data.content)).toBe(toolsText);
+    expect(updatePayload.data.content).not.toBe(toolsText);
+  });
+
   it("startStreamingMessage: 只更新正文并在结束时关闭流式模式", async () => {
     mockCardCreate.mockResolvedValue({ data: { card_id: "card_1" } });
     mockCreate.mockResolvedValue({ data: { message_id: "om_stream_1" } });
@@ -347,19 +376,33 @@ describe("send helpers", () => {
         element_id: "stream_tools",
       },
       data: expect.objectContaining({
-        content: "🛠️ read : package.json",
+        content: expect.any(String),
         sequence: 2,
         uuid: expect.any(String),
       }),
     });
-    expect(mockCardContent).toHaveBeenCalledTimes(2);
+    expect(stripInstantToolMarkers(mockCardContent.mock.calls[1][0].data.content)).toBe("");
+    expect(mockCardContent).toHaveBeenNthCalledWith(3, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_tools",
+      },
+      data: expect.objectContaining({
+        content: expect.any(String),
+        sequence: 3,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(stripInstantToolMarkers(mockCardContent.mock.calls[2][0].data.content)).toBe("🛠️ read : package.json");
+    expect(mockCardContent.mock.calls[2][0].data.content).not.toBe("🛠️ read : package.json");
+    expect(mockCardContent).toHaveBeenCalledTimes(3);
     expect(mockCardContent.mock.calls.some((call) => call[0].data.content === "")).toBe(false);
     expect(mockCardUpdate).toHaveBeenCalledWith({
       path: {
         card_id: "card_1",
       },
       data: expect.objectContaining({
-        sequence: 3,
+        sequence: 4,
         uuid: expect.any(String),
       }),
     });
@@ -390,7 +433,7 @@ describe("send helpers", () => {
         element_id: "stream_tools",
       },
       data: expect.objectContaining({
-        content: "🛠️ read : package.json",
+        content: expect.any(String),
         sequence: 1,
         uuid: expect.any(String),
       }),
@@ -398,31 +441,48 @@ describe("send helpers", () => {
     expect(mockCardContent).toHaveBeenNthCalledWith(2, {
       path: {
         card_id: "card_1",
-        element_id: "stream_body",
+        element_id: "stream_tools",
       },
       data: expect.objectContaining({
-        content: longBody,
+        content: expect.any(String),
         sequence: 2,
         uuid: expect.any(String),
       }),
     });
+    expect(stripInstantToolMarkers(mockCardContent.mock.calls[0][0].data.content)).toBe("");
+    expect(stripInstantToolMarkers(mockCardContent.mock.calls[1][0].data.content)).toBe("🛠️ read : package.json");
+    expect(mockCardContent.mock.calls[1][0].data.content).not.toBe("🛠️ read : package.json");
     expect(mockCardContent).toHaveBeenNthCalledWith(3, {
+      path: {
+        card_id: "card_1",
+        element_id: "stream_body",
+      },
+      data: expect.objectContaining({
+        content: longBody,
+        sequence: 3,
+        uuid: expect.any(String),
+      }),
+    });
+    expect(mockCardContent).toHaveBeenNthCalledWith(4, {
       path: {
         card_id: "card_1",
         element_id: "stream_tools",
       },
       data: expect.objectContaining({
-        content: " ---\n**工具调用**\n🛠️ read : package.json",
-        sequence: 3,
+        content: expect.any(String),
+        sequence: 4,
         uuid: expect.any(String),
       }),
     });
+    expect(stripInstantToolMarkers(mockCardContent.mock.calls[3][0].data.content)).toBe(
+      " ---\n**工具调用**\n🛠️ read : package.json",
+    );
     expect(mockCardSettings).toHaveBeenCalledWith({
       path: {
         card_id: "card_1",
       },
       data: expect.objectContaining({
-        sequence: 4,
+        sequence: 5,
         uuid: expect.any(String),
       }),
     });
