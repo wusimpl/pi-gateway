@@ -22,7 +22,11 @@ import type { UserIdentity } from "../types.js";
 import { parseBridgeCommand } from "./commands.js";
 import { createCommandService, type CommandService } from "./command-service.js";
 import { logger } from "./logger.js";
-import { createPromptService, type PromptService } from "./prompt-service.js";
+import {
+  createPromptService,
+  type PromptService,
+  type RunningPromptBehavior,
+} from "./prompt-service.js";
 import { createRestartService } from "./restart.js";
 import { createRuntimeConfigStore } from "./runtime-config.js";
 import {
@@ -49,7 +53,7 @@ export interface MessageRouter {
 interface MessageRouterDeps {
   stateStore: Pick<RuntimeStateStore, "isDuplicate">;
   commandService: Pick<CommandService, "handleBridgeCommand">;
-  promptService: Pick<PromptService, "handleUserPrompt">;
+  promptService: Pick<PromptService, "handleUserPrompt" | "queueRunningPrompt">;
   parseMessageEvent?: typeof parseMessageEvent;
   isSupportedP2PMessage?: typeof isSupportedP2PMessage;
   normalizeFeishuInboundMessage?: typeof normalizeFeishuInboundMessage;
@@ -100,27 +104,66 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     });
 
     const bridgeCommand = message.kind === "text" ? parseBridgeCommand(message.text) : null;
+    if (bridgeCommand?.name === "next") {
+      if (!bridgeCommand.args) {
+        await deps.commandService.handleBridgeCommand(identity, bridgeCommand);
+        return;
+      }
+
+      await enqueuePrompt(identity, createTextPromptMessage(message, bridgeCommand.args), "followUp");
+      return;
+    }
+
     if (bridgeCommand) {
       await deps.commandService.handleBridgeCommand(identity, bridgeCommand);
       return;
     }
 
-    await enqueuePrompt(identity, message);
+    await enqueuePrompt(identity, message, "steer");
   }
 
-  function enqueuePrompt(identity: UserIdentity, message: FeishuInboundMessage): Promise<void> {
+  function enqueuePrompt(
+    identity: UserIdentity,
+    message: FeishuInboundMessage,
+    runningBehavior: RunningPromptBehavior,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const openId = identity.openId;
-      const queue = promptQueues.get(openId) ?? [];
-      queue.push({
-        identity,
-        message,
-        resolve,
-        reject,
-      });
-      promptQueues.set(openId, queue);
-      void drainPromptQueue(openId);
+      const hasLocalBacklog = (promptQueues.get(openId)?.length ?? 0) > 0;
+      if (
+        drainingUsers.has(openId)
+        && message.kind === "text"
+        && (runningBehavior === "steer" || !hasLocalBacklog)
+      ) {
+        void deps.promptService.queueRunningPrompt(identity, message, runningBehavior)
+          .then((result) => {
+            if (result === "queued") {
+              resolve();
+              return;
+            }
+            pushPromptQueue(openId, { identity, message, resolve, reject });
+          })
+          .catch((error) => {
+            logger.warn("运行中消息入队失败，退回普通队列", {
+              openId,
+              messageId: message.messageId,
+              behavior: runningBehavior,
+              error: String(error),
+            });
+            pushPromptQueue(openId, { identity, message, resolve, reject });
+          });
+        return;
+      }
+
+      pushPromptQueue(openId, { identity, message, resolve, reject });
     });
+  }
+
+  function pushPromptQueue(openId: string, prompt: QueuedPrompt): void {
+    const queue = promptQueues.get(openId) ?? [];
+    queue.push(prompt);
+    promptQueues.set(openId, queue);
+    void drainPromptQueue(openId);
   }
 
   async function drainPromptQueue(openId: string): Promise<void> {
@@ -161,6 +204,17 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 
   return {
     handleFeishuMessage,
+  };
+}
+
+function createTextPromptMessage(message: FeishuInboundMessage, text: string): FeishuInboundMessage {
+  if (message.kind !== "text") {
+    return message;
+  }
+  return {
+    ...message,
+    rawContent: JSON.stringify({ text }),
+    text,
   };
 }
 

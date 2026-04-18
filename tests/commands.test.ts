@@ -57,6 +57,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /next with args", () => {
+    expect(parseBridgeCommand("/next after this")).toEqual({
+      name: "next",
+      args: "after this",
+    });
+  });
+
   it("should parse /restart", () => {
     expect(parseBridgeCommand("/restart")).toEqual({
       name: "restart",
@@ -156,6 +163,10 @@ describe("handleBridgeCommand", () => {
 
   it("`/restart` 应返回重启提示", () => {
     expect(handleBridgeCommand("restart", {})).toBe("🔄 正在重启网关...");
+  });
+
+  it("`/next` 没有正文时应返回用法", () => {
+    expect(handleBridgeCommand("next", {})).toBe("用法：/next <要排到当前任务后处理的内容>");
   });
 
   it("`/sessions` 应返回最近会话列表", () => {

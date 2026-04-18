@@ -157,6 +157,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleReactionCommand(identity, command);
       } else if (command.name === "stop") {
         await handleStopCommand(identity, command);
+      } else if (command.name === "next") {
+        await sendCommandReply(openId, handleBridgeCommand(command, { openId }));
       } else if (command.name === "restart") {
         await handleRestartCommand(identity, command);
       }

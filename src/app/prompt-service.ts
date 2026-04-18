@@ -3,7 +3,7 @@ import { formatError } from "../feishu/format.js";
 import { readFeishuQuotedMessage } from "../feishu/inbound/message.js";
 import { downloadFeishuResource } from "../feishu/inbound/resource.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
-import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
+import type { FeishuInboundMessage, FeishuMediaProcessingOptions } from "../feishu/inbound/types.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import type { PromptRunner } from "../pi/stream.js";
 import type { SessionService } from "../pi/sessions.js";
@@ -18,7 +18,15 @@ import type { RuntimeConfigStore } from "./runtime-config.js";
 
 export interface PromptService {
   handleUserPrompt(identity: UserIdentity, message: FeishuInboundMessage): Promise<void>;
+  queueRunningPrompt(
+    identity: UserIdentity,
+    message: FeishuInboundMessage,
+    behavior: RunningPromptBehavior,
+  ): Promise<RunningPromptQueueResult>;
 }
+
+export type RunningPromptBehavior = "steer" | "followUp";
+export type RunningPromptQueueResult = "queued" | "not_running" | "unsupported";
 
 interface PromptServiceDeps {
   config: Pick<
@@ -63,6 +71,25 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     readQuotedMessage: readCachedQuotedMessage,
   };
 
+  function buildPromptPreparationOptions(identity: UserIdentity): FeishuMediaProcessingOptions {
+    const audioTranscribeProvider = deps.runtimeConfig
+      ? deps.runtimeConfig.getAudioTranscribeProvider()
+      : deps.config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER;
+
+    return {
+      workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
+      ollamaBaseUrl: deps.config.FEISHU_MEDIA_OLLAMA_BASE_URL,
+      ocrModel: deps.config.FEISHU_MEDIA_OCR_MODEL,
+      audioTranscribeProvider,
+      audioTranscribeScript: deps.config.FEISHU_AUDIO_TRANSCRIBE_SCRIPT,
+      audioLanguage: deps.config.FEISHU_AUDIO_TRANSCRIBE_LANGUAGE,
+      audioTranscribeSenseVoicePython: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON,
+      audioTranscribeSenseVoiceModel: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL,
+      audioTranscribeSenseVoiceDevice: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE,
+      audioTranscribeDoubaoApiKey: deps.config.FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY,
+    };
+  }
+
   async function handleUserPrompt(
     identity: UserIdentity,
     message: FeishuInboundMessage,
@@ -100,27 +127,13 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       }
 
       const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
-      const audioTranscribeProvider = deps.runtimeConfig
-        ? deps.runtimeConfig.getAudioTranscribeProvider()
-        : deps.config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER;
       const processingReactionType = deps.runtimeConfig
         ? deps.runtimeConfig.getProcessingReactionType()
         : deps.config.FEISHU_PROCESSING_REACTION_TYPE;
       const streamingEnabled = deps.runtimeConfig
         ? deps.runtimeConfig.getStreamingEnabled()
         : deps.config.STREAMING_ENABLED;
-      const promptInput = await preparePromptInput(enrichedMessage, piSession, {
-        workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
-        ollamaBaseUrl: deps.config.FEISHU_MEDIA_OLLAMA_BASE_URL,
-        ocrModel: deps.config.FEISHU_MEDIA_OCR_MODEL,
-        audioTranscribeProvider,
-        audioTranscribeScript: deps.config.FEISHU_AUDIO_TRANSCRIBE_SCRIPT,
-        audioLanguage: deps.config.FEISHU_AUDIO_TRANSCRIBE_LANGUAGE,
-        audioTranscribeSenseVoicePython: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON,
-        audioTranscribeSenseVoiceModel: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL,
-        audioTranscribeSenseVoiceDevice: deps.config.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE,
-        audioTranscribeDoubaoApiKey: deps.config.FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY,
-      }, {
+      const promptInput = await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity), {
         downloadResource: deps.downloadResource,
       });
       if (deps.runtimeState.isStopRequested(openId, messageId)) {
@@ -162,8 +175,78 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     }
   }
 
+  async function queueRunningPrompt(
+    identity: UserIdentity,
+    message: FeishuInboundMessage,
+    behavior: RunningPromptBehavior,
+  ): Promise<RunningPromptQueueResult> {
+    if (message.kind !== "text") {
+      return "unsupported";
+    }
+
+    const openId = identity.openId;
+    const messageId = message.messageId;
+    if (deps.runtimeState.isDraining()) {
+      return "not_running";
+    }
+
+    let activeSessionId = "unknown";
+    let piSession: Awaited<ReturnType<SessionService["getOrCreateActiveSession"]>>["piSession"];
+    try {
+      const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+      activeSessionId = sessionState.activeSessionId;
+      piSession = sessionState.piSession;
+    } catch (error) {
+      logger.warn("获取运行中 Pi session 失败，退回普通队列", { openId, messageId, error: String(error) });
+      return "not_running";
+    }
+
+    if (!piSession.isStreaming) {
+      return "not_running";
+    }
+
+    let promptText: string;
+    try {
+      const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
+      const promptInput = await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity), {
+        downloadResource: deps.downloadResource,
+      });
+      promptText = promptInput.text;
+      if (behavior === "followUp") {
+        await piSession.followUp(promptInput.text, promptInput.images);
+      } else {
+        await piSession.steer(promptInput.text, promptInput.images);
+      }
+    } catch (error) {
+      logger.warn("Pi 运行中队列写入失败，退回普通队列", {
+        openId,
+        sessionId: activeSessionId,
+        messageId,
+        behavior,
+        error: String(error),
+      });
+      return piSession.isStreaming ? "unsupported" : "not_running";
+    }
+
+    try {
+      await deps.sessionService.touchSession(openId, messageId);
+    } catch (error) {
+      logger.warn("运行中队列消息 touch session 失败", { openId, sessionId: activeSessionId, messageId, error: String(error) });
+    }
+
+    logger.info("Pi prompt 已加入运行中队列", {
+      openId,
+      sessionId: activeSessionId,
+      messageId,
+      behavior,
+      textLen: promptText.length,
+    });
+    return "queued";
+  }
+
   return {
     handleUserPrompt,
+    queueRunningPrompt,
   };
 }
 

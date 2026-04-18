@@ -155,4 +155,169 @@ describe("handleFeishuMessage 运行锁", () => {
     expect(mocks.sendTextMessage).not.toHaveBeenCalled();
     expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
   });
+
+  it("运行中收到普通文本时应作为 steer 交给 Pi", async () => {
+    const piSession = {
+      id: "pi_session",
+      isStreaming: true,
+      steer: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+
+    let releasePrompt: (() => void) | undefined;
+    mocks.promptSession.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        releasePrompt = () => resolve({ text: "done", error: undefined });
+      }),
+    );
+
+    const firstCall = handleFeishuMessage({});
+    await vi.waitFor(() => {
+      expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+    });
+
+    mocks.parseMessageEvent.mockReturnValue({
+      ...baseEvent,
+      message: { ...baseEvent.message, messageId: "om_2", content: '{}' },
+    });
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_2",
+      messageType: "text",
+      createTime: "124",
+      rawContent: '{"text":"second"}',
+      text: "second",
+    });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "second", localFiles: [] });
+
+    await handleFeishuMessage({});
+
+    expect(piSession.steer).toHaveBeenCalledWith("second", undefined);
+    expect(piSession.followUp).not.toHaveBeenCalled();
+    expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+
+    releasePrompt?.();
+    await firstCall;
+
+    expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+    expect(mocks.sendTextMessage).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("运行中收到 /next 文本时应作为 follow-up 交给 Pi", async () => {
+    const piSession = {
+      id: "pi_session",
+      isStreaming: true,
+      steer: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+
+    let releasePrompt: (() => void) | undefined;
+    mocks.promptSession.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        releasePrompt = () => resolve({ text: "done", error: undefined });
+      }),
+    );
+
+    const firstCall = handleFeishuMessage({});
+    await vi.waitFor(() => {
+      expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+    });
+
+    mocks.parseMessageEvent.mockReturnValue({
+      ...baseEvent,
+      message: { ...baseEvent.message, messageId: "om_2", content: '{}' },
+    });
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_2",
+      messageType: "text",
+      createTime: "124",
+      rawContent: '{"text":"/next after this"}',
+      text: "/next after this",
+    });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "after this", localFiles: [] });
+
+    await handleFeishuMessage({});
+
+    expect(piSession.followUp).toHaveBeenCalledWith("after this", undefined);
+    expect(piSession.steer).not.toHaveBeenCalled();
+    expect(mocks.prepareFeishuPromptInput).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        messageId: "om_2",
+        text: "after this",
+        rawContent: '{"text":"after this"}',
+      }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+
+    releasePrompt?.();
+    await firstCall;
+  });
+
+  it("空闲时收到 /next 文本应直接作为普通 prompt 处理", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_next_idle",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/next after this"}',
+      text: "/next after this",
+    });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "after this", localFiles: [] });
+    mocks.promptSession.mockResolvedValueOnce({ text: "done", error: undefined });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+    expect(mocks.prepareFeishuPromptInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: "om_next_idle",
+        text: "after this",
+        rawContent: '{"text":"after this"}',
+      }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(mocks.sendTextMessage).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("空 /next 应返回用法，不进入 prompt", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_next_empty",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/next"}',
+      text: "/next",
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.promptSession).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "用法：/next <要排到当前任务后处理的内容>",
+      2000,
+    );
+  });
 });

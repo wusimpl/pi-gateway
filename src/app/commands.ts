@@ -16,6 +16,7 @@ const BRIDGE_COMMANDS = [
   "sessions",
   "resume",
   "stop",
+  "next",
   "restart",
   "cron",
   "stt",
@@ -183,6 +184,8 @@ export function handleBridgeCommand(
       return formatSessionCommandReply(`✅ 已切换到会话: ${context.sessionId ?? "unknown"}`, context.currentModel);
     case "stop":
       return STOP_MESSAGE;
+    case "next":
+      return "用法：/next <要排到当前任务后处理的内容>";
     case "restart":
       return RESTART_MESSAGE;
     case "stt":
