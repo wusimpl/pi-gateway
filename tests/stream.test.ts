@@ -17,8 +17,18 @@ vi.mock("../src/feishu/send.js", () => ({
 
 type StreamEvent =
   | { type: "message_update"; assistantMessageEvent: { type: "text_delta"; delta: string } }
-  | { type: "message_end" }
-  | { type: "agent_end" };
+  | {
+      type: "message_end";
+      message?: {
+        role?: string;
+        stopReason?: string;
+        errorMessage?: string;
+        content?: Array<{ type: string; text?: string }>;
+      };
+    }
+  | { type: "agent_end" }
+  | { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
+  | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
 function createSession(
   events: StreamEvent[],
@@ -632,6 +642,104 @@ describe("promptSession", () => {
 
     expect(result).toEqual({ text: "", error: "boom" });
     expect(mockStartStreamingMessage).not.toHaveBeenCalled();
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("上游返回失败消息但未抛异常时，应返回错误供外层补发", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "403 Forbidden",
+          content: [{ type: "text", text: "" }],
+        },
+      },
+      { type: "agent_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, true);
+
+    expect(result).toEqual({ text: "", error: "403 Forbidden" });
+    expect(mockStartStreamingMessage).not.toHaveBeenCalled();
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("自动重试成功后，不应继续向外暴露第一次失败", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "503 Service Unavailable",
+          content: [{ type: "text", text: "" }],
+        },
+      },
+      {
+        type: "auto_retry_start",
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 2000,
+        errorMessage: "503 Service Unavailable",
+      },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "重试成功" } },
+      {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "重试成功" }],
+        },
+      },
+      { type: "auto_retry_end", success: true, attempt: 1 },
+      { type: "agent_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1");
+
+    expect(result).toEqual({ text: "重试成功", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "重试成功", 2000);
+  });
+
+  it("自动重试耗尽后，应把最终失败透传出去", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "第一次失败",
+          content: [{ type: "text", text: "" }],
+        },
+      },
+      {
+        type: "auto_retry_start",
+        attempt: 1,
+        maxAttempts: 1,
+        delayMs: 2000,
+        errorMessage: "第一次失败",
+      },
+      {
+        type: "message_end",
+        message: {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "503 Service Unavailable",
+          content: [{ type: "text", text: "" }],
+        },
+      },
+      { type: "auto_retry_end", success: false, attempt: 1, finalError: "503 Service Unavailable" },
+      { type: "agent_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1");
+
+    expect(result).toEqual({ text: "", error: "503 Service Unavailable" });
     expect(mockSendRenderedMessage).not.toHaveBeenCalled();
   });
 

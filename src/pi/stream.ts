@@ -256,9 +256,47 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             break;
           case "message_end":
             logger.debug("Pi message_end");
+            {
+              const assistantError = extractAssistantErrorMessage(event.message);
+              if (assistantError) {
+                lastError = assistantError;
+                logger.warn("Pi message_end 返回失败消息", {
+                  openId,
+                  sourceMessageId,
+                  error: assistantError,
+                });
+              }
+            }
             break;
           case "agent_end":
             logger.debug("Pi agent_end");
+            break;
+          case "auto_retry_start":
+            logger.info("Pi prompt 自动重试开始", {
+              openId,
+              sourceMessageId,
+              attempt: event.attempt,
+              maxAttempts: event.maxAttempts,
+              errorMessage: event.errorMessage,
+            });
+            break;
+          case "auto_retry_end":
+            if (event.success) {
+              lastError = undefined;
+              logger.info("Pi prompt 自动重试成功", {
+                openId,
+                sourceMessageId,
+                attempt: event.attempt,
+              });
+            } else if (event.finalError) {
+              lastError = event.finalError;
+              logger.warn("Pi prompt 自动重试结束，最终仍失败", {
+                openId,
+                sourceMessageId,
+                attempt: event.attempt,
+                error: event.finalError,
+              });
+            }
             break;
           case "tool_execution_start":
             logger.debug("Pi tool_execution_start", { toolName: event.toolName });
@@ -561,6 +599,19 @@ function extractExplicitToolResultDetails(result: unknown): Record<string, unkno
   }
 
   return undefined;
+}
+
+function extractAssistantErrorMessage(message: unknown): string | undefined {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return undefined;
+  }
+
+  const record = message as Record<string, unknown>;
+  if (record.role !== "assistant" || record.stopReason !== "error") {
+    return undefined;
+  }
+
+  return readStringField(record, "errorMessage") ?? "处理失败，请稍后重试";
 }
 
 function readStringField(
