@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { handleBridgeCommand, parseBridgeCommand } from "../src/app/commands.js";
+import { formatUnsupportedSlashCommand, handleBridgeCommand, parseBridgeCommand } from "../src/app/commands.js";
 
 describe("parseBridgeCommand", () => {
   it("should parse /new", () => {
@@ -47,6 +47,13 @@ describe("parseBridgeCommand", () => {
     expect(parseBridgeCommand("/resume abc123")).toEqual({
       name: "resume",
       args: "abc123",
+    });
+  });
+
+  it("should parse /tools with args", () => {
+    expect(parseBridgeCommand("/tools on read grep")).toEqual({
+      name: "tools",
+      args: "on read grep",
     });
   });
 
@@ -232,5 +239,33 @@ describe("handleBridgeCommand", () => {
         currentModel: "rightcodes/gpt-5.4-high",
       }),
     ).toBe("✅ 已切换到会话: session_002\n🤖 当前模型: rightcodes/gpt-5.4-high");
+  });
+
+  it("`/tools` 应返回当前 tool 状态", () => {
+    expect(
+      handleBridgeCommand("tools", {
+        tools: [
+          { name: "read", enabled: true },
+          { name: "bash", enabled: true },
+          { name: "edit", enabled: false },
+        ],
+      } as any),
+    ).toBe(
+      "🧰 当前 tools（2/3 已启用）\n" +
+        "✅ read\n" +
+        "✅ bash\n" +
+        "❌ edit\n" +
+        "\n" +
+        "查看：/tools\n" +
+        "启用：/tools on <tool...>\n" +
+        "禁用：/tools off <tool...>\n" +
+        "设为指定集合：/tools set <tool...>\n" +
+        "恢复默认：/tools reset",
+    );
+  });
+
+  it("未知斜杠命令应返回不支持提示", () => {
+    expect(formatUnsupportedSlashCommand("/compact now")).toContain("暂不支持命令：/compact");
+    expect(formatUnsupportedSlashCommand("/compact now")).toContain("当前支持：/new");
   });
 });

@@ -19,6 +19,9 @@ interface SessionResult {
   piSession: AgentSession;
 }
 
+const TOOLS_CONFIG_ENTRY_TYPE = "tools-config";
+const defaultToolNamesBySession = new WeakMap<AgentSession, string[]>();
+
 export interface ListedSession {
   order: number;
   sessionId: string;
@@ -77,6 +80,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       try {
         const workspaceDir = await ensureWorkspaceForIdentity(identity);
         const session = await deps.runtime.openPiSession(state.piSessionFile, workspaceDir);
+        applySavedToolSelection(session);
         const activeSessionId = session.sessionId;
         sessionCache.set(openId, session);
         if (state.activeSessionId !== activeSessionId || state.piSessionFile !== session.sessionFile) {
@@ -106,6 +110,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         const workspaceDir = await ensureWorkspaceForIdentity(identity);
         const result = await deps.runtime.continueRecentPiSession(workspaceDir, sessionDir);
         if (result) {
+          applySavedToolSelection(result.session);
           const activeSessionId = result.session.sessionId;
           sessionCache.set(openId, result.session);
           state.activeSessionId = activeSessionId;
@@ -139,6 +144,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const sessionDir = deps.userStateStore.userSessionsDir(openId);
     const workspaceDir = await ensureWorkspaceForIdentity(identity);
     const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir);
+    applySavedToolSelection(piSession);
     const newSessionId = piSession.sessionId;
 
     const existing = await deps.userStateStore.readUserState(openId);
@@ -202,6 +208,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     disposeCachedSession(openId);
 
     const piSession = await deps.runtime.openPiSession(target.sessionFile, workspaceDir);
+    applySavedToolSelection(piSession);
     const activeSessionId = piSession.sessionId;
     sessionCache.set(openId, piSession);
 
@@ -344,4 +351,55 @@ export async function touchSession(openId: string, messageId: string): Promise<v
 
 export function disposeAllSessions(): void {
   ensureDefaultSessionService().disposeAllSessions();
+}
+
+export function getSessionDefaultToolNames(session: AgentSession): string[] {
+  if (typeof session.getActiveToolNames !== "function") {
+    return [];
+  }
+  return [...(defaultToolNamesBySession.get(session) ?? session.getActiveToolNames())];
+}
+
+export function persistSessionToolSelection(session: AgentSession): void {
+  if (typeof session.getActiveToolNames !== "function" || typeof session.sessionManager?.appendCustomEntry !== "function") {
+    return;
+  }
+  session.sessionManager.appendCustomEntry(TOOLS_CONFIG_ENTRY_TYPE, {
+    enabledTools: session.getActiveToolNames(),
+  });
+}
+
+function applySavedToolSelection(session: AgentSession): void {
+  if (
+    typeof session.getActiveToolNames !== "function"
+    || typeof session.getAllTools !== "function"
+    || typeof session.sessionManager?.getBranch !== "function"
+    || typeof session.setActiveToolsByName !== "function"
+  ) {
+    return;
+  }
+
+  if (!defaultToolNamesBySession.has(session)) {
+    defaultToolNamesBySession.set(session, [...session.getActiveToolNames()]);
+  }
+
+  const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
+  let savedTools: string[] | undefined;
+
+  for (const entry of session.sessionManager.getBranch()) {
+    if (entry.type !== "custom" || entry.customType !== TOOLS_CONFIG_ENTRY_TYPE) {
+      continue;
+    }
+
+    const enabledTools = entry.data && typeof entry.data === "object" ? (entry.data as { enabledTools?: unknown }).enabledTools : undefined;
+    if (Array.isArray(enabledTools)) {
+      savedTools = enabledTools.filter((tool): tool is string => typeof tool === "string");
+    }
+  }
+
+  if (!savedTools) {
+    return;
+  }
+
+  session.setActiveToolsByName(savedTools.filter((tool) => allToolNames.has(tool)));
 }

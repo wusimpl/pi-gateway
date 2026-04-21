@@ -320,4 +320,25 @@ describe("handleFeishuMessage 运行锁", () => {
       2000,
     );
   });
+
+  it("未知斜杠命令应直接返回不支持提示，不进入 prompt", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_unknown_slash",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/compact now"}',
+      text: "/compact now",
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.promptSession).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      expect.stringContaining("暂不支持命令：/compact"),
+      2000,
+    );
+  });
 });

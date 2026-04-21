@@ -52,7 +52,7 @@ export interface MessageRouter {
 
 interface MessageRouterDeps {
   stateStore: Pick<RuntimeStateStore, "isDuplicate">;
-  commandService: Pick<CommandService, "handleBridgeCommand">;
+  commandService: Pick<CommandService, "handleBridgeCommand" | "handleUnsupportedSlashCommand">;
   promptService: Pick<PromptService, "handleUserPrompt" | "queueRunningPrompt">;
   parseMessageEvent?: typeof parseMessageEvent;
   isSupportedP2PMessage?: typeof isSupportedP2PMessage;
@@ -103,6 +103,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       ...buildMessageLogPayload(message),
     });
 
+    const hasSlashPrefix = message.kind === "text" && message.text.trim().startsWith("/");
     const bridgeCommand = message.kind === "text" ? parseBridgeCommand(message.text) : null;
     if (bridgeCommand?.name === "next") {
       if (!bridgeCommand.args) {
@@ -116,6 +117,11 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 
     if (bridgeCommand) {
       await deps.commandService.handleBridgeCommand(identity, bridgeCommand);
+      return;
+    }
+
+    if (hasSlashPrefix) {
+      await deps.commandService.handleUnsupportedSlashCommand(identity, message.text);
       return;
     }
 
