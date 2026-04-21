@@ -4,13 +4,15 @@
   "description": "飞书 Pi 桥接服务 - 将飞书私聊消息桥接到 Pi SDK",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "dev": "tsc && node dist/index.js",
+    "start": "tsc && node dist/index.js",
     "test": "vitest run"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.60.0",
     "@mariozechner/pi-coding-agent": "latest",
+    "codex": "^0.2.3",
     "croner": "^10.0.1",
     "dotenv": "^16.4.0",
     "marked": "^18.0.0",

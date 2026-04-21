@@ -33,6 +33,7 @@ import { parseScheduleInput } from "../cron/schedule.js";
 
 export interface CommandService {
   handleBridgeCommand(identity: UserIdentity, command: BridgeCommand): Promise<void>;
+  handleUnsupportedSlashCommand(identity: UserIdentity, rawText: string): Promise<void>;
 }
 
 interface CommandServiceDeps {
@@ -455,8 +456,14 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await deps.messenger.sendRenderedMessage(openId, text, deps.config.TEXT_CHUNK_LIMIT);
   }
 
+  async function handleUnsupportedSlashCommand(identity: UserIdentity, rawText: string): Promise<void> {
+    const rawName = rawText.trim().slice(1).trim().split(/\s+/, 1)[0] || "unknown";
+    await sendCommandReply(identity.openId, `暂不支持命令：/${rawName}`);
+  }
+
   return {
     handleBridgeCommand: handleBridgeCommandFlow,
+    handleUnsupportedSlashCommand,
   };
 }
 
