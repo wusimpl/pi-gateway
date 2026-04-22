@@ -42,7 +42,12 @@ const envSchema = z.object({
   FEISHU_STEERING_REACTION_TYPE: z.string().default("OnIt"),
 });
 
-export type Config = z.infer<typeof envSchema>;
+type ParsedConfig = z.infer<typeof envSchema>;
+
+export interface Config extends Omit<ParsedConfig, "FEISHU_PROCESSING_REACTION_TYPE" | "FEISHU_STEERING_REACTION_TYPE"> {
+  FEISHU_PROCESSING_REACTION_TYPE: string | undefined;
+  FEISHU_STEERING_REACTION_TYPE: string | undefined;
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const result = envSchema.safeParse(env);

@@ -31,6 +31,20 @@ describe("loadConfig", () => {
     expect(loadConfig().FEISHU_PROCESSING_REACTION_TYPE).toBeUndefined();
   });
 
+  it("默认的 FEISHU_STEERING_REACTION_TYPE 应保留", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().FEISHU_STEERING_REACTION_TYPE).toBe("OnIt");
+  });
+
+  it("非法的 FEISHU_STEERING_REACTION_TYPE 应自动禁用", async () => {
+    applyBaseEnv({ FEISHU_STEERING_REACTION_TYPE: "EYES" });
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().FEISHU_STEERING_REACTION_TYPE).toBeUndefined();
+  });
+
   it("STREAMING_ENABLED 默认应为 false", async () => {
     applyBaseEnv();
     const { loadConfig } = await import("../src/config.js");
