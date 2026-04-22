@@ -1,7 +1,7 @@
 import { normalizeFeishuInboundMessage } from "../feishu/inbound/normalize.js";
 import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
 import { parseMessageEvent, isSupportedP2PMessage } from "../feishu/events.js";
-import { sendRenderedMessage, sendTextMessage } from "../feishu/send.js";
+import { addProcessingReaction, sendRenderedMessage, sendTextMessage } from "../feishu/send.js";
 import { promptSession } from "../pi/stream.js";
 import {
   createNewSession,
@@ -243,6 +243,9 @@ export function initRouter(cfg: Config): void {
     },
     userStateStore: {
       readUserState: (...args) => readUserState(...args),
+      writeUserState: async () => {
+        throw new Error("writeUserState is not available in initRouter mode");
+      },
     },
     workspaceService: {
       getUserWorkspaceDir: (...args) => getUserWorkspaceDir(...args),
@@ -273,6 +276,9 @@ export function initRouter(cfg: Config): void {
       getOrCreateActiveSession: (...args) => getOrCreateActiveSession(...args),
       touchSession: (...args) => touchSession(...args),
     },
+    userStateStore: {
+      readUserState: (...args) => readUserState(...args),
+    },
     workspaceService: {
       getUserWorkspaceDir: (...args) => getUserWorkspaceDir(...args),
     },
@@ -281,6 +287,7 @@ export function initRouter(cfg: Config): void {
     },
     messenger: {
       sendTextMessage: (...args) => sendTextMessage(...args),
+      addProcessingReaction: (...args) => addProcessingReaction(...args),
     },
     preparePromptInput: prepareFeishuPromptInput,
   });

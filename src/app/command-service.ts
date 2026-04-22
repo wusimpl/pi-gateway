@@ -9,7 +9,7 @@ import {
 import type { SessionService } from "../pi/sessions.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { UserStateStore } from "../storage/users.js";
-import type { UserIdentity } from "../types.js";
+import type { ThinkingLevel, UserIdentity } from "../types.js";
 import { handleBridgeCommand, type BridgeCommand } from "./commands.js";
 import { logger } from "./logger.js";
 import {
@@ -43,7 +43,7 @@ interface CommandServiceDeps {
   >;
   messenger: Pick<FeishuMessenger, "sendRenderedMessage" | "sendTextMessage">;
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession" | "listSessions" | "resumeSession">;
-  userStateStore: Pick<UserStateStore, "readUserState">;
+  userStateStore: Pick<UserStateStore, "readUserState" | "writeUserState">;
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
   runtimeState: Pick<
     RuntimeStateStore,
@@ -93,6 +93,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           piSessionFile: userState?.piSessionFile,
           workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
           currentModel: getCurrentModelLabel(sessionState.piSession),
+          currentThinkingLevel: getCurrentThinkingLevel(sessionState.piSession),
+          streamingEnabled: userState?.streamingEnabled ?? deps.runtimeConfig?.getStreamingEnabled() ?? false,
         });
         await sendCommandReply(openId, reply);
       } else if (command.name === "context" || command.name === "skills") {
@@ -148,6 +150,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleResumeCommand(identity, command);
       } else if (command.name === "model") {
         await handleModelCommand(identity, command);
+      } else if (command.name === "settings") {
+        await handleSettingsCommand(identity, command);
       } else if (command.name === "cron") {
         await handleCronCommand(identity, command);
       } else if (command.name === "stt") {
@@ -233,10 +237,15 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
     const previousModel = getCurrentModelLabel(sessionState.piSession);
     await sessionState.piSession.setModel(targetModel.model);
+    const userState = await deps.userStateStore.readUserState(openId);
+    if (userState?.thinkingLevel) {
+      sessionState.piSession.setThinkingLevel(userState.thinkingLevel);
+    }
 
     const reply = handleBridgeCommand(command, {
       openId,
       currentModel: getCurrentModelLabel(sessionState.piSession) ?? formatModelLabel(targetModel.provider, targetModel.id),
+      currentThinkingLevel: getCurrentThinkingLevel(sessionState.piSession),
       previousModel,
     });
     await sendCommandReply(openId, reply);
@@ -368,6 +377,66 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
   }
 
+  async function handleSettingsCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    const parsed = parseSettingsArgs(command.args);
+    if (parsed.error) {
+      await deps.messenger.sendTextMessage(openId, parsed.error);
+      return;
+    }
+
+    const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+    const userState = (await deps.userStateStore.readUserState(openId)) ?? {
+      activeSessionId: sessionState.activeSessionId,
+      piSessionFile: sessionState.piSession.sessionFile ?? undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    };
+
+    if (parsed.kind === "show") {
+      const reply = handleBridgeCommand(command, {
+        openId,
+        currentModel: getCurrentModelLabel(sessionState.piSession),
+        currentThinkingLevel: userState.thinkingLevel ?? getCurrentThinkingLevel(sessionState.piSession),
+        streamingEnabled: userState.streamingEnabled ?? deps.runtimeConfig?.getStreamingEnabled() ?? false,
+      });
+      await sendCommandReply(openId, reply);
+      return;
+    }
+
+    if (parsed.kind === "think") {
+      userState.thinkingLevel = parsed.level;
+      userState.updatedAt = new Date().toISOString();
+      await deps.userStateStore.writeUserState(openId, userState);
+      sessionState.piSession.setThinkingLevel(parsed.level);
+      const effectiveThinkingLevel = getCurrentThinkingLevel(sessionState.piSession);
+      const reply = handleBridgeCommand(command, {
+        openId,
+        currentModel: getCurrentModelLabel(sessionState.piSession),
+        currentThinkingLevel: effectiveThinkingLevel,
+        requestedThinkingLevel: parsed.level,
+        effectiveThinkingLevel,
+      });
+      await sendCommandReply(openId, reply);
+      return;
+    }
+
+    if (parsed.kind !== "stream") {
+      await deps.messenger.sendTextMessage(openId, "settings 参数解析失败。");
+      return;
+    }
+
+    userState.streamingEnabled = parsed.enabled;
+    userState.updatedAt = new Date().toISOString();
+    await deps.userStateStore.writeUserState(openId, userState);
+    const reply = handleBridgeCommand(command, {
+      openId,
+      streamingEnabled: parsed.enabled,
+    });
+    await sendCommandReply(openId, reply);
+  }
+
   async function handleSttCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
     const openId = identity.openId;
     if (!deps.runtimeConfig) {
@@ -486,6 +555,34 @@ function parseSessionsPage(args: string): { page: number; error?: undefined } | 
   return { page };
 }
 
+function parseSettingsArgs(
+  args: string,
+):
+  | { kind: "show"; error?: undefined }
+  | { kind: "think"; level: ThinkingLevel; error?: undefined }
+  | { kind: "stream"; enabled: boolean; error?: undefined }
+  | { kind?: undefined; error: string } {
+  const trimmed = args.trim();
+  if (!trimmed) {
+    return { kind: "show" };
+  }
+
+  const thinkMatched = trimmed.match(/^think\s+(off|minimal|low|medium|high|xhigh)$/i);
+  if (thinkMatched) {
+    return { kind: "think", level: thinkMatched[1]!.toLowerCase() as ThinkingLevel };
+  }
+
+  const streamMatched = trimmed.match(/^stream\s+(on|off)$/i);
+  if (streamMatched) {
+    return { kind: "stream", enabled: streamMatched[1]!.toLowerCase() === "on" };
+  }
+
+  return {
+    error:
+      "用法：/settings\n/settings think off|minimal|low|medium|high|xhigh\n/settings stream on|off",
+  };
+}
+
 function parseSttProviderArgs(
   args: string,
 ): { provider: "sensevoice" | "whisper" | "doubao"; error?: undefined } | { provider?: undefined; error: string } {
@@ -513,6 +610,10 @@ function parseOnOffArgs(
   }
 
   return { error: `用法：/${commandName} on 或 /${commandName} off。` };
+}
+
+function getCurrentThinkingLevel(session: { thinkingLevel?: ThinkingLevel | undefined }): ThinkingLevel | undefined {
+  return session.thinkingLevel;
 }
 
 function getCurrentModelLabel(session: { model?: { provider: string; id: string } | undefined }): string | undefined {

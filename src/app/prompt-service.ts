@@ -5,12 +5,13 @@ import { downloadFeishuResource } from "../feishu/inbound/resource.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
 import type { FeishuInboundMessage, FeishuMediaProcessingOptions } from "../feishu/inbound/types.js";
 import type { FeishuMessenger } from "../feishu/send.js";
-import type { PromptRunner } from "../pi/stream.js";
+import { registerSessionReaction, type PromptRunner } from "../pi/stream.js";
 import type { SessionService } from "../pi/sessions.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { QuotedMessageStore } from "../storage/quoted-messages.js";
 import { readQuotedMessage as readCachedQuotedMessage } from "../storage/quoted-messages.js";
-import type { UserIdentity } from "../types.js";
+import type { UserIdentity, UserState } from "../types.js";
+import type { UserStateStore } from "../storage/users.js";
 import type { DeferredCronRunService } from "../cron/deferred-run.js";
 import { logger } from "./logger.js";
 import type { RuntimeStateStore } from "./state.js";
@@ -44,22 +45,26 @@ interface PromptServiceDeps {
     | "STREAMING_ENABLED"
     | "PI_SHOW_TOOL_CALLS_IN_REPLY"
     | "TEXT_CHUNK_LIMIT"
-  >;
+  > & Partial<Pick<Config, "FEISHU_STEERING_REACTION_TYPE">>;
   runtimeState: Pick<
     RuntimeStateStore,
     "acquireLock" | "releaseLock" | "setAbortHandler" | "isStopRequested" | "isDraining"
   >;
   sessionService: Pick<SessionService, "getOrCreateActiveSession" | "touchSession">;
+  userStateStore?: Pick<UserStateStore, "readUserState">;
   workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
   promptRunner: Pick<PromptRunner, "promptSession">;
-  messenger: Pick<FeishuMessenger, "sendTextMessage">;
+  messenger: Pick<FeishuMessenger, "sendTextMessage"> & Partial<Pick<FeishuMessenger, "addProcessingReaction">>;
   quotedMessageStore?: Pick<QuotedMessageStore, "readQuotedMessage">;
   downloadResource?: typeof downloadFeishuResource;
   readQuotedMessage?: typeof readFeishuQuotedMessage;
   preparePromptInput?: typeof prepareFeishuPromptInput;
   runtimeConfig?: Pick<
     RuntimeConfigStore,
-    "getAudioTranscribeProvider" | "getStreamingEnabled" | "getProcessingReactionType"
+    | "getAudioTranscribeProvider"
+    | "getStreamingEnabled"
+    | "getProcessingReactionType"
+    | "getSteeringReactionType"
   >;
   deferredCronRunService?: Pick<DeferredCronRunService, "flush">;
 }
@@ -114,6 +119,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
     try {
       const { activeSessionId, piSession } = await deps.sessionService.getOrCreateActiveSession(identity);
+      const userState = await deps.userStateStore?.readUserState(openId);
+      applyUserPromptPreferences(piSession, userState);
       const stoppedBeforePrompt = await deps.runtimeState.setAbortHandler(
         openId,
         messageId,
@@ -130,9 +137,10 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       const processingReactionType = deps.runtimeConfig
         ? deps.runtimeConfig.getProcessingReactionType()
         : deps.config.FEISHU_PROCESSING_REACTION_TYPE;
-      const streamingEnabled = deps.runtimeConfig
-        ? deps.runtimeConfig.getStreamingEnabled()
-        : deps.config.STREAMING_ENABLED;
+      const streamingEnabled = userState?.streamingEnabled
+        ?? (deps.runtimeConfig
+          ? deps.runtimeConfig.getStreamingEnabled()
+          : deps.config.STREAMING_ENABLED);
       const promptInput = await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity), {
         downloadResource: deps.downloadResource,
       });
@@ -196,6 +204,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
       activeSessionId = sessionState.activeSessionId;
       piSession = sessionState.piSession;
+      const userState = await deps.userStateStore?.readUserState(openId);
+      applyUserPromptPreferences(piSession, userState);
     } catch (error) {
       logger.warn("获取运行中 Pi session 失败，退回普通队列", { openId, messageId, error: String(error) });
       return "not_running";
@@ -216,6 +226,23 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         await piSession.followUp(promptInput.text, promptInput.images);
       } else {
         await piSession.steer(promptInput.text, promptInput.images);
+      }
+
+      const steeringReactionType = deps.runtimeConfig?.getSteeringReactionType() ?? deps.config.FEISHU_STEERING_REACTION_TYPE;
+      if (steeringReactionType) {
+        try {
+          const reactionId = await deps.messenger.addProcessingReaction?.(messageId, steeringReactionType);
+          if (reactionId) {
+            registerSessionReaction(piSession as any, messageId, reactionId);
+          }
+        } catch (error) {
+          logger.warn("steering reaction 添加失败", {
+            openId,
+            messageId,
+            behavior,
+            error: String(error),
+          });
+        }
       }
     } catch (error) {
       logger.warn("Pi 运行中队列写入失败，退回普通队列", {
@@ -248,6 +275,17 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     handleUserPrompt,
     queueRunningPrompt,
   };
+}
+
+function applyUserPromptPreferences(
+  session: { setThinkingLevel?: (level: NonNullable<UserState["thinkingLevel"]>) => void },
+  userState?: Pick<UserState, "thinkingLevel"> | null,
+): void {
+  if (!userState?.thinkingLevel || typeof session.setThinkingLevel !== "function") {
+    return;
+  }
+
+  session.setThinkingLevel(userState.thinkingLevel);
 }
 
 function formatPromptPreparationError(error: unknown): string | undefined {

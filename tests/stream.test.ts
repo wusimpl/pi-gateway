@@ -474,6 +474,22 @@ describe("promptSession", () => {
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "done", 2000);
   });
 
+  it("当前轮结束时应一并移除 steering reaction", async () => {
+    const { promptSession, registerSessionReaction } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "done" } },
+      { type: "message_end" },
+    ]);
+
+    registerSessionReaction(session as any, "om_steer_1", "reaction_steer_1");
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", "SMILE");
+
+    expect(result).toEqual({ text: "done", error: undefined });
+    expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
+    expect(mockRemoveReaction).toHaveBeenCalledWith("om_steer_1", "reaction_steer_1");
+  });
+
   it("长文本应交给渲染发送层处理", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const longText = "a".repeat(4005);

@@ -39,6 +39,7 @@ const envSchema = z.object({
     .default("false"),
   TEXT_CHUNK_LIMIT: z.coerce.number().int().positive().default(2000),
   FEISHU_PROCESSING_REACTION_TYPE: z.string().optional(),
+  FEISHU_STEERING_REACTION_TYPE: z.string().default("OnIt"),
 });
 
 export type Config = z.infer<typeof envSchema>;
@@ -54,8 +55,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   return {
     ...result.data,
-    FEISHU_PROCESSING_REACTION_TYPE: resolveProcessingReactionType(
+    FEISHU_PROCESSING_REACTION_TYPE: resolveReactionType(
+      "FEISHU_PROCESSING_REACTION_TYPE",
       result.data.FEISHU_PROCESSING_REACTION_TYPE,
+    ),
+    FEISHU_STEERING_REACTION_TYPE: resolveReactionType(
+      "FEISHU_STEERING_REACTION_TYPE",
+      result.data.FEISHU_STEERING_REACTION_TYPE,
     ),
     FEISHU_AUDIO_TRANSCRIBE_SCRIPT: expandHomeDir(result.data.FEISHU_AUDIO_TRANSCRIBE_SCRIPT),
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: expandHomeDir(
@@ -68,11 +74,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
-function resolveProcessingReactionType(value?: string): string | undefined {
+function resolveReactionType(envName: string, value?: string): string | undefined {
   const reactionType = sanitizeFeishuReactionType(value);
   if (!value || reactionType) return reactionType;
 
-  logger.warn("FEISHU_PROCESSING_REACTION_TYPE 非法，已自动禁用 reaction", {
+  logger.warn(`${envName} 非法，已自动禁用 reaction`, {
     reactionType: value,
   });
   return undefined;

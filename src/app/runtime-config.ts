@@ -8,6 +8,7 @@ export interface RuntimeConfigStore {
   getStreamingEnabled(): boolean;
   setStreamingEnabled(enabled: boolean): void;
   getProcessingReactionType(): string | undefined;
+  getSteeringReactionType(): string | undefined;
   enableProcessingReaction(): string | undefined;
   disableProcessingReaction(): void;
 }
@@ -19,6 +20,7 @@ export function createRuntimeConfigStore(
       | "FEISHU_AUDIO_TRANSCRIBE_PROVIDER"
       | "STREAMING_ENABLED"
       | "FEISHU_PROCESSING_REACTION_TYPE"
+      | "FEISHU_STEERING_REACTION_TYPE"
     >
   >,
 ): RuntimeConfigStore {
@@ -26,6 +28,7 @@ export function createRuntimeConfigStore(
     config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER ?? "whisper";
   let streamingEnabled = config.STREAMING_ENABLED ?? false;
   const defaultProcessingReactionType = config.FEISHU_PROCESSING_REACTION_TYPE;
+  const steeringReactionType = config.FEISHU_STEERING_REACTION_TYPE;
   let processingReactionType = defaultProcessingReactionType;
 
   function getAudioTranscribeProvider(): AudioTranscribeProvider {
@@ -48,6 +51,10 @@ export function createRuntimeConfigStore(
     return processingReactionType;
   }
 
+  function getSteeringReactionType(): string | undefined {
+    return steeringReactionType;
+  }
+
   function enableProcessingReaction(): string | undefined {
     if (!defaultProcessingReactionType) {
       return undefined;
@@ -66,6 +73,7 @@ export function createRuntimeConfigStore(
     getStreamingEnabled,
     setStreamingEnabled,
     getProcessingReactionType,
+    getSteeringReactionType,
     enableProcessingReaction,
     disableProcessingReaction,
   };

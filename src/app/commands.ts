@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import type { AvailableModelInfo } from "../pi/models.js";
+import type { ThinkingLevel } from "../types.js";
 import { logger } from "./logger.js";
 import { RESTART_MESSAGE } from "./restart.js";
 import { STOP_MESSAGE } from "./stop.js";
@@ -15,6 +16,7 @@ const BRIDGE_COMMANDS = [
   "models",
   "sessions",
   "resume",
+  "settings",
   "stop",
   "next",
   "restart",
@@ -56,8 +58,12 @@ interface BridgeCommandContext {
   piSessionFile?: string;
   workspaceDir?: string;
   currentModel?: string;
+  currentThinkingLevel?: ThinkingLevel;
   previousModel?: string;
   availableModelCount?: number;
+  streamingEnabled?: boolean;
+  requestedThinkingLevel?: ThinkingLevel;
+  effectiveThinkingLevel?: ThinkingLevel;
   availableModels?: Array<Pick<AvailableModelInfo, "order" | "id" | "label" | "name">>;
   requestedProvider?: string;
   contextFiles?: BridgeContextFile[];
@@ -123,6 +129,12 @@ export function handleBridgeCommand(
       if (context.workspaceDir) {
         lines.push(`🧰 Workspace: ${context.workspaceDir}`);
       }
+      if (context.currentThinkingLevel) {
+        lines.push(`🧠 当前推理强度: ${context.currentThinkingLevel}`);
+      }
+      if (typeof context.streamingEnabled === "boolean") {
+        lines.push(`🌊 流式回复: ${context.streamingEnabled ? "on" : "off"}`);
+      }
       return lines.join("\n");
     }
     case "model": {
@@ -182,6 +194,39 @@ export function handleBridgeCommand(
       });
     case "resume":
       return formatSessionCommandReply(`✅ 已切换到会话: ${context.sessionId ?? "unknown"}`, context.currentModel);
+    case "settings": {
+      const argText = normalized.args.trim();
+      if (!argText) {
+        const lines = [
+          "⚙️ 当前设置",
+          `🧠 think: ${context.currentThinkingLevel ?? "off"}`,
+          `🌊 stream: ${typeof context.streamingEnabled === "boolean" ? (context.streamingEnabled ? "on" : "off") : "off"}`,
+          "",
+          "用法：",
+          "/settings think off|minimal|low|medium|high|xhigh",
+          "/settings stream on|off",
+        ];
+        return lines.join("\n");
+      }
+
+      if (context.requestedThinkingLevel) {
+        const lines = [
+          "✅ 已保存设置",
+          `🧠 目标 think: ${context.requestedThinkingLevel}`,
+          `🧠 当前模型实际生效: ${context.effectiveThinkingLevel ?? context.currentThinkingLevel ?? context.requestedThinkingLevel}`,
+        ];
+        if (context.currentModel) {
+          lines.push(`🤖 当前模型: ${context.currentModel}`);
+        }
+        return lines.join("\n");
+      }
+
+      if (typeof context.streamingEnabled === "boolean") {
+        return `✅ 已保存设置\n🌊 stream: ${context.streamingEnabled ? "on" : "off"}`;
+      }
+
+      return "⚙️ 设置已更新。";
+    }
     case "stop":
       return STOP_MESSAGE;
     case "next":

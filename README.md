@@ -67,13 +67,14 @@ cp .env.example .env
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug`/`info`/`warn`/`error` |
 | `STREAMING_ENABLED` | 否 | `false` | 是否启用飞书流式卡片回复；默认关闭，打开后只建议给 7.20+ 客户端使用 |
 | `TEXT_CHUNK_LIMIT` | 否 | `2000` | 单条消息文本上限（字符数） |
-| `FEISHU_PROCESSING_REACTION_TYPE` | 否 | `SMILE` | 处理中提示的飞书表情 `emoji_type`；留空则不启用，填错也会自动禁用 |
+| `FEISHU_PROCESSING_REACTION_TYPE` | 否 | `SMILE` | 普通消息处理中提示的飞书表情 `emoji_type`；留空则不启用，填错也会自动禁用 |
+| `FEISHU_STEERING_REACTION_TYPE` | 否 | `OnIt` | 模型运行中收到 steering message 时添加的飞书表情 `emoji_type`；留空则不启用，填错也会自动禁用 |
 
 同时确保环境变量中已配置 Pi 所需的 API Key（如 `ANTHROPIC_API_KEY`）。
 
 如果启用了 `STREAMING_ENABLED=true`，飞书应用还必须开通 `cardkit:card:write`，否则会自动回退为最终一次性发送。飞书 2.0 卡片在旧客户端上展示不完整，所以这一项默认关闭，只有确认用户客户端版本足够新时再打开。
 
-`FEISHU_PROCESSING_REACTION_TYPE` 大小写敏感。服务启动时会按飞书官方列表校验；如果你填了不合法的值，比如 `EYES`，服务会打出警告日志，并自动关闭 reaction，不会再去重试。
+`FEISHU_PROCESSING_REACTION_TYPE` 和 `FEISHU_STEERING_REACTION_TYPE` 都大小写敏感。服务启动时会按飞书官方列表校验；如果你填了不合法的值，比如 `EYES`，服务会打出警告日志，并自动关闭对应 reaction，不会再去重试。
 
 按 2026-04-14 拉取的飞书官方文档，当前支持的 `emoji_type` 全量如下，后续如果飞书有变更，以官方文档为准：
 

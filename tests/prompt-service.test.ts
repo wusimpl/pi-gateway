@@ -6,6 +6,7 @@ describe("createPromptService", () => {
   const preparePromptInput = vi.fn();
   const promptSession = vi.fn();
   const sendTextMessage = vi.fn();
+  const addProcessingReaction = vi.fn();
   const getOrCreateActiveSession = vi.fn();
   const touchSession = vi.fn();
   const acquireLock = vi.fn();
@@ -22,6 +23,7 @@ describe("createPromptService", () => {
     preparePromptInput.mockReset();
     promptSession.mockReset();
     sendTextMessage.mockReset();
+    addProcessingReaction.mockReset();
     getOrCreateActiveSession.mockReset();
     touchSession.mockReset();
     acquireLock.mockReset();
@@ -34,6 +36,7 @@ describe("createPromptService", () => {
     readQuotedMessage.mockReset();
     readCachedQuotedMessage.mockReset();
 
+    addProcessingReaction.mockResolvedValue("reaction_queued_1");
     acquireLock.mockReturnValue(true);
     setAbortHandler.mockResolvedValue(false);
     isStopRequested.mockReturnValue(false);
@@ -95,6 +98,7 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+        addProcessingReaction,
       },
       quotedMessageStore: {
         readQuotedMessage: readCachedQuotedMessage,
@@ -178,6 +182,7 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+        addProcessingReaction,
       },
       quotedMessageStore: {
         readQuotedMessage: readCachedQuotedMessage,
@@ -229,6 +234,7 @@ describe("createPromptService", () => {
       runtimeConfig: createRuntimeConfigStore({
         FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "whisper",
         STREAMING_ENABLED: false,
+        FEISHU_STEERING_REACTION_TYPE: "OnIt",
       }),
       runtimeState: {
         acquireLock,
@@ -249,6 +255,7 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+        addProcessingReaction,
       },
       quotedMessageStore: {
         readQuotedMessage: readCachedQuotedMessage,
@@ -273,9 +280,7 @@ describe("createPromptService", () => {
     );
 
     expect(preparePromptInput).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "audio",
-      }),
+      expect.objectContaining({ kind: "audio" }),
       expect.anything(),
       expect.objectContaining({
         audioTranscribeProvider: "whisper",
@@ -294,6 +299,162 @@ describe("createPromptService", () => {
       undefined,
       expect.any(Function),
     );
+  });
+
+  it("运行中收到 steer 消息后应添加 steering reaction", async () => {
+    const piSession = {
+      model: { input: ["text"] },
+      abort: vi.fn().mockResolvedValue(undefined),
+      isStreaming: true,
+      steer: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined),
+    };
+    getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        FEISHU_STEERING_REACTION_TYPE: "OnIt",
+        STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+        addProcessingReaction,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    const result = await promptService.queueRunningPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_steer_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"second"}',
+        text: "second",
+      },
+      "steer",
+    );
+
+    expect(result).toBe("queued");
+    expect(piSession.steer).toHaveBeenCalledWith("转写后的文本", undefined);
+    expect(addProcessingReaction).toHaveBeenCalledWith("om_steer_1", "OnIt");
+    expect(touchSession).toHaveBeenCalledWith("ou_1", "om_steer_1");
+  });
+
+  it("运行中收到 /next 时也应添加 steering reaction", async () => {
+    const piSession = {
+      model: { input: ["text"] },
+      abort: vi.fn().mockResolvedValue(undefined),
+      isStreaming: true,
+      steer: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined),
+    };
+    getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        FEISHU_STEERING_REACTION_TYPE: "OnIt",
+        STREAMING_ENABLED: true,
+        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+        addProcessingReaction,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    const result = await promptService.queueRunningPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_next_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"after this"}',
+        text: "after this",
+      },
+      "followUp",
+    );
+
+    expect(result).toBe("queued");
+    expect(piSession.followUp).toHaveBeenCalledWith("转写后的文本", undefined);
+    expect(addProcessingReaction).toHaveBeenCalledWith("om_next_1", "OnIt");
+    expect(touchSession).toHaveBeenCalledWith("ou_1", "om_next_1");
   });
 
   it("引用回复时应先读取父消息，再把引用内容透传给 prompt 预处理", async () => {
@@ -331,6 +492,7 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+        addProcessingReaction,
       },
       quotedMessageStore: {
         readQuotedMessage: readCachedQuotedMessage,
@@ -419,6 +581,7 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+        addProcessingReaction,
       },
       quotedMessageStore: {
         readQuotedMessage: readCachedQuotedMessage,
@@ -437,7 +600,7 @@ describe("createPromptService", () => {
         parentMessageId: "om_parent_card_1",
         messageType: "text",
         createTime: "123",
-        rawContent: "{\"text\":\"继续\"}",
+        rawContent: '{"text":"继续"}',
         text: "继续",
       },
     );
@@ -495,6 +658,7 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+        addProcessingReaction,
       },
       quotedMessageStore: {
         readQuotedMessage: readCachedQuotedMessage,
@@ -563,6 +727,7 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+        addProcessingReaction,
       },
       quotedMessageStore: {
         readQuotedMessage: readCachedQuotedMessage,
@@ -631,6 +796,7 @@ describe("createPromptService", () => {
       },
       messenger: {
         sendTextMessage,
+        addProcessingReaction,
       },
       quotedMessageStore: {
         readQuotedMessage: readCachedQuotedMessage,

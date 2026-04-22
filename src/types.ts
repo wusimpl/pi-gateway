@@ -27,6 +27,8 @@ export interface UserIdentity {
   userId?: string;
 }
 
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 /** 用户持久状态 */
 export interface UserState {
   activeSessionId: string;
@@ -35,6 +37,8 @@ export interface UserState {
   updatedAt: string;
   lastActiveAt: string;
   lastMessageId?: string;
+  thinkingLevel?: ThinkingLevel;
+  streamingEnabled?: boolean;
 }
 
 /** 运行时锁信息 */

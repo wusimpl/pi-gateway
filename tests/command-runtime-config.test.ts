@@ -11,6 +11,7 @@ function createDeps(options: { doubaoApiKey?: string } = {}) {
     FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "whisper",
     STREAMING_ENABLED: true,
     FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+    FEISHU_STEERING_REACTION_TYPE: "OnIt",
   });
 
   const service = createCommandService({

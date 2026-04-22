@@ -12,7 +12,7 @@ import {
 import { logger } from "../app/logger.js";
 import { ensureUserWorkspace, type WorkspaceService } from "./workspace.js";
 import { bindWorkspaceIdentity, clearWorkspaceIdentities } from "./workspace-identity.js";
-import type { UserIdentity } from "../types.js";
+import type { ThinkingLevel, UserIdentity } from "../types.js";
 
 interface SessionResult {
   activeSessionId: string;
@@ -81,6 +81,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         const workspaceDir = await ensureWorkspaceForIdentity(identity);
         const session = await deps.runtime.openPiSession(state.piSessionFile, workspaceDir);
         applySavedToolSelection(session);
+        applyUserPreferences(session, state?.thinkingLevel);
         const activeSessionId = session.sessionId;
         sessionCache.set(openId, session);
         if (state.activeSessionId !== activeSessionId || state.piSessionFile !== session.sessionFile) {
@@ -111,6 +112,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         const result = await deps.runtime.continueRecentPiSession(workspaceDir, sessionDir);
         if (result) {
           applySavedToolSelection(result.session);
+          applyUserPreferences(result.session, state?.thinkingLevel);
           const activeSessionId = result.session.sessionId;
           sessionCache.set(openId, result.session);
           state.activeSessionId = activeSessionId;
@@ -144,10 +146,10 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const sessionDir = deps.userStateStore.userSessionsDir(openId);
     const workspaceDir = await ensureWorkspaceForIdentity(identity);
     const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir);
-    applySavedToolSelection(piSession);
-    const newSessionId = piSession.sessionId;
-
     const existing = await deps.userStateStore.readUserState(openId);
+    applySavedToolSelection(piSession);
+    applyUserPreferences(piSession, existing?.thinkingLevel);
+    const newSessionId = piSession.sessionId;
     if (existing) {
       existing.activeSessionId = newSessionId;
       existing.piSessionFile = piSession.sessionFile ?? undefined;
@@ -208,12 +210,13 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     disposeCachedSession(openId);
 
     const piSession = await deps.runtime.openPiSession(target.sessionFile, workspaceDir);
+    const state = await deps.userStateStore.readUserState(openId);
     applySavedToolSelection(piSession);
+    applyUserPreferences(piSession, state?.thinkingLevel);
     const activeSessionId = piSession.sessionId;
     sessionCache.set(openId, piSession);
 
     const now = new Date().toISOString();
-    const state = await deps.userStateStore.readUserState(openId);
     if (state) {
       state.activeSessionId = activeSessionId;
       state.piSessionFile = piSession.sessionFile ?? target.sessionFile;
@@ -278,6 +281,17 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     touchSession,
     disposeAllSessions,
   };
+}
+
+function applyUserPreferences(
+  session: AgentSession,
+  thinkingLevel?: ThinkingLevel,
+): void {
+  if (!thinkingLevel || typeof session.setThinkingLevel !== "function") {
+    return;
+  }
+
+  session.setThinkingLevel(thinkingLevel);
 }
 
 function resolveTargetSession(sessions: ListedSession[], ref: string): ListedSession | null {

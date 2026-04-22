@@ -77,6 +77,24 @@ export interface PromptRunner {
   ): Promise<PromptResult>;
 }
 
+const sessionReactionRegistry = new WeakMap<AgentSession, Array<{ messageId: string; reactionId: string }>>();
+
+export function registerSessionReaction(
+  session: AgentSession,
+  messageId: string,
+  reactionId: string,
+): void {
+  const reactions = sessionReactionRegistry.get(session) ?? [];
+  reactions.push({ messageId, reactionId });
+  sessionReactionRegistry.set(session, reactions);
+}
+
+function takeSessionReactions(session: AgentSession): Array<{ messageId: string; reactionId: string }> {
+  const reactions = sessionReactionRegistry.get(session) ?? [];
+  sessionReactionRegistry.delete(session);
+  return reactions;
+}
+
 interface ToolCallState {
   toolCallId: string;
   toolName: string;
@@ -93,18 +111,18 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       promptInput: string | PromptInput,
       openId: string,
       sourceMessageId: string,
-    processingReactionType?: string,
-    streamingEnabled: boolean = false,
-    textChunkLimit: number = 2000,
-    showToolCallsInReply: boolean = false,
-    timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
-    isAbortRequested?: () => boolean,
-  ): Promise<PromptResult> {
+      processingReactionType?: string,
+      streamingEnabled: boolean = false,
+      textChunkLimit: number = 2000,
+      showToolCallsInReply: boolean = false,
+      timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
+      isAbortRequested?: () => boolean,
+    ): Promise<PromptResult> {
       const normalizedPrompt = typeof promptInput === "string" ? { text: promptInput } : promptInput;
       let fullText = "";
       let lastError: string | undefined;
       let abortedByUser = false;
-      let reactionId: string | null = null;
+      const reactionEntries: Array<{ messageId: string; reactionId: string }> = [];
       let streamingMessage: FeishuStreamingMessage | null = null;
       let streamingBroken = false;
       const preludeText = normalizedPrompt.preludeText ?? "";
@@ -117,7 +135,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const toolCallMap = new Map<string, ToolCallState>();
 
       try {
-        reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
+        const reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
+        if (reactionId) {
+          reactionEntries.push({ messageId: sourceMessageId, reactionId });
+        }
       } catch (err) {
         logger.warn("处理中 reaction 添加失败", { openId, sourceMessageId, error: String(err) });
       }
@@ -390,10 +411,11 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           flushChain = flushChain.then(() => flushStreamingState());
         }
         await flushChain;
-        if (reactionId) {
-          const removed = await messenger.removeReaction(sourceMessageId, reactionId);
+        reactionEntries.push(...takeSessionReactions(session));
+        for (const { messageId, reactionId } of reactionEntries) {
+          const removed = await messenger.removeReaction(messageId, reactionId);
           if (!removed) {
-            logger.warn("处理中 reaction 删除失败", { openId, sourceMessageId, reactionId });
+            logger.warn("reaction 删除失败", { openId, sourceMessageId, messageId, reactionId });
           }
         }
       }
@@ -871,11 +893,11 @@ function normalizeToolSummary(text: string): string | undefined {
 }
 
 function formatPromptFooter(
-  session: Pick<AgentSession, "getContextUsage" | "model">,
+  session: Pick<AgentSession, "getContextUsage" | "model" | "thinkingLevel">,
 ): string | undefined {
   const lines = [
     formatContextUsageFooter(session.getContextUsage()),
-    formatCurrentModelFooter(session.model),
+    formatCurrentModelFooter(session.model, session.thinkingLevel),
   ].filter((line): line is string => Boolean(line));
 
   return lines.length > 0 ? lines.join(" | ") : undefined;
@@ -902,6 +924,7 @@ function formatContextUsageFooter(
 
 function formatCurrentModelFooter(
   model: AgentSession["model"],
+  thinkingLevel?: AgentSession["thinkingLevel"],
 ): string | undefined {
   if (!model) {
     return undefined;
@@ -913,7 +936,8 @@ function formatCurrentModelFooter(
     return undefined;
   }
 
-  return `模型: ${formatModelLabel(provider, id)}`;
+  const thinkingSuffix = thinkingLevel ? ` ${thinkingLevel}` : "";
+  return `模型: ${formatModelLabel(provider, id)}${thinkingSuffix}`;
 }
 
 function formatCompactTokenCount(count: number): string {

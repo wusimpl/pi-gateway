@@ -7,6 +7,7 @@ describe("createRuntimeConfigStore", () => {
       FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "whisper",
       STREAMING_ENABLED: true,
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      FEISHU_STEERING_REACTION_TYPE: "OnIt",
     });
 
     store.setAudioTranscribeProvider("doubao");
@@ -19,6 +20,7 @@ describe("createRuntimeConfigStore", () => {
   it("reaction off 后应清空，on 时应恢复到 .env 默认值", () => {
     const store = createRuntimeConfigStore({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      FEISHU_STEERING_REACTION_TYPE: "OnIt",
     });
 
     store.disableProcessingReaction();
@@ -26,6 +28,7 @@ describe("createRuntimeConfigStore", () => {
 
     expect(store.enableProcessingReaction()).toBe("SMILE");
     expect(store.getProcessingReactionType()).toBe("SMILE");
+    expect(store.getSteeringReactionType()).toBe("OnIt");
   });
 
   it("未配置默认 reaction 时不应开启成功", () => {

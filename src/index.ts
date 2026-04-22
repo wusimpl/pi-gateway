@@ -41,6 +41,7 @@ async function main() {
     disableGlobalAgents: config.PI_DISABLE_GLOBAL_AGENTS,
     logLevel: config.LOG_LEVEL,
     processingReactionEnabled: Boolean(config.FEISHU_PROCESSING_REACTION_TYPE),
+    steeringReactionEnabled: Boolean(config.FEISHU_STEERING_REACTION_TYPE),
     cronEnabled: config.CRON_ENABLED,
     cronDefaultTz: config.CRON_DEFAULT_TZ,
   });
@@ -163,9 +164,13 @@ async function main() {
     runtimeConfig,
     runtimeState,
     sessionService,
+    userStateStore,
     workspaceService,
     promptRunner,
-    messenger: feishuMessenger,
+    messenger: {
+      sendTextMessage: (...args) => feishuMessenger.sendTextMessage(...args),
+      addProcessingReaction: (...args) => feishuMessenger.addProcessingReaction(...args),
+    },
     downloadResource: feishuResourceDownloader,
     readQuotedMessage: feishuMessageReader,
     deferredCronRunService,
