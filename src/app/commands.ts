@@ -17,6 +17,7 @@ const BRIDGE_COMMANDS = [
   "sessions",
   "resume",
   "settings",
+  "tools",
   "stop",
   "next",
   "restart",
@@ -46,6 +47,11 @@ interface BridgeListedSession {
   updatedAt?: string;
 }
 
+interface BridgeToolStatus {
+  name: string;
+  enabled: boolean;
+}
+
 export interface BridgeCommand {
   name: BridgeCommandName;
   args: string;
@@ -68,6 +74,7 @@ interface BridgeCommandContext {
   requestedProvider?: string;
   contextFiles?: BridgeContextFile[];
   skills?: BridgeSkillInfo[];
+  tools?: BridgeToolStatus[];
   sessions?: BridgeListedSession[];
   sessionsPage?: number;
   sessionsTotalPages?: number;
@@ -227,6 +234,8 @@ export function handleBridgeCommand(
 
       return "⚙️ 设置已更新。";
     }
+    case "tools":
+      return formatToolsReply(context.tools ?? []);
     case "stop":
       return STOP_MESSAGE;
     case "next":
@@ -242,6 +251,11 @@ export function handleBridgeCommand(
   }
 }
 
+export function formatUnsupportedSlashCommand(rawText: string): string {
+  const rawName = parseSlashCommandName(rawText);
+  return `暂不支持命令：/${rawName}\n\n当前支持：${BRIDGE_COMMANDS.map((command) => `/${command}`).join(" ")}`;
+}
+
 function formatAvailableModelLine(model: Pick<AvailableModelInfo, "order" | "id" | "label" | "name">): string {
   const suffix = model.name && model.name !== model.id ? ` · ${model.name}` : "";
   return `${model.order}. ${model.label}${suffix}`;
@@ -252,6 +266,24 @@ function formatSessionCommandReply(message: string, currentModel?: string): stri
     return message;
   }
   return `${message}\n🤖 当前模型: ${currentModel}`;
+}
+
+function formatToolsReply(tools: BridgeToolStatus[]): string {
+  if (tools.length === 0) {
+    return "当前 session 里没有可配置的 tools。";
+  }
+
+  const enabledCount = tools.filter((tool) => tool.enabled).length;
+  return [
+    `🧰 当前 tools（${enabledCount}/${tools.length} 已启用）`,
+    ...tools.map((tool) => `${tool.enabled ? "✅" : "❌"} ${tool.name}`),
+    "",
+    "查看：/tools",
+    "启用：/tools on <tool...>",
+    "禁用：/tools off <tool...>",
+    "设为指定集合：/tools set <tool...>",
+    "恢复默认：/tools reset",
+  ].join("\n");
 }
 
 function formatSessionsReply(
@@ -388,4 +420,14 @@ function formatDisplayPath(filePath: string): string {
     return `~${normalizedPath.slice(normalizedHome.length)}`;
   }
   return normalizedPath;
+}
+
+function parseSlashCommandName(rawText: string): string {
+  const trimmed = rawText.trim();
+  if (!trimmed.startsWith("/")) {
+    return "unknown";
+  }
+
+  const body = trimmed.slice(1).trim();
+  return body.split(/\s+/, 1)[0] || "unknown";
 }

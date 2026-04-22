@@ -6,11 +6,15 @@ import {
   filterAvailableModels,
   formatModelLabel,
 } from "../pi/models.js";
-import type { SessionService } from "../pi/sessions.js";
+import {
+  getSessionDefaultToolNames,
+  persistSessionToolSelection,
+  type SessionService,
+} from "../pi/sessions.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { UserStateStore } from "../storage/users.js";
 import type { ThinkingLevel, UserIdentity } from "../types.js";
-import { handleBridgeCommand, type BridgeCommand } from "./commands.js";
+import { handleBridgeCommand, formatUnsupportedSlashCommand, type BridgeCommand } from "./commands.js";
 import { logger } from "./logger.js";
 import {
   clearRestartReadyNotification,
@@ -152,6 +156,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleModelCommand(identity, command);
       } else if (command.name === "settings") {
         await handleSettingsCommand(identity, command);
+      } else if (command.name === "tools") {
+        await handleToolsCommand(identity, command);
       } else if (command.name === "cron") {
         await handleCronCommand(identity, command);
       } else if (command.name === "stt") {
@@ -521,13 +527,83 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await sendCommandReply(openId, `✅ 已开启处理中 reaction，表情继续使用 .env 里的 ${reactionType}。`);
   }
 
+  async function handleToolsCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+    const toolSession = getToolConfigSession(sessionState.piSession);
+    if (!toolSession) {
+      await deps.messenger.sendTextMessage(openId, "当前 session 不支持 tool 配置。");
+      return;
+    }
+
+    const parsed = parseToolsArgs(command.args);
+    if (parsed.error) {
+      await deps.messenger.sendTextMessage(openId, parsed.error);
+      return;
+    }
+
+    const allToolNames = toolSession.getAllTools().map((tool) => tool.name);
+    const allToolNameSet = new Set(allToolNames);
+    const currentActiveTools = dedupeToolNames(toolSession.getActiveToolNames().filter((name) => allToolNameSet.has(name)));
+
+    if (parsed.action === "show") {
+      await sendCommandReply(
+        openId,
+        handleBridgeCommand(command, {
+          openId,
+          tools: buildToolStatusList(allToolNames, currentActiveTools),
+        }),
+      );
+      return;
+    }
+
+    if (parsed.action === "reset") {
+      const defaultTools = dedupeToolNames(
+        getSessionDefaultToolNames(sessionState.piSession).filter((name) => allToolNameSet.has(name)),
+      );
+      toolSession.setActiveToolsByName(defaultTools);
+      persistSessionToolSelection(sessionState.piSession);
+      await sendCommandReply(openId, formatToolsActionReply("reset", [], defaultTools, allToolNames));
+      return;
+    }
+
+    const action = parsed.action;
+    if (action !== "on" && action !== "off" && action !== "set") {
+      await deps.messenger.sendTextMessage(openId, "tools 参数解析失败。");
+      return;
+    }
+
+    const requestedTools = dedupeToolNames(parsed.toolNames);
+    const missingTools = requestedTools.filter((tool) => !allToolNameSet.has(tool));
+    if (missingTools.length > 0) {
+      await deps.messenger.sendTextMessage(
+        openId,
+        `这些 tools 不存在：${missingTools.join(", ")}。\n\n先用 /tools 看当前 session 里的可用 tools。`,
+      );
+      return;
+    }
+
+    let nextActiveTools = currentActiveTools;
+    if (action === "on") {
+      nextActiveTools = dedupeToolNames([...currentActiveTools, ...requestedTools]);
+    } else if (action === "off") {
+      const disabledTools = new Set(requestedTools);
+      nextActiveTools = currentActiveTools.filter((tool) => !disabledTools.has(tool));
+    } else if (action === "set") {
+      nextActiveTools = requestedTools;
+    }
+
+    toolSession.setActiveToolsByName(nextActiveTools);
+    persistSessionToolSelection(sessionState.piSession);
+    await sendCommandReply(openId, formatToolsActionReply(action, requestedTools, nextActiveTools, allToolNames));
+  }
+
   async function sendCommandReply(openId: string, text: string): Promise<void> {
     await deps.messenger.sendRenderedMessage(openId, text, deps.config.TEXT_CHUNK_LIMIT);
   }
 
   async function handleUnsupportedSlashCommand(identity: UserIdentity, rawText: string): Promise<void> {
-    const rawName = rawText.trim().slice(1).trim().split(/\s+/, 1)[0] || "unknown";
-    await sendCommandReply(identity.openId, `暂不支持命令：/${rawName}`);
+    await sendCommandReply(identity.openId, formatUnsupportedSlashCommand(rawText));
   }
 
   return {
@@ -553,6 +629,95 @@ function parseSessionsPage(args: string): { page: number; error?: undefined } | 
   }
 
   return { page };
+}
+
+interface ToolConfigSession {
+  getAllTools(): Array<{ name: string }>;
+  getActiveToolNames(): string[];
+  setActiveToolsByName(toolNames: string[]): void;
+}
+
+function getToolConfigSession(session: unknown): ToolConfigSession | null {
+  if (
+    !session
+    || typeof session !== "object"
+    || typeof (session as ToolConfigSession).getAllTools !== "function"
+    || typeof (session as ToolConfigSession).getActiveToolNames !== "function"
+    || typeof (session as ToolConfigSession).setActiveToolsByName !== "function"
+  ) {
+    return null;
+  }
+
+  return session as ToolConfigSession;
+}
+
+function parseToolsArgs(
+  args: string,
+):
+  | { action: "show"; error?: undefined }
+  | { action: "reset"; error?: undefined }
+  | { action: "on" | "off" | "set"; toolNames: string[]; error?: undefined }
+  | { action?: undefined; toolNames?: undefined; error: string } {
+  const trimmed = args.trim();
+  if (!trimmed) {
+    return { action: "show" };
+  }
+
+  if (trimmed === "reset") {
+    return { action: "reset" };
+  }
+
+  const [action, ...toolNames] = trimmed.split(/\s+/).filter(Boolean);
+  if (action === "on" || action === "off" || action === "set") {
+    if (toolNames.length === 0) {
+      return { error: "用法：/tools\n/tools on <tool...>\n/tools off <tool...>\n/tools set <tool...>\n/tools reset" };
+    }
+    return { action, toolNames };
+  }
+
+  return { error: "用法：/tools\n/tools on <tool...>\n/tools off <tool...>\n/tools set <tool...>\n/tools reset" };
+}
+
+function buildToolStatusList(allToolNames: string[], activeToolNames: string[]): Array<{ name: string; enabled: boolean }> {
+  const activeToolNameSet = new Set(activeToolNames);
+  return allToolNames.map((name) => ({
+    name,
+    enabled: activeToolNameSet.has(name),
+  }));
+}
+
+function dedupeToolNames(toolNames: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const toolName of toolNames) {
+    if (seen.has(toolName)) {
+      continue;
+    }
+    seen.add(toolName);
+    result.push(toolName);
+  }
+  return result;
+}
+
+function formatToolsActionReply(
+  action: "on" | "off" | "set" | "reset",
+  changedTools: string[],
+  activeTools: string[],
+  allToolNames: string[],
+): string {
+  const actionLabel = action === "on"
+    ? "已启用 tools。"
+    : action === "off"
+      ? "已禁用 tools。"
+      : action === "set"
+        ? "已更新 tools。"
+        : "已恢复默认 tools。";
+  const lines = [`✅ ${actionLabel}`];
+  if (changedTools.length > 0) {
+    lines.push(`变更：${changedTools.join(", ")}`);
+  }
+  lines.push(`当前启用（${activeTools.length}/${allToolNames.length}）：${activeTools.join(", ") || "（无）"}`, "", "查看详情：/tools");
+  return lines.join("\n");
 }
 
 function parseSettingsArgs(
