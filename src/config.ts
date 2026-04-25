@@ -11,7 +11,7 @@ const envSchema = z.object({
   FEISHU_MEDIA_OCR_MODEL: z.string().default("glm-ocr:latest"),
   FEISHU_AUDIO_TRANSCRIBE_PROVIDER: z.enum(["whisper", "sensevoice", "doubao"]).default("whisper"),
   FEISHU_AUDIO_TRANSCRIBE_SCRIPT: z.string().default("~/.openclaw/skills/audio-transcribe/transcribe.sh"),
-  FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: z.string().default("zh"),
+  FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: z.string().default(""),
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: z.string().default("python3"),
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: z.string().default("iic/SenseVoiceSmall"),
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: z.string().default("cpu"),

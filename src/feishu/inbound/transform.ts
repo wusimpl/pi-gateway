@@ -14,24 +14,32 @@ const EXTERNAL_PROCESS_TIMEOUT_MS = 10 * 60 * 1000;
 const SENSEVOICE_TRANSCRIBE_SCRIPT = fileURLToPath(
   new URL("../../../scripts/sensevoice_transcribe.py", import.meta.url),
 );
-const DOUBAO_FLASH_ENDPOINT = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash";
-const DOUBAO_RESOURCE_ID = "volc.bigasr.auc_turbo";
+const DOUBAO_STANDARD_SUBMIT_ENDPOINT = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit";
+const DOUBAO_STANDARD_QUERY_ENDPOINT = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query";
+const DOUBAO_RESOURCE_ID = "volc.seedasr.auc";
 const DOUBAO_SUCCESS_STATUS_CODE = "20000000";
+const DOUBAO_PENDING_STATUS_CODES = new Set(["20000001", "20000002"]);
+const DOUBAO_POLL_INTERVAL_MS = 1000;
 const DOUBAO_UID = "pi-gateway";
 const DOUBAO_MODEL_NAME = "bigmodel";
-const DOUBAO_SUPPORTED_AUDIO_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".opus"]);
-const DOUBAO_SUPPORTED_AUDIO_MIME_TYPES = new Set([
-  "audio/wav",
-  "audio/x-wav",
-  "audio/wave",
-  "audio/mpeg",
-  "audio/mp3",
-  "audio/ogg",
-  "application/ogg",
-  "audio/opus",
+const DOUBAO_AUDIO_CONFIG_BY_EXTENSION = new Map<string, { format: string; codec?: string }>([
+  [".wav", { format: "wav", codec: "raw" }],
+  [".mp3", { format: "mp3" }],
+  [".ogg", { format: "ogg", codec: "opus" }],
+  [".opus", { format: "ogg", codec: "opus" }],
+]);
+const DOUBAO_AUDIO_CONFIG_BY_MIME_TYPE = new Map<string, { format: string; codec?: string }>([
+  ["audio/wav", { format: "wav", codec: "raw" }],
+  ["audio/x-wav", { format: "wav", codec: "raw" }],
+  ["audio/wave", { format: "wav", codec: "raw" }],
+  ["audio/mpeg", { format: "mp3" }],
+  ["audio/mp3", { format: "mp3" }],
+  ["audio/ogg", { format: "ogg", codec: "opus" }],
+  ["application/ogg", { format: "ogg", codec: "opus" }],
+  ["audio/opus", { format: "ogg", codec: "opus" }],
 ]);
 
-interface DoubaoFlashResponse {
+interface DoubaoRecognitionResponse {
   result?: {
     text?: string;
     utterances?: Array<{
@@ -204,7 +212,7 @@ async function transcribeAudioWithScript(
 ): Promise<string> {
   const result = await execFileAsync(
     "bash",
-    [options.audioTranscribeScript, audioPath, options.audioLanguage],
+    [options.audioTranscribeScript, audioPath, options.audioLanguage || "zh"],
     {
       encoding: "utf8",
       timeout: EXTERNAL_PROCESS_TIMEOUT_MS,
@@ -237,7 +245,7 @@ async function transcribeAudioWithSenseVoice(
       "--audio",
       audioPath,
       "--language",
-      options.audioLanguage,
+      options.audioLanguage || "zh",
       "--model",
       options.audioTranscribeSenseVoiceModel,
       "--device",
@@ -264,7 +272,7 @@ async function transcribeAudioWithSenseVoice(
 
 async function transcribeAudioWithDoubao(
   audioPath: string,
-  options: Pick<FeishuMediaProcessingOptions, "audioTranscribeDoubaoApiKey">,
+  options: Pick<FeishuMediaProcessingOptions, "audioTranscribeDoubaoApiKey" | "audioLanguage">,
   audioMimeType?: string,
 ): Promise<string> {
   const apiKey = options.audioTranscribeDoubaoApiKey.trim();
@@ -272,77 +280,96 @@ async function transcribeAudioWithDoubao(
     throw new Error("豆包语音未配置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY");
   }
 
-  ensureDoubaoAudioFormatSupported(audioPath, audioMimeType);
-
+  const requestId = randomUUID();
+  const audioConfig = resolveDoubaoAudioConfig(audioPath, audioMimeType);
+  const audioLanguage = normalizeDoubaoLanguage(options.audioLanguage);
   const audioData = await readFile(audioPath);
-  const response = await fetch(DOUBAO_FLASH_ENDPOINT, {
+
+  const submitResponse = await fetch(DOUBAO_STANDARD_SUBMIT_ENDPOINT, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Api-Key": apiKey,
-      "X-Api-Resource-Id": DOUBAO_RESOURCE_ID,
-      "X-Api-Request-Id": randomUUID(),
-      "X-Api-Sequence": "-1",
-    },
+    headers: createDoubaoHeaders(apiKey, requestId, true),
     body: JSON.stringify({
       user: {
         uid: DOUBAO_UID,
       },
       audio: {
         data: audioData.toString("base64"),
+        ...audioConfig,
+        ...(audioLanguage ? { language: audioLanguage } : {}),
       },
       request: {
         model_name: DOUBAO_MODEL_NAME,
+        enable_ddc: false,
+        show_utterances: true,
       },
     }),
     signal: AbortSignal.timeout(EXTERNAL_PROCESS_TIMEOUT_MS),
   });
 
-  const statusCode = response.headers.get("X-Api-Status-Code")?.trim();
-  const apiMessage = response.headers.get("X-Api-Message")?.trim();
-  const logId = response.headers.get("X-Tt-Logid")?.trim();
-  const responseText = await response.text();
+  const submitMeta = getDoubaoResponseMeta(submitResponse);
+  if (!submitResponse.ok) {
+    throw new Error(formatDoubaoFailure(submitMeta.message || `HTTP ${submitResponse.status}`, submitMeta.logId));
+  }
+  if (submitMeta.statusCode && submitMeta.statusCode !== DOUBAO_SUCCESS_STATUS_CODE) {
+    throw new Error(formatDoubaoFailure(submitMeta.message || `状态码 ${submitMeta.statusCode}`, submitMeta.logId));
+  }
 
-  let payload: DoubaoFlashResponse | null = null;
-  if (responseText.trim()) {
-    try {
-      payload = JSON.parse(responseText) as DoubaoFlashResponse;
-    } catch {
-      throw new Error(formatDoubaoFailure("服务返回格式不正确", logId));
+  const deadline = Date.now() + EXTERNAL_PROCESS_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await delay(DOUBAO_POLL_INTERVAL_MS);
+
+    const queryResponse = await fetch(DOUBAO_STANDARD_QUERY_ENDPOINT, {
+      method: "POST",
+      headers: createDoubaoHeaders(apiKey, requestId, false),
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(EXTERNAL_PROCESS_TIMEOUT_MS),
+    });
+
+    const queryMeta = getDoubaoResponseMeta(queryResponse);
+    const payload = await parseDoubaoRecognitionResponse(queryResponse, queryMeta.logId);
+
+    if (!queryResponse.ok) {
+      throw new Error(formatDoubaoFailure(queryMeta.message || `HTTP ${queryResponse.status}`, queryMeta.logId));
     }
+
+    if (queryMeta.statusCode && DOUBAO_PENDING_STATUS_CODES.has(queryMeta.statusCode)) {
+      continue;
+    }
+
+    if (queryMeta.statusCode && queryMeta.statusCode !== DOUBAO_SUCCESS_STATUS_CODE) {
+      throw new Error(formatDoubaoFailure(queryMeta.message || `状态码 ${queryMeta.statusCode}`, queryMeta.logId));
+    }
+
+    const transcript = extractDoubaoTranscript(payload);
+    if (transcript) {
+      return transcript;
+    }
+
+    throw new Error(`豆包语音转写没有产出文本${queryMeta.logId ? `（logid: ${queryMeta.logId}）` : ""}`);
   }
 
-  if (!response.ok) {
-    const reason = apiMessage || `HTTP ${response.status}`;
-    throw new Error(formatDoubaoFailure(reason, logId));
-  }
-
-  if (statusCode && statusCode !== DOUBAO_SUCCESS_STATUS_CODE) {
-    throw new Error(formatDoubaoFailure(apiMessage || `状态码 ${statusCode}`, logId));
-  }
-
-  const transcript = extractDoubaoTranscript(payload);
-  if (!transcript) {
-    throw new Error(`豆包语音转写没有产出文本${logId ? `（logid: ${logId}）` : ""}`);
-  }
-
-  return transcript;
+  throw new Error("豆包语音转写超时，请稍后重试");
 }
 
-function ensureDoubaoAudioFormatSupported(audioPath: string, audioMimeType?: string): void {
+function resolveDoubaoAudioConfig(
+  audioPath: string,
+  audioMimeType?: string,
+): { format: string; codec?: string } {
   const normalizedMimeType = audioMimeType?.split(";")[0]?.trim().toLowerCase();
   const normalizedExtension = extname(audioPath).trim().toLowerCase();
 
-  if (normalizedMimeType && DOUBAO_SUPPORTED_AUDIO_MIME_TYPES.has(normalizedMimeType)) {
-    return;
+  if (normalizedMimeType) {
+    const config = DOUBAO_AUDIO_CONFIG_BY_MIME_TYPE.get(normalizedMimeType);
+    if (config) {
+      return config;
+    }
   }
 
-  if (
-    (!normalizedMimeType || normalizedMimeType === "application/octet-stream") &&
-    normalizedExtension &&
-    DOUBAO_SUPPORTED_AUDIO_EXTENSIONS.has(normalizedExtension)
-  ) {
-    return;
+  if (!normalizedMimeType || normalizedMimeType === "application/octet-stream") {
+    const config = DOUBAO_AUDIO_CONFIG_BY_EXTENSION.get(normalizedExtension);
+    if (config) {
+      return config;
+    }
   }
 
   const formatLabel =
@@ -355,7 +382,57 @@ function ensureDoubaoAudioFormatSupported(audioPath: string, audioMimeType?: str
   );
 }
 
-function extractDoubaoTranscript(payload: DoubaoFlashResponse | null): string {
+function normalizeDoubaoLanguage(language: string): string | undefined {
+  const normalized = language.trim();
+  if (!normalized || normalized.toLowerCase() === "auto") {
+    return undefined;
+  }
+  return normalized;
+}
+
+function createDoubaoHeaders(apiKey: string, requestId: string, includeSequence: boolean): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    "X-Api-Key": apiKey,
+    "X-Api-Resource-Id": DOUBAO_RESOURCE_ID,
+    "X-Api-Request-Id": requestId,
+    ...(includeSequence ? { "X-Api-Sequence": "-1" } : {}),
+  };
+}
+
+function getDoubaoResponseMeta(response: Response): {
+  statusCode?: string;
+  message?: string;
+  logId?: string;
+} {
+  return {
+    statusCode: response.headers.get("X-Api-Status-Code")?.trim() || undefined,
+    message: response.headers.get("X-Api-Message")?.trim() || undefined,
+    logId: response.headers.get("X-Tt-Logid")?.trim() || undefined,
+  };
+}
+
+async function parseDoubaoRecognitionResponse(
+  response: Response,
+  logId?: string,
+): Promise<DoubaoRecognitionResponse | null> {
+  const responseText = await response.text();
+  if (!responseText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as DoubaoRecognitionResponse;
+  } catch {
+    throw new Error(formatDoubaoFailure("服务返回格式不正确", logId));
+  }
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractDoubaoTranscript(payload: DoubaoRecognitionResponse | null): string {
   const text = payload?.result?.text?.trim();
   if (text) {
     return text;
