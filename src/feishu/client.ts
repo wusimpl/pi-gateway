@@ -2,11 +2,36 @@ import * as lark from "@larksuiteoapi/node-sdk";
 import type { Config } from "../config.js";
 import { logger } from "../app/logger.js";
 
+export type FeishuMessageEventHandler = (data: Record<string, unknown>) => Promise<void>;
+export type FeishuCardActionHandler = (data: Record<string, unknown>) => Promise<unknown> | unknown;
+
 export interface FeishuConnection {
   client: lark.Client;
   wsClient: lark.WSClient;
   eventDispatcher: lark.EventDispatcher;
-  startMessageConnection(handler: (data: Record<string, unknown>) => Promise<void>): Promise<void>;
+  startMessageConnection(
+    handler: FeishuMessageEventHandler,
+    cardActionHandler?: FeishuCardActionHandler,
+  ): Promise<void>;
+}
+
+async function handleCardActionEvent(
+  data: Record<string, unknown>,
+  handler?: FeishuCardActionHandler,
+): Promise<unknown> {
+  logger.debug("收到飞书卡片交互事件", {
+    topLevelKeys: Object.keys(data),
+    hasEvent: typeof data.event === "object" && data.event !== null,
+  });
+
+  if (!handler) return undefined;
+
+  try {
+    return await handler(data);
+  } catch (err) {
+    logger.error("处理飞书卡片交互时出错", { error: String(err) });
+    return undefined;
+  }
 }
 
 export function createFeishuConnection(config: Config): FeishuConnection {
@@ -32,7 +57,8 @@ export function createFeishuConnection(config: Config): FeishuConnection {
   });
 
   async function startMessageConnection(
-    handler: (data: Record<string, unknown>) => Promise<void>,
+    handler: FeishuMessageEventHandler,
+    cardActionHandler?: FeishuCardActionHandler,
   ): Promise<void> {
     eventDispatcher.register({
       // 反应事件：当前无需业务处理，注册空 handler 消除 SDK warn 日志
@@ -53,6 +79,8 @@ export function createFeishuConnection(config: Config): FeishuConnection {
             logger.error("处理飞书消息时出错", { error: String(err) });
           });
       },
+      "card.action.trigger": (data: Record<string, unknown>) => handleCardActionEvent(data, cardActionHandler),
+      "card.action.trigger_v1": (data: Record<string, unknown>) => handleCardActionEvent(data, cardActionHandler),
     });
 
     await wsClient.start({

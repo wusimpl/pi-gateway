@@ -7,6 +7,9 @@ function applyBaseEnv(extraEnv?: Record<string, string | undefined>) {
     ...ORIGINAL_ENV,
     FEISHU_APP_ID: "cli_test_app_id",
     FEISHU_APP_SECRET: "test_secret",
+    STREAMING_ENABLED: undefined,
+    PI_SHOW_TOOL_CALLS_IN_REPLY: undefined,
+    PI_DISABLE_GLOBAL_AGENTS: undefined,
     ...extraEnv,
   };
 }

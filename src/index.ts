@@ -18,12 +18,17 @@ import {
 import { createFeishuMessageReader, type FeishuMessageClient } from "./feishu/inbound/message.js";
 import { createFeishuResourceDownloader, type FeishuResourceClient } from "./feishu/inbound/resource.js";
 import { createFeishuMessenger, type FeishuApiClient } from "./feishu/send.js";
+import { createFeishuChoiceInteractionStore } from "./feishu/choice-interactions.js";
+import { buildFeishuChoiceActionToast, parseFeishuChoiceCardAction } from "./feishu/choice-card.js";
+import { createAskUserChoiceExtension } from "./pi/extensions/ask-user-choice.js";
 import { createFeishuDocsExtension } from "./pi/extensions/feishu-docs.js";
 import { createFeishuFilesExtension } from "./pi/extensions/feishu-files.js";
 import { createCronTaskExtension } from "./pi/extensions/cron-task.js";
+import { createSkillStatsExtension } from "./pi/extensions/skill-stats.js";
 import { findAvailableModel, listAvailableModels } from "./pi/models.js";
 import { createPiRuntime, type PiRuntime } from "./pi/runtime.js";
 import { createSessionService, type SessionService } from "./pi/sessions.js";
+import { createSkillStatsStore } from "./pi/skill-stats.js";
 import { createPromptRunner } from "./pi/stream.js";
 import { setQuotedMessageDataDir } from "./storage/quoted-messages.js";
 import { createUserStateStore } from "./storage/users.js";
@@ -57,6 +62,7 @@ async function main() {
   const runtimeConfig = createRuntimeConfigStore(config);
   const userStateStore = createUserStateStore(config.DATA_DIR);
   const workspaceService = createWorkspaceService(config.PI_WORKSPACE_ROOT);
+  const skillStatsStore = createSkillStatsStore(config.DATA_DIR);
 
   let feishuConnection: ReturnType<typeof createFeishuConnection>;
   try {
@@ -75,6 +81,7 @@ async function main() {
     feishuConnection.client as unknown as FeishuApiClient,
     { feishuDomain: config.FEISHU_DOMAIN },
   );
+  const choiceInteractionStore = createFeishuChoiceInteractionStore();
 
   let cronService: CronService | null = null;
   const deferredCronRunService = createDeferredCronRunService({
@@ -87,8 +94,10 @@ async function main() {
     piRuntime = createPiRuntime({
       disableGlobalAgents: config.PI_DISABLE_GLOBAL_AGENTS,
       extensionFactories: [
+        createAskUserChoiceExtension(feishuMessenger, choiceInteractionStore),
         createFeishuDocsExtension(feishuDocsService),
         createFeishuFilesExtension(feishuMessenger),
+        createSkillStatsExtension(skillStatsStore),
         ...(config.CRON_ENABLED
           ? [
               createCronTaskExtension(() => cronService, undefined, () => deferredCronRunService),
@@ -158,6 +167,7 @@ async function main() {
     cronService: cronService ?? undefined,
     deferredCronRunService,
     runtimeConfig,
+    skillStatsStore,
   });
   const promptService = createPromptService({
     config,
@@ -185,7 +195,16 @@ async function main() {
   registerShutdown(sessionService, runtimeState, cronService);
 
   try {
-    await feishuConnection.startMessageConnection(router.handleFeishuMessage);
+    await feishuConnection.startMessageConnection(router.handleFeishuMessage, async (data) => {
+      const action = parseFeishuChoiceCardAction(data);
+      if (!action) return undefined;
+      try {
+        return choiceInteractionStore.handleCardAction(action);
+      } catch (err) {
+        logger.error("飞书选择卡片回调处理失败", { error: String(err) });
+        return buildFeishuChoiceActionToast("error", "选择处理失败，请稍后重试。");
+      }
+    });
     await signalRestartReadyIfNeeded();
     await notifyRestartReadyIfNeeded(config.DATA_DIR, feishuMessenger);
     logger.info("🚀 pi-gateway 服务已启动，等待飞书消息...");

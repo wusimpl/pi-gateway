@@ -11,6 +11,7 @@ import {
   persistSessionToolSelection,
   type SessionService,
 } from "../pi/sessions.js";
+import type { SkillStatsStore } from "../pi/skill-stats.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { UserStateStore } from "../storage/users.js";
 import type { ThinkingLevel, UserIdentity } from "../types.js";
@@ -58,6 +59,7 @@ interface CommandServiceDeps {
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
   cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "removeJob" | "runJobNow">;
   deferredCronRunService?: Pick<DeferredCronRunService, "queueRun">;
+  skillStatsStore?: Pick<SkillStatsStore, "listSkillUsage" | "reset">;
   runtimeConfig?: Pick<
     RuntimeConfigStore,
     | "getAudioTranscribeProvider"
@@ -71,6 +73,7 @@ interface CommandServiceDeps {
 
 export function createCommandService(deps: CommandServiceDeps): CommandService {
   const SESSION_PAGE_SIZE = 20;
+  const SKILL_STATS_PAGE_SIZE = 10;
 
   async function handleBridgeCommandFlow(
     identity: UserIdentity,
@@ -119,7 +122,10 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         });
         await sendCommandReply(openId, reply);
       } else if (command.name === "sessions") {
-        const pageResult = parseSessionsPage(command.args);
+        const pageResult = parsePageArg(command.args, {
+          commandName: "sessions",
+          extraUsage: "",
+        });
         if (pageResult.error) {
           await deps.messenger.sendTextMessage(openId, pageResult.error);
           return;
@@ -150,6 +156,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           sessionsTotalCount: totalCount,
         });
         await sendCommandReply(openId, reply);
+      } else if (command.name === "skillstat") {
+        await handleSkillStatCommand(identity, command);
       } else if (command.name === "resume") {
         await handleResumeCommand(identity, command);
       } else if (command.name === "model") {
@@ -177,6 +185,57 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       logger.error("桥接层命令处理失败", { openId, command: command.name, args: command.args, error: String(err) });
       await deps.messenger.sendTextMessage(openId, formatError("命令处理失败，请稍后重试"));
     }
+  }
+
+  async function handleSkillStatCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    if (!deps.skillStatsStore) {
+      await deps.messenger.sendTextMessage(openId, "当前没有启用 skill 使用统计。");
+      return;
+    }
+
+    const argText = command.args.trim();
+    if (argText.toLowerCase() === "reset") {
+      await deps.skillStatsStore.reset();
+      await deps.messenger.sendTextMessage(openId, "✅ 已清空 skill 使用统计。");
+      return;
+    }
+
+    const pageResult = parsePageArg(argText, {
+      commandName: "skillstat",
+      extraUsage: " 或 /skillstat reset",
+    });
+    if (pageResult.error) {
+      await deps.messenger.sendTextMessage(openId, pageResult.error);
+      return;
+    }
+
+    const page = pageResult.page;
+    if (page === undefined) {
+      await deps.messenger.sendTextMessage(openId, "页码解析失败。");
+      return;
+    }
+
+    const records = await deps.skillStatsStore.listSkillUsage();
+    const totalCount = records.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / SKILL_STATS_PAGE_SIZE));
+    if (totalCount > 0 && page > totalPages) {
+      await deps.messenger.sendTextMessage(
+        openId,
+        `页码超出范围，目前只有 ${totalPages} 页。\n\n用 /skillstat 看第一页，或用 /skillstat -n <页码> 翻页。`,
+      );
+      return;
+    }
+
+    const startIndex = (page - 1) * SKILL_STATS_PAGE_SIZE;
+    const reply = handleBridgeCommand(command, {
+      openId,
+      skillUsage: records.slice(startIndex, startIndex + SKILL_STATS_PAGE_SIZE),
+      skillUsagePage: page,
+      skillUsageTotalPages: totalPages,
+      skillUsageTotalCount: totalCount,
+    });
+    await sendCommandReply(openId, reply);
   }
 
   async function handleStopCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
@@ -612,7 +671,10 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
   };
 }
 
-function parseSessionsPage(args: string): { page: number; error?: undefined } | { page?: undefined; error: string } {
+function parsePageArg(
+  args: string,
+  options: { commandName: string; extraUsage: string },
+): { page: number; error?: undefined } | { page?: undefined; error: string } {
   const trimmed = args.trim();
   if (!trimmed) {
     return { page: 1 };
@@ -620,7 +682,7 @@ function parseSessionsPage(args: string): { page: number; error?: undefined } | 
 
   const matched = trimmed.match(/^-n\s+(\d+)$/);
   if (!matched) {
-    return { error: "用法：/sessions 或 /sessions -n <页码>。" };
+    return { error: `用法：/${options.commandName} 或 /${options.commandName} -n <页码>${options.extraUsage}。` };
   }
 
   const page = Number(matched[1]);

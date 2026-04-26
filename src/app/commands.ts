@@ -25,6 +25,7 @@ const BRIDGE_COMMANDS = [
   "stt",
   "stream",
   "reaction",
+  "skillstat",
 ] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];
 
@@ -50,6 +51,12 @@ interface BridgeListedSession {
 interface BridgeToolStatus {
   name: string;
   enabled: boolean;
+}
+
+interface BridgeSkillUsageRecord {
+  name: string;
+  count: number;
+  lastUsedAt: string;
 }
 
 export interface BridgeCommand {
@@ -79,6 +86,10 @@ interface BridgeCommandContext {
   sessionsPage?: number;
   sessionsTotalPages?: number;
   sessionsTotalCount?: number;
+  skillUsage?: BridgeSkillUsageRecord[];
+  skillUsagePage?: number;
+  skillUsageTotalPages?: number;
+  skillUsageTotalCount?: number;
 }
 
 /**
@@ -199,6 +210,12 @@ export function handleBridgeCommand(
         totalPages: context.sessionsTotalPages ?? 1,
         totalCount: context.sessionsTotalCount ?? (context.sessions?.length ?? 0),
       });
+    case "skillstat":
+      return formatSkillStatsReply(context.skillUsage ?? [], {
+        page: context.skillUsagePage ?? 1,
+        totalPages: context.skillUsageTotalPages ?? 1,
+        totalCount: context.skillUsageTotalCount ?? (context.skillUsage?.length ?? 0),
+      });
     case "resume":
       return formatSessionCommandReply(`✅ 已切换到会话: ${context.sessionId ?? "unknown"}`, context.currentModel);
     case "settings": {
@@ -314,6 +331,40 @@ function formatSessionRows(sessions: BridgeListedSession[]): string[] {
     const messageCount = Math.max(0, session.messageCount);
     const ageLabel = formatSessionAge(session.updatedAt);
     return `| ${session.order} | ${title} | ${messageCount} | ${ageLabel} |`;
+  });
+}
+
+function formatSkillStatsReply(
+  records: BridgeSkillUsageRecord[],
+  meta: {
+    page: number;
+    totalPages: number;
+    totalCount: number;
+  },
+): string {
+  if (meta.totalCount === 0) {
+    return "当前还没有 skill 使用统计。";
+  }
+
+  return [
+    `📊 Skill 使用统计（第 ${meta.page}/${meta.totalPages} 页，共 ${meta.totalCount} 个）`,
+    "翻页：/skillstat -n <页码>。清空：/skillstat reset。",
+    "",
+    "| 序号 | Skill | 次数 | 最近使用 |",
+    "| --- | --- | --- | --- |",
+    ...formatSkillUsageRows(records, meta.page),
+  ].join("\n");
+}
+
+const SKILL_STATS_PAGE_SIZE = 10;
+
+function formatSkillUsageRows(records: BridgeSkillUsageRecord[], page: number): string[] {
+  const startOrder = (page - 1) * SKILL_STATS_PAGE_SIZE;
+  return records.map((record, index) => {
+    const name = escapeMarkdownTableCell(record.name);
+    const count = Math.max(0, record.count);
+    const ageLabel = formatSessionAge(record.lastUsedAt);
+    return `| ${startOrder + index + 1} | ${name} | ${count} | ${ageLabel} |`;
   });
 }
 

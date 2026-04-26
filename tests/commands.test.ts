@@ -43,6 +43,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /skillstat with args", () => {
+    expect(parseBridgeCommand("/skillstat -n 2")).toEqual({
+      name: "skillstat",
+      args: "-n 2",
+    });
+  });
+
   it("should parse /resume with args", () => {
     expect(parseBridgeCommand("/resume abc123")).toEqual({
       name: "resume",
@@ -230,6 +237,30 @@ describe("handleBridgeCommand", () => {
         ],
       } as any),
     ).toContain("| 1 | hello \\| world | 3 | 12m |");
+  });
+
+  it("`/skillstat` 应返回 skill 使用统计", () => {
+    expect(
+      handleBridgeCommand("skillstat", {
+        skillUsagePage: 1,
+        skillUsageTotalPages: 1,
+        skillUsageTotalCount: 1,
+        skillUsage: [
+          {
+            name: "pdf2md",
+            count: 3,
+            lastUsedAt: "2026-04-16T11:48:00.000Z",
+          },
+        ],
+      } as any),
+    ).toBe(
+      "📊 Skill 使用统计（第 1/1 页，共 1 个）\n" +
+        "翻页：/skillstat -n <页码>。清空：/skillstat reset。\n" +
+        "\n" +
+        "| 序号 | Skill | 次数 | 最近使用 |\n" +
+        "| --- | --- | --- | --- |\n" +
+        "| 1 | pdf2md | 3 | 12m |",
+    );
   });
 
   it("`/resume` 应返回切换后的会话", () => {

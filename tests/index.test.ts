@@ -59,6 +59,8 @@ const mocks = vi.hoisted(() => {
       runJobNow: mocks.cronService.runJobNow,
     })),
     createCronTaskExtension: vi.fn(() => "cron-extension-factory"),
+    createSkillStatsStore: vi.fn(() => "skill-stats-store"),
+    createSkillStatsExtension: vi.fn(() => "skill-stats-extension-factory"),
     createSessionService: vi.fn(() => ({
       disposeAllSessions: vi.fn(),
       getOrCreateActiveSession: vi.fn(),
@@ -166,6 +168,14 @@ vi.mock("../src/pi/extensions/cron-task.js", () => ({
   createCronTaskExtension: mocks.createCronTaskExtension,
 }));
 
+vi.mock("../src/pi/skill-stats.js", () => ({
+  createSkillStatsStore: mocks.createSkillStatsStore,
+}));
+
+vi.mock("../src/pi/extensions/skill-stats.js", () => ({
+  createSkillStatsExtension: mocks.createSkillStatsExtension,
+}));
+
 vi.mock("../src/pi/sessions.js", () => ({
   createSessionService: mocks.createSessionService,
 }));
@@ -223,6 +233,8 @@ describe("index wiring", () => {
     mocks.createCronRunner.mockClear();
     mocks.createCronService.mockClear();
     mocks.createCronTaskExtension.mockClear();
+    mocks.createSkillStatsStore.mockClear();
+    mocks.createSkillStatsExtension.mockClear();
     mocks.cronService.start.mockClear();
     mocks.cronService.stop.mockClear();
     mocks.createSessionService.mockClear();
@@ -257,9 +269,13 @@ describe("index wiring", () => {
         disableGlobalAgents: true,
         extensionFactories: expect.arrayContaining([
           "cron-extension-factory",
+          "skill-stats-extension-factory",
         ]),
       }),
     );
+    expect(mocks.createSkillStatsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
+    expect(mocks.createSkillStatsExtension).toHaveBeenCalledWith("skill-stats-store");
+    expect(mocks.createCommandService.mock.calls[0]?.[0]?.skillStatsStore).toBe("skill-stats-store");
     expect(mocks.createCronRunner).toHaveBeenCalledTimes(1);
     expect(mocks.createCronService).toHaveBeenCalledTimes(1);
     expect(mocks.cronService.start).toHaveBeenCalledTimes(1);
