@@ -69,3 +69,11 @@ export function createFeishuConversationTarget(event: FeishuMessageEvent): Conve
 
   return createGroupConversationTarget(event.message.chatId);
 }
+
+export function getConversationTargetKey(
+  conversationTarget: Pick<ConversationTarget, "key"> | null | undefined,
+  fallbackKey: string,
+): string {
+  const key = conversationTarget?.key.trim();
+  return key || fallbackKey;
+}

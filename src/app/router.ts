@@ -13,6 +13,7 @@ import {
 import { getUserWorkspaceDir } from "../pi/workspace.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
 import { readUserState } from "../storage/users.js";
+import { getConversationTargetKey } from "../conversation.js";
 import {
   findAvailableModel,
   listAvailableModels,
@@ -107,7 +108,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     const bridgeCommand = message.kind === "text" ? parseBridgeCommand(message.text) : null;
     if (bridgeCommand?.name === "next") {
       if (!bridgeCommand.args) {
-        await deps.commandService.handleBridgeCommand(identity, bridgeCommand);
+        await deps.commandService.handleBridgeCommand(identity, bridgeCommand, message.conversationTarget);
         return;
       }
 
@@ -116,12 +117,12 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     }
 
     if (bridgeCommand) {
-      await deps.commandService.handleBridgeCommand(identity, bridgeCommand);
+      await deps.commandService.handleBridgeCommand(identity, bridgeCommand, message.conversationTarget);
       return;
     }
 
     if (hasSlashPrefix) {
-      await deps.commandService.handleUnsupportedSlashCommand(identity, message.text);
+      await deps.commandService.handleUnsupportedSlashCommand(identity, message.text, message.conversationTarget);
       return;
     }
 
@@ -135,9 +136,10 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const openId = identity.openId;
-      const hasLocalBacklog = (promptQueues.get(openId)?.length ?? 0) > 0;
+      const conversationKey = getConversationTargetKey(message.conversationTarget, openId);
+      const hasLocalBacklog = (promptQueues.get(conversationKey)?.length ?? 0) > 0;
       if (
-        drainingUsers.has(openId)
+        drainingUsers.has(conversationKey)
         && message.kind === "text"
         && (runningBehavior === "steer" || !hasLocalBacklog)
       ) {
@@ -147,45 +149,46 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
               resolve();
               return;
             }
-            pushPromptQueue(openId, { identity, message, resolve, reject });
+            pushPromptQueue(conversationKey, { identity, message, resolve, reject });
           })
           .catch((error) => {
             logger.warn("运行中消息入队失败，退回普通队列", {
               openId,
+              conversationKey,
               messageId: message.messageId,
               behavior: runningBehavior,
               error: String(error),
             });
-            pushPromptQueue(openId, { identity, message, resolve, reject });
+            pushPromptQueue(conversationKey, { identity, message, resolve, reject });
           });
         return;
       }
 
-      pushPromptQueue(openId, { identity, message, resolve, reject });
+      pushPromptQueue(conversationKey, { identity, message, resolve, reject });
     });
   }
 
-  function pushPromptQueue(openId: string, prompt: QueuedPrompt): void {
-    const queue = promptQueues.get(openId) ?? [];
+  function pushPromptQueue(conversationKey: string, prompt: QueuedPrompt): void {
+    const queue = promptQueues.get(conversationKey) ?? [];
     queue.push(prompt);
-    promptQueues.set(openId, queue);
-    void drainPromptQueue(openId);
+    promptQueues.set(conversationKey, queue);
+    void drainPromptQueue(conversationKey);
   }
 
-  async function drainPromptQueue(openId: string): Promise<void> {
-    if (drainingUsers.has(openId)) {
+  async function drainPromptQueue(conversationKey: string): Promise<void> {
+    if (drainingUsers.has(conversationKey)) {
       return;
     }
 
-    drainingUsers.add(openId);
+    drainingUsers.add(conversationKey);
 
     try {
       while (true) {
-        const queue = promptQueues.get(openId);
+        const queue = promptQueues.get(conversationKey);
         const next = queue?.shift();
 
         if (!next) {
-          promptQueues.delete(openId);
+          promptQueues.delete(conversationKey);
           break;
         }
 
@@ -197,13 +200,13 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
         }
 
         if (queue && queue.length === 0) {
-          promptQueues.delete(openId);
+          promptQueues.delete(conversationKey);
         }
       }
     } finally {
-      drainingUsers.delete(openId);
-      if ((promptQueues.get(openId)?.length ?? 0) > 0) {
-        void drainPromptQueue(openId);
+      drainingUsers.delete(conversationKey);
+      if ((promptQueues.get(conversationKey)?.length ?? 0) > 0) {
+        void drainPromptQueue(conversationKey);
       }
     }
   }

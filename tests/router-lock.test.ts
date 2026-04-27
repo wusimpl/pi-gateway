@@ -156,6 +156,69 @@ describe("handleFeishuMessage 运行锁", () => {
     expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
   });
 
+  it("不同会话目标的消息互不排队", async () => {
+    const resolvers: Array<() => void> = [];
+    mocks.promptSession.mockImplementation(
+      () => new Promise((resolve) => {
+        resolvers.push(() => resolve({ text: "done", error: undefined }));
+      }),
+    );
+
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: {
+        kind: "group",
+        key: "oc_1",
+        receiveIdType: "chat_id",
+        receiveId: "oc_1",
+        chatId: "oc_1",
+      },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"first"}',
+      text: "first",
+    });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "first", localFiles: [] });
+
+    const firstCall = handleFeishuMessage({});
+    await vi.waitFor(() => {
+      expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+    });
+
+    mocks.parseMessageEvent.mockReturnValue({
+      ...baseEvent,
+      message: { ...baseEvent.message, messageId: "om_2", content: "{}" },
+    });
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: {
+        kind: "group",
+        key: "oc_2",
+        receiveIdType: "chat_id",
+        receiveId: "oc_2",
+        chatId: "oc_2",
+      },
+      messageId: "om_2",
+      messageType: "text",
+      createTime: "124",
+      rawContent: '{"text":"second"}',
+      text: "second",
+    });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "second", localFiles: [] });
+
+    const secondCall = handleFeishuMessage({});
+    await vi.waitFor(() => {
+      expect(mocks.promptSession).toHaveBeenCalledTimes(2);
+    });
+
+    resolvers.forEach((resolve) => resolve());
+    await firstCall;
+    await secondCall;
+  });
+
   it("运行中收到普通文本时应作为 steer 交给 Pi", async () => {
     const piSession = {
       id: "pi_session",

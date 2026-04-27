@@ -1,4 +1,6 @@
 import type { Config } from "../config.js";
+import type { ConversationTarget } from "../conversation.js";
+import { getConversationTargetKey } from "../conversation.js";
 import { formatError } from "../feishu/format.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import {
@@ -37,8 +39,16 @@ import {
 import { parseScheduleInput } from "../cron/schedule.js";
 
 export interface CommandService {
-  handleBridgeCommand(identity: UserIdentity, command: BridgeCommand): Promise<void>;
-  handleUnsupportedSlashCommand(identity: UserIdentity, rawText: string): Promise<void>;
+  handleBridgeCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void>;
+  handleUnsupportedSlashCommand(
+    identity: UserIdentity,
+    rawText: string,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void>;
 }
 
 interface CommandServiceDeps {
@@ -78,8 +88,10 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
   async function handleBridgeCommandFlow(
     identity: UserIdentity,
     command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
   ): Promise<void> {
     const openId = identity.openId;
+    const conversationKey = getConversationTargetKey(conversationTarget, openId);
     try {
       if (command.name === "new" || command.name === "reset") {
         const sessionState = await deps.sessionService.createNewSession(identity);
@@ -177,14 +189,20 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       } else if (command.name === "reaction") {
         await handleReactionCommand(identity, command);
       } else if (command.name === "stop") {
-        await handleStopCommand(identity, command);
+        await handleStopCommand(identity, command, conversationKey);
       } else if (command.name === "next") {
         await sendCommandReply(openId, handleBridgeCommand(command, { openId }));
       } else if (command.name === "restart") {
         await handleRestartCommand(identity, command);
       }
     } catch (err) {
-      logger.error("桥接层命令处理失败", { openId, command: command.name, args: command.args, error: String(err) });
+      logger.error("桥接层命令处理失败", {
+        openId,
+        conversationKey,
+        command: command.name,
+        args: command.args,
+        error: String(err),
+      });
       await deps.messenger.sendTextMessage(openId, formatError("命令处理失败，请稍后重试"));
     }
   }
@@ -240,9 +258,13 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await sendCommandReply(openId, reply);
   }
 
-  async function handleStopCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleStopCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationKey: string,
+  ): Promise<void> {
     const openId = identity.openId;
-    await deps.runtimeState.requestStop(openId);
+    await deps.runtimeState.requestStop(conversationKey);
     const reply = handleBridgeCommand(command, { openId });
     await sendCommandReply(openId, reply);
   }
@@ -701,7 +723,11 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await deps.messenger.sendRenderedMessage(openId, text, deps.config.TEXT_CHUNK_LIMIT);
   }
 
-  async function handleUnsupportedSlashCommand(identity: UserIdentity, rawText: string): Promise<void> {
+  async function handleUnsupportedSlashCommand(
+    identity: UserIdentity,
+    rawText: string,
+    _conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     await sendCommandReply(identity.openId, formatUnsupportedSlashCommand(rawText));
   }
 

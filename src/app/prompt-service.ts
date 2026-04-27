@@ -13,6 +13,7 @@ import { readQuotedMessage as readCachedQuotedMessage } from "../storage/quoted-
 import type { UserIdentity, UserState } from "../types.js";
 import type { UserStateStore } from "../storage/users.js";
 import type { DeferredCronRunService } from "../cron/deferred-run.js";
+import { getConversationTargetKey } from "../conversation.js";
 import { logger } from "./logger.js";
 import type { RuntimeStateStore } from "./state.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
@@ -99,6 +100,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     message: FeishuInboundMessage,
   ): Promise<void> {
     const openId = identity.openId;
+    const conversationKey = getConversationTargetKey(message.conversationTarget, openId);
     const messageId = message.messageId;
     let lockAcquired = false;
     if (deps.runtimeState.isDraining()) {
@@ -106,12 +108,12 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       return;
     }
 
-    if (!deps.runtimeState.acquireLock(openId, messageId)) {
+    if (!deps.runtimeState.acquireLock(conversationKey, messageId)) {
       if (deps.runtimeState.isDraining()) {
         await deps.messenger.sendTextMessage(openId, "网关正在重启，暂时不接新任务，请稍后再试。");
         return;
       }
-      logger.info("用户消息因已有处理中任务被忽略", { openId, messageId });
+      logger.info("用户消息因已有处理中任务被忽略", { openId, conversationKey, messageId });
       return;
     }
     lockAcquired = true;
@@ -121,14 +123,14 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       const userState = await deps.userStateStore?.readUserState(openId);
       applyUserPromptPreferences(piSession, userState);
       const stoppedBeforePrompt = await deps.runtimeState.setAbortHandler(
-        openId,
+        conversationKey,
         messageId,
         async () => {
           await piSession.abort();
         },
       );
       if (stoppedBeforePrompt) {
-        logger.info("任务启动前收到停止请求，已跳过 prompt", { openId, messageId });
+        logger.info("任务启动前收到停止请求，已跳过 prompt", { openId, conversationKey, messageId });
         return;
       }
 
@@ -144,12 +146,12 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       const promptInput = await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity), {
         downloadResource: deps.downloadResource,
       });
-      if (deps.runtimeState.isStopRequested(openId, messageId)) {
-        logger.info("prompt 输入准备完成前收到停止请求，已跳过 prompt", { openId, messageId });
+      if (deps.runtimeState.isStopRequested(conversationKey, messageId)) {
+        logger.info("prompt 输入准备完成前收到停止请求，已跳过 prompt", { openId, conversationKey, messageId });
         return;
       }
 
-      const logCtx = { openId, sessionId: activeSessionId, messageId };
+      const logCtx = { openId, conversationKey, sessionId: activeSessionId, messageId };
       const result = await deps.promptRunner.promptSession(
         piSession,
         promptInput,
@@ -160,7 +162,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         deps.config.TEXT_CHUNK_LIMIT,
         toolCallsDisplayMode,
         undefined,
-        () => deps.runtimeState.isStopRequested(openId, messageId),
+        () => deps.runtimeState.isStopRequested(conversationKey, messageId),
       );
 
       if (result.error && !result.text && !result.aborted && !result.displayed) {
@@ -177,8 +179,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       );
     } finally {
       if (lockAcquired) {
-        deps.runtimeState.releaseLock(openId);
-        await deps.deferredCronRunService?.flush(openId);
+        deps.runtimeState.releaseLock(conversationKey);
+        await deps.deferredCronRunService?.flush(conversationKey);
       }
     }
   }
