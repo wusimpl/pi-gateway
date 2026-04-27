@@ -24,6 +24,7 @@ import {
   type QuotedMessageStore,
   writeQuotedMessage as writeDefaultQuotedMessage,
 } from "../storage/quoted-messages.js";
+import type { ConversationReceiveIdType, ConversationTarget } from "../conversation.js";
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
@@ -63,7 +64,7 @@ export interface FeishuApiClient {
     };
     message: {
       create(args: {
-        params: { receive_id_type: "open_id" };
+        params: { receive_id_type: ConversationReceiveIdType };
         data: {
           receive_id: string;
           msg_type: FeishuMessageType;
@@ -134,8 +135,15 @@ export type { FeishuDocPreviewCardInput } from "./doc-preview-card.js";
 
 export interface FeishuMessenger {
   sendFeishuMessage(openId: string, msgType: FeishuMessageType, content: Record<string, unknown>): Promise<string | null>;
+  sendFeishuMessageToTarget(
+    target: ConversationTarget,
+    msgType: FeishuMessageType,
+    content: Record<string, unknown>,
+  ): Promise<string | null>;
   sendTextMessage(openId: string, text: string): Promise<string | null>;
+  sendTextMessageToTarget(target: ConversationTarget, text: string): Promise<string | null>;
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
+  sendRenderedMessageToTarget(target: ConversationTarget, text: string, textChunkLimit: number): Promise<void>;
   sendLocalFileMessage(openId: string, input: SendLocalFileInput): Promise<SentFeishuFile>;
   sendDocPreviewCard(openId: string, input: FeishuDocPreviewCardInput): Promise<string | null>;
   startStreamingMessage(
@@ -146,6 +154,15 @@ export interface FeishuMessenger {
   ): Promise<FeishuStreamingMessage | null>;
   addProcessingReaction(messageId: string, reactionType?: string): Promise<string | null>;
   removeReaction(messageId: string, reactionId: string): Promise<boolean>;
+}
+
+function createP2PTarget(openId: string): ConversationTarget {
+  return {
+    kind: "p2p",
+    key: openId,
+    receiveIdType: "open_id",
+    receiveId: openId,
+  };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -193,16 +210,20 @@ export function createFeishuMessenger(
     writeQuotedMessage: writeDefaultQuotedMessage,
   };
 
-  async function sendFeishuMessage(
-    openId: string,
+  async function sendFeishuMessageToTarget(
+    target: ConversationTarget,
     msgType: FeishuMessageType,
     content: Record<string, unknown>
   ): Promise<string | null> {
     try {
-      const resp = await retryRequest("飞书消息发送", { openId, msgType }, () => client.im.message.create({
-        params: { receive_id_type: "open_id" },
+      const resp = await retryRequest("飞书消息发送", {
+        receiveIdType: target.receiveIdType,
+        receiveId: target.receiveId,
+        msgType,
+      }, () => client.im.message.create({
+        params: { receive_id_type: target.receiveIdType },
         data: {
-          receive_id: openId,
+          receive_id: target.receiveId,
           msg_type: msgType,
           content: JSON.stringify(content),
         },
@@ -216,22 +237,42 @@ export function createFeishuMessenger(
           extractQuotedTextFromOutgoingMessage(msgType, content),
         );
       }
-      logger.debug("飞书消息已发送", { openId, messageId: msgId, msgType });
+      logger.debug("飞书消息已发送", {
+        receiveIdType: target.receiveIdType,
+        receiveId: target.receiveId,
+        messageId: msgId,
+        msgType,
+      });
       return msgId;
     } catch {
       return null;
     }
   }
 
+  async function sendFeishuMessage(
+    openId: string,
+    msgType: FeishuMessageType,
+    content: Record<string, unknown>
+  ): Promise<string | null> {
+    return sendFeishuMessageToTarget(createP2PTarget(openId), msgType, content);
+  }
+
+  async function sendTextMessageToTarget(
+    target: ConversationTarget,
+    text: string,
+  ): Promise<string | null> {
+    return sendFeishuMessageToTarget(target, "text", { text });
+  }
+
   async function sendTextMessage(
     openId: string,
     text: string
   ): Promise<string | null> {
-    return sendFeishuMessage(openId, "text", { text });
+    return sendTextMessageToTarget(createP2PTarget(openId), text);
   }
 
-  async function sendRenderedMessage(
-    openId: string,
+  async function sendRenderedMessageToTarget(
+    target: ConversationTarget,
     text: string,
     textChunkLimit: number
   ): Promise<void> {
@@ -242,7 +283,7 @@ export function createFeishuMessenger(
 
     const messages = renderAssistantMessage(normalized, textChunkLimit);
     for (const message of messages) {
-      const messageId = await sendFeishuMessage(openId, message.msgType, message.content);
+      const messageId = await sendFeishuMessageToTarget(target, message.msgType, message.content);
       if (messageId) {
         continue;
       }
@@ -251,12 +292,23 @@ export function createFeishuMessenger(
         continue;
       }
 
-      logger.warn("飞书卡片发送失败，回退为文本消息", { openId });
+      logger.warn("飞书卡片发送失败，回退为文本消息", {
+        receiveIdType: target.receiveIdType,
+        receiveId: target.receiveId,
+      });
       for (const chunk of chunkText(normalized, textChunkLimit)) {
-        await sendFeishuMessage(openId, "text", { text: chunk });
+        await sendFeishuMessageToTarget(target, "text", { text: chunk });
       }
       return;
     }
+  }
+
+  async function sendRenderedMessage(
+    openId: string,
+    text: string,
+    textChunkLimit: number
+  ): Promise<void> {
+    return sendRenderedMessageToTarget(createP2PTarget(openId), text, textChunkLimit);
   }
 
   async function sendLocalFileMessage(
@@ -538,8 +590,11 @@ export function createFeishuMessenger(
 
   return {
     sendFeishuMessage,
+    sendFeishuMessageToTarget,
     sendTextMessage,
+    sendTextMessageToTarget,
     sendRenderedMessage,
+    sendRenderedMessageToTarget,
     sendLocalFileMessage,
     sendDocPreviewCard,
     startStreamingMessage,
@@ -570,11 +625,26 @@ export async function sendFeishuMessage(
   return getDefaultFeishuMessenger().sendFeishuMessage(openId, msgType, content);
 }
 
+export async function sendFeishuMessageToTarget(
+  target: ConversationTarget,
+  msgType: FeishuMessageType,
+  content: Record<string, unknown>,
+): Promise<string | null> {
+  return getDefaultFeishuMessenger().sendFeishuMessageToTarget(target, msgType, content);
+}
+
 export async function sendTextMessage(
   openId: string,
   text: string
 ): Promise<string | null> {
   return getDefaultFeishuMessenger().sendTextMessage(openId, text);
+}
+
+export async function sendTextMessageToTarget(
+  target: ConversationTarget,
+  text: string,
+): Promise<string | null> {
+  return getDefaultFeishuMessenger().sendTextMessageToTarget(target, text);
 }
 
 export async function sendRenderedMessage(
@@ -583,6 +653,14 @@ export async function sendRenderedMessage(
   textChunkLimit: number
 ): Promise<void> {
   return getDefaultFeishuMessenger().sendRenderedMessage(openId, text, textChunkLimit);
+}
+
+export async function sendRenderedMessageToTarget(
+  target: ConversationTarget,
+  text: string,
+  textChunkLimit: number,
+): Promise<void> {
+  return getDefaultFeishuMessenger().sendRenderedMessageToTarget(target, text, textChunkLimit);
 }
 
 export async function sendLocalFileMessage(

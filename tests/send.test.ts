@@ -120,6 +120,32 @@ describe("send helpers", () => {
     });
   });
 
+  it("sendTextMessageToTarget: 群聊目标应使用 chat_id 发送", async () => {
+    mockCreate.mockResolvedValue({ data: { message_id: "om_group_1" } });
+    const { sendTextMessageToTarget } = await import("../src/feishu/send.js");
+
+    await expect(
+      sendTextMessageToTarget(
+        {
+          kind: "group",
+          key: "oc_1",
+          receiveIdType: "chat_id",
+          receiveId: "oc_1",
+          chatId: "oc_1",
+        },
+        "hello group",
+      ),
+    ).resolves.toBe("om_group_1");
+    expect(mockCreate).toHaveBeenCalledWith({
+      params: { receive_id_type: "chat_id" },
+      data: {
+        receive_id: "oc_1",
+        msg_type: "text",
+        content: JSON.stringify({ text: "hello group" }),
+      },
+    });
+  });
+
   it("sendFeishuMessage: 应发送 interactive 卡片消息", async () => {
     mockCreate.mockResolvedValue({ data: { message_id: "om_msg_2" } });
     const { sendFeishuMessage } = await import("../src/feishu/send.js");
