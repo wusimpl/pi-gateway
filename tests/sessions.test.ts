@@ -18,6 +18,7 @@ function createDeps() {
   };
   const workspaceService = {
     ensureUserWorkspace: vi.fn().mockResolvedValue("/tmp/workspace/ou_1"),
+    ensureConversationWorkspace: vi.fn().mockResolvedValue("/tmp/workspace/conversations/oc_1"),
   };
 
   return { runtime, userStateStore, workspaceService };
@@ -106,6 +107,51 @@ describe("session service", () => {
     await service.createNewSession(identity);
 
     expect(getWorkspaceIdentity("/tmp/workspace/ou_1")).toEqual(identity);
+  });
+
+  it("为群目标创建 session 时使用 conversation 状态和 workspace", async () => {
+    const deps = createDeps();
+    const conversationStateStore = {
+      readConversationState: vi.fn().mockResolvedValue(null),
+      writeConversationState: vi.fn().mockResolvedValue(undefined),
+      createConversationState: vi.fn().mockImplementation(async (_key: string, sessionId: string) => ({
+        activeSessionId: sessionId,
+        createdAt: "2026-04-15T00:00:00.000Z",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        lastActiveAt: "2026-04-15T00:00:00.000Z",
+      })),
+      touchConversationState: vi.fn().mockResolvedValue(undefined),
+      conversationSessionsDir: vi.fn().mockReturnValue("/tmp/conversations/oc_1/sessions"),
+    };
+    deps.runtime.createPiSession.mockResolvedValue({
+      sessionId: "pi-session-group",
+      sessionFile: "/tmp/conversations/oc_1/sessions/session.jsonl",
+      dispose: vi.fn(),
+    });
+
+    const service = createSessionService({
+      ...deps,
+      conversationStateStore,
+    } as any);
+    const identity = { openId: "ou_1", userId: "u_1" };
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+
+    const result = await service.createNewSessionForTarget(identity, target);
+
+    expect(result.activeSessionId).toBe("pi-session-group");
+    expect(conversationStateStore.createConversationState).toHaveBeenCalledWith("oc_1", "pi-session-group");
+    expect(deps.userStateStore.createUserState).not.toHaveBeenCalled();
+    expect(deps.runtime.createPiSession).toHaveBeenCalledWith(
+      "/tmp/workspace/conversations/oc_1",
+      "/tmp/conversations/oc_1/sessions",
+    );
+    expect(getWorkspaceIdentity("/tmp/workspace/conversations/oc_1")).toEqual(identity);
   });
 
   it("应列出用户最近会话并标记当前会话", async () => {

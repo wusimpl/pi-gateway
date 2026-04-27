@@ -31,6 +31,7 @@ import { createSessionService, type SessionService } from "./pi/sessions.js";
 import { createSkillStatsStore } from "./pi/skill-stats.js";
 import { createPromptRunner } from "./pi/stream.js";
 import { setQuotedMessageDataDir } from "./storage/quoted-messages.js";
+import { createConversationStateStore } from "./storage/conversations.js";
 import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
 import { createRuntimeConfigStore } from "./app/runtime-config.js";
@@ -61,6 +62,7 @@ async function main() {
   const runtimeState = createRuntimeStateStore();
   const runtimeConfig = createRuntimeConfigStore(config);
   const userStateStore = createUserStateStore(config.DATA_DIR);
+  const conversationStateStore = createConversationStateStore(config.DATA_DIR);
   const workspaceService = createWorkspaceService(config.PI_WORKSPACE_ROOT);
   const skillStatsStore = createSkillStatsStore(config.DATA_DIR);
 
@@ -152,6 +154,7 @@ async function main() {
   const sessionService = createSessionService({
     runtime: piRuntime,
     userStateStore,
+    conversationStateStore,
     workspaceService,
   });
   const commandService = createCommandService({

@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { ConversationTarget } from "../conversation.js";
 import type { UserIdentity } from "../types.js";
 
 const DEFAULT_WORKSPACE_ROOT = join(homedir(), "code", "pi-workspace");
@@ -9,6 +10,8 @@ export interface WorkspaceService {
   getWorkspaceRoot(): string;
   getUserWorkspaceDir(identity: UserIdentity): string;
   ensureUserWorkspace(identity: UserIdentity): Promise<string>;
+  getConversationWorkspaceDir(identity: UserIdentity, target: ConversationTarget): string;
+  ensureConversationWorkspace(identity: UserIdentity, target: ConversationTarget): Promise<string>;
 }
 
 export function createWorkspaceService(root: string = DEFAULT_WORKSPACE_ROOT): WorkspaceService {
@@ -23,10 +26,26 @@ export function createWorkspaceService(root: string = DEFAULT_WORKSPACE_ROOT): W
     return dir;
   }
 
+  function getConversationWorkspaceDir(identity: UserIdentity, target: ConversationTarget): string {
+    if (target.kind === "p2p") {
+      return getUserWorkspaceDir(identity);
+    }
+
+    return join(root, "conversations", sanitizeWorkspaceSegment(target.key));
+  }
+
+  async function ensureConversationWorkspace(identity: UserIdentity, target: ConversationTarget): Promise<string> {
+    const dir = getConversationWorkspaceDir(identity, target);
+    await mkdir(dir, { recursive: true });
+    return dir;
+  }
+
   return {
     getWorkspaceRoot: () => root,
     getUserWorkspaceDir,
     ensureUserWorkspace,
+    getConversationWorkspaceDir,
+    ensureConversationWorkspace,
   };
 }
 
@@ -51,4 +70,12 @@ export function getUserWorkspaceDir(identity: UserIdentity): string {
 
 export async function ensureUserWorkspace(identity: UserIdentity): Promise<string> {
   return defaultWorkspaceService.ensureUserWorkspace(identity);
+}
+
+export function getConversationWorkspaceDir(identity: UserIdentity, target: ConversationTarget): string {
+  return defaultWorkspaceService.getConversationWorkspaceDir(identity, target);
+}
+
+export async function ensureConversationWorkspace(identity: UserIdentity, target: ConversationTarget): Promise<string> {
+  return defaultWorkspaceService.ensureConversationWorkspace(identity, target);
 }

@@ -4,6 +4,7 @@ import {
   setWorkspaceRoot,
   getWorkspaceRoot,
   getUserWorkspaceDir,
+  getConversationWorkspaceDir,
 } from "../src/pi/workspace.js";
 
 describe("workspace 路径", () => {
@@ -28,5 +29,20 @@ describe("workspace 路径", () => {
   it("应清洗非法目录字符", () => {
     const dir = getUserWorkspaceDir({ openId: "ou:test/user" });
     expect(dir).toContain("ou_test_user");
+  });
+
+  it("群聊 workspace 应按群会话目标隔离", () => {
+    const dir = getConversationWorkspaceDir(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "group",
+        key: "oc:test/group",
+        receiveIdType: "chat_id",
+        receiveId: "oc:test/group",
+        chatId: "oc:test/group",
+      },
+    );
+
+    expect(dir).toContain(join("conversations", "oc_test_group"));
   });
 });
