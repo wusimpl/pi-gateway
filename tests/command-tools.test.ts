@@ -40,6 +40,10 @@ function createDeps(piSession: ReturnType<typeof createPiSessionMock>["session"]
     listSessions: vi.fn(),
     resumeSession: vi.fn(),
   };
+  const userStateStore = {
+    readUserState: vi.fn(),
+    writeUserState: vi.fn().mockResolvedValue(undefined),
+  };
   const service = createCommandService({
     config: {
       TEXT_CHUNK_LIMIT: 2000,
@@ -49,9 +53,7 @@ function createDeps(piSession: ReturnType<typeof createPiSessionMock>["session"]
     },
     messenger,
     sessionService,
-    userStateStore: {
-      readUserState: vi.fn(),
-    },
+    userStateStore,
     workspaceService: {
       getUserWorkspaceDir: vi.fn(),
     },
@@ -73,6 +75,7 @@ function createDeps(piSession: ReturnType<typeof createPiSessionMock>["session"]
     service,
     messenger,
     sessionService,
+    userStateStore,
   };
 }
 
@@ -138,5 +141,55 @@ describe("command service tools", () => {
       "这些 tools 不存在：missing-tool。\n\n先用 /tools 看当前 session 里的可用 tools。",
     );
     expect(piSession.spies.setActiveToolsByName).not.toHaveBeenCalled();
+  });
+
+  it("`/toolcalls name` 会保存只显示工具名", async () => {
+    const piSession = createPiSessionMock({ activeTools: ["read", "bash"] });
+    const { service, messenger, userStateStore } = createDeps(piSession.session);
+    userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "session_1",
+      createdAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:00:00.000Z",
+      lastActiveAt: "2026-04-27T00:00:00.000Z",
+    });
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "toolcalls", args: "name" },
+    );
+
+    expect(userStateStore.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({ toolCallsDisplayMode: "name" }),
+    );
+    expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "✅ 已更新工具调用展示\n当前模式：只显示工具名",
+      2000,
+    );
+  });
+
+  it("`/toolcalls` 会返回当前展示模式", async () => {
+    const piSession = createPiSessionMock({ activeTools: ["read", "bash"] });
+    const { service, messenger, userStateStore } = createDeps(piSession.session);
+    userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "session_1",
+      createdAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:00:00.000Z",
+      lastActiveAt: "2026-04-27T00:00:00.000Z",
+      toolCallsDisplayMode: "full",
+    });
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "toolcalls", args: "" },
+    );
+
+    expect(userStateStore.writeUserState).not.toHaveBeenCalled();
+    expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "🛠️ 工具调用展示\n当前模式：显示详情\n\n关闭：/toolcalls off\n只显示工具名：/toolcalls name\n显示详情：/toolcalls full",
+      2000,
+    );
   });
 });

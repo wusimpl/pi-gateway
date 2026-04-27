@@ -43,7 +43,6 @@ interface PromptServiceDeps {
     | "FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY"
     | "FEISHU_PROCESSING_REACTION_TYPE"
     | "STREAMING_ENABLED"
-    | "PI_SHOW_TOOL_CALLS_IN_REPLY"
     | "TEXT_CHUNK_LIMIT"
   > & Partial<Pick<Config, "FEISHU_STEERING_REACTION_TYPE">>;
   runtimeState: Pick<
@@ -141,6 +140,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         ?? (deps.runtimeConfig
           ? deps.runtimeConfig.getStreamingEnabled()
           : deps.config.STREAMING_ENABLED);
+      const toolCallsDisplayMode = userState?.toolCallsDisplayMode ?? "off";
       const promptInput = await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity), {
         downloadResource: deps.downloadResource,
       });
@@ -158,7 +158,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         processingReactionType,
         streamingEnabled,
         deps.config.TEXT_CHUNK_LIMIT,
-        deps.config.PI_SHOW_TOOL_CALLS_IN_REPLY,
+        toolCallsDisplayMode,
         undefined,
         () => deps.runtimeState.isStopRequested(openId, messageId),
       );

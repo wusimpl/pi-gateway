@@ -67,7 +67,6 @@ describe("handleFeishuMessage 多模态消息", () => {
     initRouter({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
       STREAMING_ENABLED: true,
-      PI_SHOW_TOOL_CALLS_IN_REPLY: false,
       TEXT_CHUNK_LIMIT: 2000,
       FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
       FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
@@ -124,7 +123,7 @@ describe("handleFeishuMessage 多模态消息", () => {
       "SMILE",
       true,
       2000,
-      false,
+      "off",
       undefined,
       expect.any(Function),
     );

@@ -28,6 +28,7 @@ export interface UserIdentity {
 }
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ToolCallsDisplayMode = "off" | "name" | "full";
 
 /** 用户持久状态 */
 export interface UserState {
@@ -39,6 +40,7 @@ export interface UserState {
   lastMessageId?: string;
   thinkingLevel?: ThinkingLevel;
   streamingEnabled?: boolean;
+  toolCallsDisplayMode?: ToolCallsDisplayMode;
 }
 
 /** 运行时锁信息 */

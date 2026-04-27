@@ -76,7 +76,6 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -89,6 +88,15 @@ describe("createPromptService", () => {
       sessionService: {
         getOrCreateActiveSession,
         touchSession,
+      },
+      userStateStore: {
+        readUserState: vi.fn().mockResolvedValue({
+          activeSessionId: "session_1",
+          createdAt: "2026-04-27T00:00:00.000Z",
+          updatedAt: "2026-04-27T00:00:00.000Z",
+          lastActiveAt: "2026-04-27T00:00:00.000Z",
+          toolCallsDisplayMode: "name",
+        }),
       },
       workspaceService: {
         getUserWorkspaceDir: () => "/tmp/workspace",
@@ -143,6 +151,7 @@ describe("createPromptService", () => {
       },
     );
     expect(promptSession).toHaveBeenCalled();
+    expect(promptSession.mock.calls[0]?.[7]).toBe("name");
     expect(sendTextMessage).not.toHaveBeenCalled();
     expect(releaseLock).toHaveBeenCalledWith("ou_1");
   });
@@ -160,7 +169,6 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -228,7 +236,6 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeConfig: createRuntimeConfigStore({
@@ -295,7 +302,7 @@ describe("createPromptService", () => {
       undefined,
       false,
       2000,
-      false,
+      "off",
       undefined,
       expect.any(Function),
     );
@@ -327,7 +334,6 @@ describe("createPromptService", () => {
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         FEISHU_STEERING_REACTION_TYPE: "OnIt",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -405,7 +411,6 @@ describe("createPromptService", () => {
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         FEISHU_STEERING_REACTION_TYPE: "OnIt",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -470,7 +475,6 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -559,7 +563,6 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -636,7 +639,6 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -705,7 +707,6 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "doubao-api-key",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {
@@ -774,7 +775,6 @@ describe("createPromptService", () => {
         FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
         FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
         STREAMING_ENABLED: true,
-        PI_SHOW_TOOL_CALLS_IN_REPLY: false,
         TEXT_CHUNK_LIMIT: 2000,
       },
       runtimeState: {

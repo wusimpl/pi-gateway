@@ -102,7 +102,6 @@ vi.mock("../src/config.js", () => ({
     FEISHU_APP_SECRET: "app-secret",
     FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
     STREAMING_ENABLED: true,
-    PI_SHOW_TOOL_CALLS_IN_REPLY: false,
     TEXT_CHUNK_LIMIT: 2000,
     FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
     FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",

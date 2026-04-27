@@ -8,7 +8,6 @@ function applyBaseEnv(extraEnv?: Record<string, string | undefined>) {
     FEISHU_APP_ID: "cli_test_app_id",
     FEISHU_APP_SECRET: "test_secret",
     STREAMING_ENABLED: undefined,
-    PI_SHOW_TOOL_CALLS_IN_REPLY: undefined,
     PI_DISABLE_GLOBAL_AGENTS: undefined,
     ...extraEnv,
   };
@@ -53,13 +52,6 @@ describe("loadConfig", () => {
     const { loadConfig } = await import("../src/config.js");
 
     expect(loadConfig().STREAMING_ENABLED).toBe(false);
-  });
-
-  it("PI_SHOW_TOOL_CALLS_IN_REPLY 默认应为 false", async () => {
-    applyBaseEnv();
-    const { loadConfig } = await import("../src/config.js");
-
-    expect(loadConfig().PI_SHOW_TOOL_CALLS_IN_REPLY).toBe(false);
   });
 
   it("PI_DISABLE_GLOBAL_AGENTS 默认应为 false", async () => {

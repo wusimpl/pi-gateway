@@ -307,6 +307,10 @@ npm run dev
 - `/tools off <tool...>` -- 禁用指定 tools
 - `/tools set <tool...>` -- 直接设置当前启用的 tools 集合
 - `/tools reset` -- 恢复当前 session 的默认 tools
+- `/toolcalls` -- 查看工具调用展示模式
+- `/toolcalls off` -- 不展示工具调用
+- `/toolcalls name` -- 只展示工具名字
+- `/toolcalls full` -- 展示工具调用详情
 - `/stop` -- 停掉当前正在跑的回复
 - `/next <内容>` -- 当前回复结束后再处理这条内容
 - `/restart` -- 重启整个网关进程，让新 skills、网关源码改动和启动期注入能力生效

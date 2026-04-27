@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import type { AvailableModelInfo } from "../pi/models.js";
-import type { ThinkingLevel } from "../types.js";
+import type { ThinkingLevel, ToolCallsDisplayMode } from "../types.js";
 import { logger } from "./logger.js";
 import { RESTART_MESSAGE } from "./restart.js";
 import { STOP_MESSAGE } from "./stop.js";
@@ -18,6 +18,7 @@ const BRIDGE_COMMANDS = [
   "resume",
   "settings",
   "tools",
+  "toolcalls",
   "stop",
   "next",
   "restart",
@@ -82,6 +83,7 @@ interface BridgeCommandContext {
   contextFiles?: BridgeContextFile[];
   skills?: BridgeSkillInfo[];
   tools?: BridgeToolStatus[];
+  toolCallsDisplayMode?: ToolCallsDisplayMode;
   sessions?: BridgeListedSession[];
   sessionsPage?: number;
   sessionsTotalPages?: number;
@@ -253,6 +255,8 @@ export function handleBridgeCommand(
     }
     case "tools":
       return formatToolsReply(context.tools ?? []);
+    case "toolcalls":
+      return formatToolCallsReply(context.toolCallsDisplayMode ?? "off", Boolean(normalized.args.trim()));
     case "stop":
       return STOP_MESSAGE;
     case "next":
@@ -265,6 +269,32 @@ export function handleBridgeCommand(
       return "";
     default:
       return "";
+  }
+}
+
+function formatToolCallsReply(mode: ToolCallsDisplayMode, updated: boolean): string {
+  const current = `当前模式：${formatToolCallsMode(mode)}`;
+  if (updated) {
+    return `✅ 已更新工具调用展示\n${current}`;
+  }
+  return [
+    "🛠️ 工具调用展示",
+    current,
+    "",
+    "关闭：/toolcalls off",
+    "只显示工具名：/toolcalls name",
+    "显示详情：/toolcalls full",
+  ].join("\n");
+}
+
+function formatToolCallsMode(mode: ToolCallsDisplayMode): string {
+  switch (mode) {
+    case "off":
+      return "关闭";
+    case "name":
+      return "只显示工具名";
+    case "full":
+      return "显示详情";
   }
 }
 

@@ -14,7 +14,7 @@ import {
 import type { SkillStatsStore } from "../pi/skill-stats.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { UserStateStore } from "../storage/users.js";
-import type { ThinkingLevel, UserIdentity } from "../types.js";
+import type { ThinkingLevel, ToolCallsDisplayMode, UserIdentity, UserState } from "../types.js";
 import { handleBridgeCommand, formatUnsupportedSlashCommand, type BridgeCommand } from "./commands.js";
 import { logger } from "./logger.js";
 import {
@@ -166,6 +166,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleSettingsCommand(identity, command);
       } else if (command.name === "tools") {
         await handleToolsCommand(identity, command);
+      } else if (command.name === "toolcalls") {
+        await handleToolCallsCommand(identity, command);
       } else if (command.name === "cron") {
         await handleCronCommand(identity, command);
       } else if (command.name === "stt") {
@@ -657,6 +659,44 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await sendCommandReply(openId, formatToolsActionReply(action, requestedTools, nextActiveTools, allToolNames));
   }
 
+  async function handleToolCallsCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+    const openId = identity.openId;
+    const parsed = parseToolCallsArgs(command.args);
+    if (parsed.error) {
+      await deps.messenger.sendTextMessage(openId, parsed.error);
+      return;
+    }
+
+    const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+    const existingState = await deps.userStateStore.readUserState(openId);
+    const now = new Date().toISOString();
+    const userState: UserState = existingState ?? {
+      activeSessionId: sessionState.activeSessionId,
+      piSessionFile: sessionState.piSession.sessionFile ?? undefined,
+      createdAt: now,
+      updatedAt: now,
+      lastActiveAt: now,
+    };
+
+    if (parsed.kind === "show") {
+      const reply = handleBridgeCommand(command, {
+        openId,
+        toolCallsDisplayMode: userState.toolCallsDisplayMode ?? "off",
+      });
+      await sendCommandReply(openId, reply);
+      return;
+    }
+
+    userState.toolCallsDisplayMode = parsed.mode;
+    userState.updatedAt = new Date().toISOString();
+    await deps.userStateStore.writeUserState(openId, userState);
+    const reply = handleBridgeCommand(command, {
+      openId,
+      toolCallsDisplayMode: parsed.mode,
+    });
+    await sendCommandReply(openId, reply);
+  }
+
   async function sendCommandReply(openId: string, text: string): Promise<void> {
     await deps.messenger.sendRenderedMessage(openId, text, deps.config.TEXT_CHUNK_LIMIT);
   }
@@ -808,6 +848,24 @@ function parseSettingsArgs(
     error:
       "用法：/settings\n/settings think off|minimal|low|medium|high|xhigh\n/settings stream on|off",
   };
+}
+
+function parseToolCallsArgs(
+  args: string,
+):
+  | { kind: "show"; error?: undefined }
+  | { kind: "set"; mode: ToolCallsDisplayMode; error?: undefined }
+  | { kind?: undefined; mode?: undefined; error: string } {
+  const normalized = args.trim().toLowerCase();
+  if (!normalized) {
+    return { kind: "show" };
+  }
+
+  if (normalized === "off" || normalized === "name" || normalized === "full") {
+    return { kind: "set", mode: normalized };
+  }
+
+  return { error: "用法：/toolcalls、/toolcalls off、/toolcalls name 或 /toolcalls full。" };
 }
 
 function parseSttProviderArgs(

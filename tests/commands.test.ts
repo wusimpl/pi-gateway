@@ -64,6 +64,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /toolcalls with args", () => {
+    expect(parseBridgeCommand("/toolcalls name")).toEqual({
+      name: "toolcalls",
+      args: "name",
+    });
+  });
+
   it("should parse /stop", () => {
     expect(parseBridgeCommand("/stop")).toEqual({
       name: "stop",
@@ -181,6 +188,17 @@ describe("handleBridgeCommand", () => {
 
   it("`/next` 没有正文时应返回用法", () => {
     expect(handleBridgeCommand("next", {})).toBe("用法：/next <要排到当前任务后处理的内容>");
+  });
+
+  it("`/toolcalls` 应返回当前展示模式", () => {
+    expect(handleBridgeCommand("toolcalls", { toolCallsDisplayMode: "name" })).toBe(
+      "🛠️ 工具调用展示\n" +
+        "当前模式：只显示工具名\n" +
+        "\n" +
+        "关闭：/toolcalls off\n" +
+        "只显示工具名：/toolcalls name\n" +
+        "显示详情：/toolcalls full",
+    );
   });
 
   it("`/sessions` 应返回最近会话列表", () => {

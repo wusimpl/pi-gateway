@@ -366,6 +366,37 @@ describe("promptSession", () => {
     );
   });
 
+  it("工具调用 name 模式只显示工具名", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_1",
+        toolName: "bash",
+        args: { command: "ls ~/.pi/agent/skills" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_1",
+        toolName: "bash",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "feishu-docs feishu-files obsidian-notes tavily-search" }],
+        },
+      } as any,
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, false, 2000, "name");
+
+    expect(result).toEqual({ text: "", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      " ---\n**工具调用**\n🛠️ bash",
+      2000,
+    );
+  });
+
   it("bash 工具无输出时也应保留命令和输出摘要", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([

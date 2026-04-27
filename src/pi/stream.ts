@@ -1,5 +1,6 @@
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { ImageContent } from "@mariozechner/pi-ai";
+import type { ToolCallsDisplayMode } from "../types.js";
 import { logger } from "../app/logger.js";
 import { BridgeError, withTimeout } from "../app/errors.js";
 import { formatModelLabel } from "./models.js";
@@ -71,7 +72,7 @@ export interface PromptRunner {
     processingReactionType?: string,
     streamingEnabled?: boolean,
     textChunkLimit?: number,
-    showToolCallsInReply?: boolean,
+    toolCallsDisplayMode?: ToolCallsDisplayMode | boolean,
     timeoutMs?: number,
     isAbortRequested?: () => boolean,
   ): Promise<PromptResult>;
@@ -114,7 +115,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       processingReactionType?: string,
       streamingEnabled: boolean = false,
       textChunkLimit: number = 2000,
-      showToolCallsInReply: boolean = false,
+      toolCallsDisplayMode: ToolCallsDisplayMode | boolean = "off",
       timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
       isAbortRequested?: () => boolean,
     ): Promise<PromptResult> {
@@ -133,6 +134,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let streamingInitAttempted = false;
       const docPreviewMap = new Map<string, FeishuDocPreviewCardInput>();
       const toolCallMap = new Map<string, ToolCallState>();
+      const normalizedToolCallsDisplayMode = normalizeToolCallsDisplayMode(toolCallsDisplayMode);
+      const showToolCallsInReply = normalizedToolCallsDisplayMode !== "off";
 
       try {
         const reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
@@ -145,7 +148,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       async function ensureStreamingMessage(
         initialBody: string = stripLeadingBlankLines(fullText),
-        initialTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "",
+        initialTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "",
         initialPrelude: string = preludeText,
       ): Promise<void> {
         if (
@@ -180,13 +183,13 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       }
 
       function queueStreamingFlush(force: boolean = false): void {
-        const toolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "";
+        const toolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "";
         if (!streamingEnabled || streamingBroken || !hasVisibleStreamingContent(fullText, toolsSnapshot, preludeText)) {
           return;
         }
         if (force) {
           const bodySnapshot = stripLeadingBlankLines(fullText);
-          const forcedToolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "";
+          const forcedToolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "";
           if (pendingTimer) {
             clearTimeout(pendingTimer);
             pendingTimer = null;
@@ -203,7 +206,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       async function flushStreamingState(
         nextBody: string = stripLeadingBlankLines(fullText),
-        nextTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "",
+        nextTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "",
       ): Promise<void> {
         if (streamingBroken) return;
         await ensureStreamingMessage(nextBody, nextTools);
@@ -404,7 +407,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           !streamingBroken &&
           hasVisibleStreamingContent(
             fullText,
-            showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "",
+            showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "",
             preludeText,
           )
         ) {
@@ -428,7 +431,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           : fullText;
       const footer = formatPromptFooter(session);
       const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), footer);
-      const finalToolsText = showToolCallsInReply ? formatToolCallsSection(toolCallMap) : "";
+      const finalToolsText = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "";
       const finalOutputText = abortedByUser
         ? (streamingMessage ? STOP_MESSAGE : "")
         : finalText || (streamingMessage ? "已完成，但没有生成可展示的正文。" : "");
@@ -477,7 +480,7 @@ export async function promptSession(
   processingReactionType?: string,
   streamingEnabled: boolean = false,
   textChunkLimit: number = 2000,
-  showToolCallsInReply: boolean = false,
+  toolCallsDisplayMode: ToolCallsDisplayMode | boolean = "off",
   timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
   isAbortRequested?: () => boolean,
 ): Promise<PromptResult> {
@@ -489,7 +492,7 @@ export async function promptSession(
     processingReactionType,
     streamingEnabled,
     textChunkLimit,
-    showToolCallsInReply,
+    toolCallsDisplayMode,
     timeoutMs,
     isAbortRequested,
   );
@@ -683,21 +686,28 @@ function appendDisplayedSections(text: string, preludeText: string, toolsText: s
   return [text, preludeText, toolsText].filter((section) => Boolean(section)).join("\n\n");
 }
 
-function formatToolCallsSection(toolCallMap: ReadonlyMap<string, ToolCallState>): string {
+function formatToolCallsSection(
+  toolCallMap: ReadonlyMap<string, ToolCallState>,
+  displayMode: ToolCallsDisplayMode,
+): string {
   const toolCalls = Array.from(toolCallMap.values()).slice(-MAX_VISIBLE_TOOL_CALLS);
   if (toolCalls.length === 0) return "";
 
   const lines = [" ---", "**工具调用**"];
   for (const toolCall of toolCalls) {
-    lines.push(...formatToolCallLines(toolCall));
+    lines.push(...formatToolCallLines(toolCall, displayMode));
   }
   return lines.join("\n");
 }
 
-function formatToolCallLines(toolCall: ToolCallState): string[] {
+function formatToolCallLines(toolCall: ToolCallState, displayMode: ToolCallsDisplayMode): string[] {
+  const toolEmoji = "🛠️";
+  if (displayMode === "name") {
+    return [`${toolEmoji} ${toolCall.toolName}`];
+  }
+
   const statusLabel = formatToolStatus(toolCall.status);
   const statusText = statusLabel ? ` ${statusLabel}` : "";
-  const toolEmoji = "🛠️";
   if (toolCall.toolName === "read") {
     const readSummary = toolCall.argsSummary ?? toolCall.resultSummary;
     const readSuffix = readSummary ? ` : ${readSummary}` : "";
@@ -719,6 +729,13 @@ function formatToolCallLines(toolCall: ToolCallState): string[] {
   }
 
   return lines;
+}
+
+function normalizeToolCallsDisplayMode(mode: ToolCallsDisplayMode | boolean): ToolCallsDisplayMode {
+  if (typeof mode === "boolean") {
+    return mode ? "full" : "off";
+  }
+  return mode;
 }
 
 function formatToolStatus(status: ToolCallState["status"]): string {
