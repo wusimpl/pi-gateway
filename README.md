@@ -1,6 +1,6 @@
 # pi-gateway
 
-将飞书私聊消息桥接到 Pi Agent 的轻量常驻服务。在飞书中直接与 Pi 对话，无需本地终端。
+将飞书消息桥接到 Pi Agent 的轻量常驻服务。在飞书中直接与 Pi 对话，无需本地终端。
 
 ## 工作原理
 
@@ -8,16 +8,17 @@
 飞书用户 --> 飞书 WebSocket --> pi-gateway --> Pi SDK --> LLM
 ```
 
-pi-gateway 通过飞书 WebSocket 长连接接收私聊消息，转发给 Pi Agent 处理，并将回复发送回飞书对话中。
+pi-gateway 通过飞书 WebSocket 长连接接收消息，转发给 Pi Agent 处理，并将回复发送回原飞书对话中。
 
 ## 功能
 
-- 飞书私聊文本消息桥接到 Pi Agent
+- 飞书私聊消息桥接到 Pi Agent
+- 可选飞书群聊支持：默认关闭，开启后可选择仅 @ 机器人触发或接收群内所有消息
 - 可选流式回复：基于飞书流式卡片，在同一条消息里直接流式展示正文
 - 长文本自动分块发送
-- 每用户独立会话，服务重启后自动恢复
+- 私聊、群聊独立会话，服务重启后自动恢复
 - 消息去重与并发保护，避免重复处理；处理中状态通过消息 reaction 提示
-- 命令支持：`/new`、`/reset`、`/status`、`/context`、`/skills`、`/model`、`/models`、`/sessions`、`/resume`、`/tools`、`/stop`、`/next`、`/restart`
+- 命令支持：`/new`、`/reset`、`/status`、`/context`、`/skills`、`/model`、`/models`、`/sessions`、`/resume`、`/settings`、`/tools`、`/toolcalls`、`/stop`、`/next`、`/restart`、`/cron`、`/stt`、`/stream`、`/reaction`、`/skillstat`
 - 优雅关停
 
 ## 前置条件
@@ -32,9 +33,15 @@ pi-gateway 通过飞书 WebSocket 长连接接收私聊消息，转发给 Pi Age
 1. 在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用
 2. 获取 App ID 和 App Secret
 3. 启用机器人能力
-4. 配置权限：`im:message.p2p_msg:readonly`、`im:message:send_as_bot`、`im:resource`、`cardkit:card:write`
+4. 配置私聊权限：`im:message.p2p_msg:readonly`、`im:message:send_as_bot`、`im:resource`、`cardkit:card:write`
 5. 事件订阅选择 **WebSocket 长连接**，添加 `im.message.receive_v1` 事件
 6. 发布应用并获管理员批准
+
+如需开启群聊，还需要确认：
+
+- mention 模式：添加 `im:message.group_at_msg:readonly` 或对应的群聊 @ 机器人消息权限
+- all 模式：添加 `im:message.group_msg`
+- 机器人已加入目标群，并且在群里有发言权限
 
 Lark 国际版需设置 `FEISHU_DOMAIN=larksuite`。
 
@@ -61,8 +68,13 @@ cp .env.example .env
 | `FEISHU_APP_ID` | 是 | - | 飞书应用 App ID |
 | `FEISHU_APP_SECRET` | 是 | - | 飞书应用 App Secret |
 | `FEISHU_DOMAIN` | 否 | `feishu` | 飞书域名：`feishu`（国内）或 `larksuite`（海外） |
+| `FEISHU_GROUP_CHAT_POLICY` | 否 | `disabled` | 群聊策略：`disabled`、`allowlist`、`open` |
+| `FEISHU_GROUP_CHAT_ALLOWLIST` | 否 | 空 | `allowlist` 模式下允许响应的群 `chat_id`，多个用逗号分隔 |
+| `FEISHU_GROUP_MESSAGE_MODE` | 否 | `mention` | 群消息接收模式：`mention` 只处理 @ 机器人消息；`all` 接收群内所有消息 |
+| `FEISHU_BOT_OPEN_ID` | 否 | 空 | 机器人 `open_id`；填写后 mention 模式会精确判断是否 @ 机器人 |
+| `FEISHU_OWNER_OPEN_IDS` | 否 | 空 | 群聊 owner 的 `open_id`，多个用逗号分隔 |
 | `DATA_DIR` | 否 | `./data` | 数据存储目录 |
-| `PI_WORKSPACE_ROOT` | 否 | `~/code/pi-workspace` | 每用户独立工作目录根路径，支持 `~` |
+| `PI_WORKSPACE_ROOT` | 否 | `~/code/pi-workspace` | 私聊和群聊工作目录根路径，支持 `~` |
 | `PI_DISABLE_GLOBAL_AGENTS` | 否 | `false` | 设为 `true` 后，不再加载全局 `~/.pi/agent/AGENTS.md` 和 `~/.pi/agent/CLAUDE.md`，只保留项目目录链上的规则文件 |
 | `LOG_LEVEL` | 否 | `info` | 日志级别：`debug`/`info`/`warn`/`error` |
 | `STREAMING_ENABLED` | 否 | `false` | 是否启用飞书流式卡片回复；默认关闭，打开后只建议给 7.20+ 客户端使用 |
@@ -71,6 +83,8 @@ cp .env.example .env
 | `FEISHU_STEERING_REACTION_TYPE` | 否 | `OnIt` | 模型运行中收到 steering message 时添加的飞书表情 `emoji_type`；留空则不启用，填错也会自动禁用 |
 
 同时确保环境变量中已配置 Pi 所需的 API Key（如 `ANTHROPIC_API_KEY`）。
+
+群聊默认关闭。开启群聊后，默认仍是 mention 模式；如果要让机器人接收群内所有消息，必须显式设置 `FEISHU_GROUP_MESSAGE_MODE=all`。群聊中普通成员只能使用 `/tools`、`/skills`、`/status`，其他命令只允许 `FEISHU_OWNER_OPEN_IDS` 里的 owner 使用。
 
 如果启用了 `STREAMING_ENABLED=true`，飞书应用还必须开通 `cardkit:card:write`，否则会自动回退为最终一次性发送。飞书 2.0 卡片在旧客户端上展示不完整，所以这一项默认关闭，只有确认用户客户端版本足够新时再打开。
 
