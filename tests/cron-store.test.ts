@@ -21,6 +21,7 @@ describe("cron store", () => {
         id: "cron_1",
         openId: "ou_1",
         userId: "u_1",
+        scopeKey: "ou_1",
         name: "提醒我喝水",
         enabled: true,
         prompt: "提醒我喝水。",
@@ -46,4 +47,3 @@ describe("cron store", () => {
     await expect(readFile(join(dataDir, "cron", "jobs.json"), "utf-8")).resolves.toContain("cron_1");
   });
 });
-

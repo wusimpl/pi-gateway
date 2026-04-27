@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "../config.js";
+import type { ConversationTarget } from "../conversation.js";
 import { formatError } from "../feishu/format.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import type { PromptRunner } from "../pi/stream.js";
@@ -24,9 +25,11 @@ interface CronRunnerDeps {
     RuntimeStateStore,
     "acquireLock" | "releaseLock" | "setAbortHandler" | "isStopRequested"
   >;
-  workspaceService: Pick<WorkspaceService, "ensureUserWorkspace">;
+  workspaceService: Pick<WorkspaceService, "ensureUserWorkspace"> &
+    Partial<Pick<WorkspaceService, "ensureConversationWorkspace">>;
   promptRunner: Pick<PromptRunner, "promptSession">;
-  messenger: Pick<FeishuMessenger, "sendTextMessage">;
+  messenger: Pick<FeishuMessenger, "sendTextMessage"> &
+    Partial<Pick<FeishuMessenger, "sendTextMessageToTarget">>;
   deferredCronRunService?: Pick<DeferredCronRunService, "flush">;
 }
 
@@ -38,36 +41,39 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
     };
     const syntheticMessageId = `cron:${job.id}:${Date.now()}`;
     const openId = job.openId;
+    const scopeKey = job.scopeKey?.trim() || job.conversationTarget?.key.trim() || openId;
+    const conversationTarget = job.conversationTarget?.kind === "p2p" ? undefined : job.conversationTarget;
 
-    if (!deps.runtimeState.acquireLock(openId, syntheticMessageId)) {
-      logger.info("cron 任务因用户已有运行中任务而顺延", {
+    if (!deps.runtimeState.acquireLock(scopeKey, syntheticMessageId)) {
+      logger.info("cron 任务因当前会话仍有运行中任务而顺延", {
         openId,
+        scopeKey,
         jobId: job.id,
       });
       return {
         jobId: job.id,
         status: "busy",
-        error: "当前用户还有任务在跑",
+        error: "当前会话还有任务在跑",
       };
     }
 
     let session: { abort(): Promise<void>; dispose(): void } | null = null;
     try {
-      const workspaceDir = await deps.workspaceService.ensureUserWorkspace(identity);
+      const workspaceDir = await ensureWorkspace(identity, conversationTarget);
       bindWorkspaceIdentity(workspaceDir, identity);
 
       const sessionDir = join(
         deps.config.DATA_DIR,
         "cron",
         "sessions",
-        sanitizeSegment(job.openId),
+        sanitizeSegment(scopeKey),
         sanitizeSegment(job.id),
       );
       await mkdir(sessionDir, { recursive: true });
 
       session = await deps.runtime.createPiSession(workspaceDir, sessionDir);
       const stoppedBeforePrompt = await deps.runtimeState.setAbortHandler(
-        openId,
+        scopeKey,
         syntheticMessageId,
         async () => {
           await session?.abort();
@@ -95,7 +101,8 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
         deps.config.TEXT_CHUNK_LIMIT,
         false,
         deps.config.CRON_JOB_TIMEOUT_MS,
-        () => deps.runtimeState.isStopRequested(openId, syntheticMessageId),
+        () => deps.runtimeState.isStopRequested(scopeKey, syntheticMessageId),
+        conversationTarget,
       );
 
       if (result.aborted) {
@@ -107,10 +114,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
 
       if (result.error) {
         if (!result.text && !result.displayed) {
-          await deps.messenger.sendTextMessage(
-            openId,
-            formatError(`定时任务「${job.name}」执行失败：${result.error}`),
-          );
+          await sendJobReply(job, formatError(`定时任务「${job.name}」执行失败：${result.error}`));
         }
         return {
           jobId: job.id,
@@ -127,13 +131,11 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("cron 任务执行失败", {
         openId,
+        scopeKey,
         jobId: job.id,
         error: message,
       });
-      await deps.messenger.sendTextMessage(
-        openId,
-        formatError(`定时任务「${job.name}」执行失败：${message}`),
-      );
+      await sendJobReply(job, formatError(`定时任务「${job.name}」执行失败：${message}`));
       return {
         jobId: job.id,
         status: "error",
@@ -145,14 +147,31 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       } catch {
         // ignore
       }
-      deps.runtimeState.releaseLock(openId);
-      await deps.deferredCronRunService?.flush(openId);
+      deps.runtimeState.releaseLock(scopeKey);
+      await deps.deferredCronRunService?.flush(scopeKey);
     }
   }
 
   return {
     run,
   };
+
+  async function ensureWorkspace(identity: UserIdentity, conversationTarget?: ConversationTarget): Promise<string> {
+    if (conversationTarget && deps.workspaceService.ensureConversationWorkspace) {
+      return deps.workspaceService.ensureConversationWorkspace(identity, conversationTarget);
+    }
+
+    return deps.workspaceService.ensureUserWorkspace(identity);
+  }
+
+  async function sendJobReply(job: CronJob, text: string): Promise<void> {
+    if (job.conversationTarget && job.conversationTarget.kind !== "p2p" && deps.messenger.sendTextMessageToTarget) {
+      await deps.messenger.sendTextMessageToTarget(job.conversationTarget, text);
+      return;
+    }
+
+    await deps.messenger.sendTextMessage(job.openId, text);
+  }
 }
 
 function buildCronPrompt(job: CronJob): string {

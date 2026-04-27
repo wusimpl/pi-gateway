@@ -7,6 +7,7 @@ function createJob(id: string): CronJob {
     id,
     openId: "ou_1",
     userId: "u_1",
+    scopeKey: "ou_1",
     name: `任务 ${id}`,
     enabled: true,
     prompt: "提醒我喝水。",

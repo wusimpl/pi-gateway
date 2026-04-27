@@ -1,3 +1,5 @@
+import type { ConversationTarget } from "../conversation.js";
+
 export type CronSchedule =
   | {
       kind: "at";
@@ -23,6 +25,8 @@ export interface CronJob {
   id: string;
   openId: string;
   userId?: string;
+  scopeKey: string;
+  conversationTarget?: ConversationTarget;
   name: string;
   enabled: boolean;
   prompt: string;
@@ -36,6 +40,8 @@ export interface CronJob {
 export interface CreateCronJobInput {
   openId: string;
   userId?: string;
+  scopeKey?: string;
+  conversationTarget?: ConversationTarget;
   name?: string;
   prompt: string;
   schedule: CronSchedule;

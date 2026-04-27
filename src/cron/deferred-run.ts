@@ -5,37 +5,38 @@ import type { CronService } from "./service.js";
 import type { CronJob, CronManualRunResult } from "./types.js";
 
 export interface DeferredCronRunService {
-  queueRun(openId: string, jobId: string): Promise<CronManualRunResult>;
-  flush(openId: string): Promise<void>;
+  queueRun(scopeKey: string, jobId: string): Promise<CronManualRunResult>;
+  flush(scopeKey: string): Promise<void>;
 }
 
 interface DeferredCronRunServiceDeps {
   getCronService: () => Pick<CronService, "isEnabled" | "listJobs" | "runJobNow"> | null;
   runtimeState: Pick<RuntimeStateStore, "isLocked">;
-  messenger: Pick<FeishuMessenger, "sendTextMessage">;
+  messenger: Pick<FeishuMessenger, "sendTextMessage"> &
+    Partial<Pick<FeishuMessenger, "sendTextMessageToTarget">>;
 }
 
 export function createDeferredCronRunService(
   deps: DeferredCronRunServiceDeps,
 ): DeferredCronRunService {
-  const pendingRuns = new Map<string, string[]>();
-  const flushingOpenIds = new Set<string>();
+  const pendingRuns = new Map<string, CronJob[]>();
+  const flushingScopeKeys = new Set<string>();
 
-  async function queueRun(openId: string, jobId: string): Promise<CronManualRunResult> {
+  async function queueRun(scopeKey: string, jobId: string): Promise<CronManualRunResult> {
     const cronService = deps.getCronService();
     if (!cronService?.isEnabled()) {
       throw new Error("CRON_DISABLED");
     }
 
-    const job = await findOwnedJob(cronService, openId, jobId);
+    const job = await findOwnedJob(cronService, scopeKey, jobId);
     if (!job) {
       throw new Error("CRON_JOB_NOT_FOUND");
     }
 
-    const queue = pendingRuns.get(openId) ?? [];
-    if (!queue.includes(job.id)) {
-      queue.push(job.id);
-      pendingRuns.set(openId, queue);
+    const queue = pendingRuns.get(scopeKey) ?? [];
+    if (!queue.some((queuedJob) => queuedJob.id === job.id)) {
+      queue.push(cloneQueuedJob(job));
+      pendingRuns.set(scopeKey, queue);
     }
 
     return {
@@ -47,8 +48,8 @@ export function createDeferredCronRunService(
     };
   }
 
-  async function flush(openId: string): Promise<void> {
-    if (flushingOpenIds.has(openId)) {
+  async function flush(scopeKey: string): Promise<void> {
+    if (flushingScopeKeys.has(scopeKey)) {
       return;
     }
 
@@ -57,42 +58,39 @@ export function createDeferredCronRunService(
       return;
     }
 
-    flushingOpenIds.add(openId);
+    flushingScopeKeys.add(scopeKey);
     try {
-      while (!deps.runtimeState.isLocked(openId)) {
-        const jobId = shiftPendingRun(openId);
-        if (!jobId) {
+      while (!deps.runtimeState.isLocked(scopeKey)) {
+        const queuedJob = shiftPendingRun(scopeKey);
+        if (!queuedJob) {
           break;
         }
 
         try {
-          const result = await cronService.runJobNow(openId, jobId);
+          const result = await cronService.runJobNow(scopeKey, queuedJob.id);
           if (result.status === "busy") {
-            prependPendingRun(openId, jobId);
+            prependPendingRun(scopeKey, queuedJob);
             break;
           }
         } catch (error) {
           const code = error instanceof Error ? error.message : String(error);
           if (code === "CRON_JOB_NOT_FOUND") {
-            await deps.messenger.sendTextMessage(
-              openId,
-              `定时任务 ${jobId} 已不存在，刚才安排的立即执行已取消。`,
+            await sendJobNotification(
+              queuedJob,
+              `定时任务 ${queuedJob.id} 已不存在，刚才安排的立即执行已取消。`,
             );
             continue;
           }
           if (code === "CRON_JOB_RUNNING") {
-            prependPendingRun(openId, jobId);
+            prependPendingRun(scopeKey, queuedJob);
             break;
           }
 
-          await deps.messenger.sendTextMessage(
-            openId,
-            formatError(`定时任务立即执行失败：${code}`),
-          );
+          await sendJobNotification(queuedJob, formatError(`定时任务立即执行失败：${code}`));
         }
       }
     } finally {
-      flushingOpenIds.delete(openId);
+      flushingScopeKeys.delete(scopeKey);
     }
   }
 
@@ -103,32 +101,50 @@ export function createDeferredCronRunService(
 
   async function findOwnedJob(
     cronService: Pick<CronService, "listJobs">,
-    openId: string,
+    scopeKey: string,
     jobId: string,
   ): Promise<CronJob | null> {
-    const jobs = await cronService.listJobs(openId);
+    const jobs = await cronService.listJobs(scopeKey);
     return jobs.find((job) => job.id === jobId) ?? null;
   }
 
-  function shiftPendingRun(openId: string): string | null {
-    const queue = pendingRuns.get(openId);
+  function shiftPendingRun(scopeKey: string): CronJob | null {
+    const queue = pendingRuns.get(scopeKey);
     if (!queue?.length) {
-      pendingRuns.delete(openId);
+      pendingRuns.delete(scopeKey);
       return null;
     }
 
-    const jobId = queue.shift() ?? null;
+    const job = queue.shift() ?? null;
     if (queue.length === 0) {
-      pendingRuns.delete(openId);
+      pendingRuns.delete(scopeKey);
     }
-    return jobId;
+    return job;
   }
 
-  function prependPendingRun(openId: string, jobId: string): void {
-    const queue = pendingRuns.get(openId) ?? [];
-    if (!queue.includes(jobId)) {
-      queue.unshift(jobId);
+  function prependPendingRun(scopeKey: string, job: CronJob): void {
+    const queue = pendingRuns.get(scopeKey) ?? [];
+    if (!queue.some((queuedJob) => queuedJob.id === job.id)) {
+      queue.unshift(cloneQueuedJob(job));
     }
-    pendingRuns.set(openId, queue);
+    pendingRuns.set(scopeKey, queue);
+  }
+
+  async function sendJobNotification(job: CronJob, text: string): Promise<void> {
+    if (job.conversationTarget && job.conversationTarget.kind !== "p2p" && deps.messenger.sendTextMessageToTarget) {
+      await deps.messenger.sendTextMessageToTarget(job.conversationTarget, text);
+      return;
+    }
+
+    await deps.messenger.sendTextMessage(job.openId, text);
+  }
+
+  function cloneQueuedJob(job: CronJob): CronJob {
+    return {
+      ...job,
+      conversationTarget: job.conversationTarget ? { ...job.conversationTarget } : undefined,
+      schedule: { ...job.schedule },
+      state: { ...job.state },
+    };
   }
 }

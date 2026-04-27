@@ -63,10 +63,6 @@ export function createFeishuConversationTarget(event: FeishuMessageEvent): Conve
     return createP2PConversationTarget(event.sender.senderId.openId);
   }
 
-  if (event.message.threadId) {
-    return createThreadConversationTarget(event.message.chatId, event.message.threadId);
-  }
-
   return createGroupConversationTarget(event.message.chatId);
 }
 

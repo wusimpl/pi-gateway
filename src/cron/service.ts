@@ -142,7 +142,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
 
   async function listJobs(openId: string): Promise<CronJob[]> {
     return [...jobs.values()]
-      .filter((job) => job.openId === openId)
+      .filter((job) => resolveJobScopeKey(job) === openId)
       .sort((a, b) => {
         const aNext = a.state.nextRunAtMs ?? Number.MAX_SAFE_INTEGER;
         const bNext = b.state.nextRunAtMs ?? Number.MAX_SAFE_INTEGER;
@@ -164,6 +164,8 @@ export function createCronService(deps: CronServiceDeps): CronService {
       id: createJobId(),
       openId: input.openId,
       userId: input.userId,
+      scopeKey: resolveScopeKeyInput(input),
+      conversationTarget: input.conversationTarget ? { ...input.conversationTarget } : undefined,
       name: normalizeJobName(input.name, input.prompt),
       enabled: input.enabled ?? true,
       prompt: input.prompt.trim(),
@@ -301,7 +303,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
 
   function requireOwnedJob(openId: string, jobId: string): CronJob | null {
     const job = jobs.get(jobId);
-    if (!job || job.openId !== openId) {
+    if (!job || resolveJobScopeKey(job) !== openId) {
       return null;
     }
     return job;
@@ -339,6 +341,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
 
 function normalizeLoadedJob(job: CronJob, currentTime: number): CronJob {
   const normalized = cloneJob(job);
+  normalized.scopeKey = resolveJobScopeKey(normalized);
   normalized.state.runningAtMs = undefined;
   if (normalized.enabled) {
     if (!normalized.state.nextRunAtMs) {
@@ -353,9 +356,18 @@ function normalizeLoadedJob(job: CronJob, currentTime: number): CronJob {
 function cloneJob(job: CronJob): CronJob {
   return {
     ...job,
+    conversationTarget: job.conversationTarget ? { ...job.conversationTarget } : undefined,
     schedule: { ...job.schedule },
     state: { ...job.state },
   };
+}
+
+function resolveScopeKeyInput(input: CreateCronJobInput): string {
+  return input.scopeKey?.trim() || input.conversationTarget?.key.trim() || input.openId;
+}
+
+function resolveJobScopeKey(job: Pick<CronJob, "scopeKey" | "openId" | "conversationTarget">): string {
+  return job.scopeKey?.trim() || job.conversationTarget?.key.trim() || job.openId;
 }
 
 function createJobId(): string {

@@ -56,6 +56,16 @@ describe("conversation target", () => {
       chatId: "oc_1",
     });
   });
+
+  it("群聊 thread 消息当前仍归到群级会话", () => {
+    expect(createFeishuConversationTarget(baseEvent({ chatType: "group", threadId: "omt_1" }))).toMatchObject({
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    });
+  });
 });
 
 function baseEvent(input: { chatType: "p2p" | "group"; threadId?: string }): FeishuMessageEvent {

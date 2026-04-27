@@ -215,6 +215,37 @@ describe("normalizeFeishuInboundMessage", () => {
       text: "hello group",
     });
   });
+
+  it("群聊 @ 机器人后接命令时，应去掉前面的提及占位", () => {
+    const result = normalizeFeishuInboundMessage({
+      sender: {
+        senderId: { openId: "ou_1", userId: "u_1", unionId: "on_1" },
+        senderType: "user",
+        tenantKey: "tk",
+      },
+      message: {
+        messageId: "om_group_cmd_1",
+        chatId: "oc_group_1",
+        chatType: "group",
+        messageType: "text",
+        content: '{"text":"@_user_1 /new"}',
+        mentions: [
+          {
+            key: "@_user_1",
+            id: { openId: "ou_bot_1" },
+            name: "Pi",
+          },
+        ],
+        createTime: "123",
+      },
+    });
+
+    expect(result).toMatchObject({
+      kind: "text",
+      messageId: "om_group_cmd_1",
+      text: "/new",
+    });
+  });
 });
 
 describe("prepareFeishuPromptInput", () => {

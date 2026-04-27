@@ -1,4 +1,4 @@
-import type { FeishuMessageEvent } from "../../types.js";
+import type { FeishuMessageEvent, FeishuMessageMention } from "../../types.js";
 import { createFeishuConversationTarget } from "../../conversation.js";
 import type { FeishuInboundMessage } from "./types.js";
 
@@ -24,7 +24,11 @@ export function normalizeFeishuInboundMessage(event: FeishuMessageEvent): Feishu
 
   switch (event.message.messageType) {
     case "text": {
-      const text = extractTextValue(event.message.content).trim();
+      const text = normalizeTextMessage(
+        extractTextValue(event.message.content),
+        event.message.chatType,
+        event.message.mentions ?? [],
+      ).trim();
       if (!text) {
         return null;
       }
@@ -100,6 +104,17 @@ function extractTextValue(content: string): string {
   return typeof text === "string" ? text : content;
 }
 
+function normalizeTextMessage(
+  text: string,
+  chatType: FeishuMessageEvent["message"]["chatType"],
+  mentions: FeishuMessageMention[],
+): string {
+  const commandReadyText = chatType === "group"
+    ? stripLeadingMentionKeysBeforeCommand(text, mentions)
+    : text;
+  return replaceMentionTokens(commandReadyText, mentions);
+}
+
 function flattenPostMessage(rawContent: string): string {
   const payload = unwrapLocalizedPostPayload(parseContentObject(rawContent));
   const title = asString(payload.title);
@@ -109,6 +124,44 @@ function flattenPostMessage(rawContent: string): string {
     .filter((line): line is string => Boolean(line));
 
   return [title, ...lines].filter(Boolean).join("\n").trim();
+}
+
+function stripLeadingMentionKeysBeforeCommand(text: string, mentions: FeishuMessageMention[]): string {
+  const trimmed = text.trimStart();
+  let remaining = trimmed;
+  let consumedMention = false;
+
+  while (true) {
+    const matchedMention = mentions.find((mention) => {
+      const key = asString(mention.key);
+      return key && remaining.startsWith(key);
+    });
+    if (!matchedMention) {
+      break;
+    }
+
+    const key = asString(matchedMention.key);
+    remaining = remaining.slice(key.length).replace(/^[\s\u00A0]+/, "");
+    consumedMention = true;
+  }
+
+  if (!consumedMention) {
+    return trimmed;
+  }
+
+  return remaining.startsWith("/") ? remaining : trimmed;
+}
+
+function replaceMentionTokens(text: string, mentions: FeishuMessageMention[]): string {
+  return mentions.reduce((result, mention) => {
+    const key = asString(mention.key);
+    if (!key) {
+      return result;
+    }
+
+    const name = asString(mention.name);
+    return result.replaceAll(key, name ? `@${name}` : key);
+  }, text);
 }
 
 function unwrapLocalizedPostPayload(payload: Record<string, unknown>): Record<string, unknown> {

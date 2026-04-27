@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCommandService } from "../src/app/command-service.js";
 
+const groupTarget = {
+  kind: "group",
+  key: "oc_group_1",
+  receiveIdType: "chat_id",
+  receiveId: "oc_group_1",
+  chatId: "oc_group_1",
+} as const;
+
 function createDeps() {
   const messenger = {
     sendRenderedMessage: vi.fn().mockResolvedValue(undefined),
+    sendRenderedMessageToTarget: vi.fn().mockResolvedValue(undefined),
     sendTextMessage: vi.fn().mockResolvedValue(undefined),
+    sendTextMessageToTarget: vi.fn().mockResolvedValue(undefined),
   };
   const deferredCronRunService = {
     queueRun: vi.fn().mockResolvedValue({
@@ -108,6 +118,8 @@ describe("command service /cron", () => {
     expect(cronService.addJob).toHaveBeenCalledWith({
       openId: "ou_1",
       userId: "u_1",
+      scopeKey: "ou_1",
+      conversationTarget: undefined,
       name: "早报",
       prompt: "总结今天的待办。",
       schedule: {
@@ -119,6 +131,39 @@ describe("command service /cron", () => {
     });
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
+      expect.stringContaining("已创建定时任务"),
+      2000,
+    );
+  });
+
+  it("群聊 add 会把任务绑到当前群会话", async () => {
+    const { service, messenger, cronService } = createDeps();
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        name: "cron",
+        args: "add\nname: 群早报\ncron: 0 9 * * *\ntz: Asia/Shanghai\nprompt:\n总结群里的待办。",
+      },
+      groupTarget,
+    );
+
+    expect(cronService.addJob).toHaveBeenCalledWith({
+      openId: "ou_1",
+      userId: "u_1",
+      scopeKey: "oc_group_1",
+      conversationTarget: groupTarget,
+      name: "群早报",
+      prompt: "总结群里的待办。",
+      schedule: {
+        kind: "cron",
+        expr: "0 9 * * *",
+        tz: "Asia/Shanghai",
+      },
+      deleteAfterRun: false,
+    });
+    expect(messenger.sendRenderedMessageToTarget).toHaveBeenCalledWith(
+      groupTarget,
       expect.stringContaining("已创建定时任务"),
       2000,
     );
@@ -140,5 +185,19 @@ describe("command service /cron", () => {
       expect.stringContaining("已安排稍后执行"),
       2000,
     );
+  });
+
+  it("群聊 run 在当前群有任务时会按群会话排队", async () => {
+    const { service, cronService, deferredCronRunService, runtimeState } = createDeps();
+    runtimeState.isLocked.mockImplementation((key: string) => key === "oc_group_1");
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "cron", args: "run cron_1" },
+      groupTarget,
+    );
+
+    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith("oc_group_1", "cron_1");
+    expect(cronService.runJobNow).not.toHaveBeenCalled();
   });
 });

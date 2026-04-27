@@ -192,6 +192,10 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     return deps.runtimeState.isLocked(getConversationTargetKey(conversationTarget, identity.openId));
   }
 
+  function getCronScopeKey(identity: UserIdentity, conversationTarget?: ConversationTarget): string {
+    return getConversationTargetKey(conversationTarget, identity.openId);
+  }
+
   async function handleBridgeCommandFlow(
     identity: UserIdentity,
     command: BridgeCommand,
@@ -514,6 +518,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     conversationTarget?: ConversationTarget,
   ): Promise<void> {
     const openId = identity.openId;
+    const cronScopeKey = getCronScopeKey(identity, conversationTarget);
     const cronService = deps.cronService;
     if (!cronService?.isEnabled()) {
       await sendTextReply(identity, conversationTarget, "当前网关没有开启定时任务。");
@@ -532,7 +537,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await sendCommandReply(identity, conversationTarget, formatCronHelp(defaultTz));
         return;
       case "list": {
-        const jobs = await cronService.listJobs(openId);
+        const jobs = await cronService.listJobs(cronScopeKey);
         await sendCommandReply(identity, conversationTarget, formatCronJobList(jobs, defaultTz));
         return;
       }
@@ -551,6 +556,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         const job = await cronService.addJob({
           openId,
           userId: identity.userId,
+          scopeKey: cronScopeKey,
+          conversationTarget: conversationTarget?.kind === "p2p" ? undefined : conversationTarget,
           name: parsed.command.name,
           prompt: parsed.command.prompt,
           schedule,
@@ -561,7 +568,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       }
       case "remove": {
         try {
-          const removed = await cronService.removeJob(openId, parsed.command.jobId);
+          const removed = await cronService.removeJob(cronScopeKey, parsed.command.jobId);
           if (!removed) {
             await sendTextReply(identity, conversationTarget, "没找到这个定时任务。");
             return;
@@ -579,9 +586,9 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       case "run": {
         try {
           const result =
-            deps.runtimeState.isLocked(openId) && deps.deferredCronRunService
-              ? await deps.deferredCronRunService.queueRun(openId, parsed.command.jobId)
-              : await cronService.runJobNow(openId, parsed.command.jobId);
+            deps.runtimeState.isLocked(cronScopeKey) && deps.deferredCronRunService
+              ? await deps.deferredCronRunService.queueRun(cronScopeKey, parsed.command.jobId)
+              : await cronService.runJobNow(cronScopeKey, parsed.command.jobId);
           await sendCommandReply(identity, conversationTarget, formatCronJobRunResult(result, defaultTz));
         } catch (error) {
           const code = error instanceof Error ? error.message : String(error);
