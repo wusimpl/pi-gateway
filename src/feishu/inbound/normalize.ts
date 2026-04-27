@@ -1,12 +1,19 @@
 import type { FeishuMessageEvent } from "../../types.js";
+import { createFeishuConversationTarget } from "../../conversation.js";
 import type { FeishuInboundMessage } from "./types.js";
 
 export function normalizeFeishuInboundMessage(event: FeishuMessageEvent): FeishuInboundMessage | null {
+  const conversationTarget = createFeishuConversationTarget(event);
+  if (!conversationTarget) {
+    return null;
+  }
+
   const base = {
     identity: {
       openId: event.sender.senderId.openId,
       userId: event.sender.senderId.userId || undefined,
     },
+    conversationTarget,
     messageId: event.message.messageId,
     rootMessageId: event.message.rootId,
     parentMessageId: event.message.parentId,

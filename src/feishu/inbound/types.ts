@@ -1,4 +1,5 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
+import type { ConversationTarget } from "../../conversation.js";
 import type { UserIdentity } from "../../types.js";
 
 export interface FeishuQuotedMessage {
@@ -9,6 +10,7 @@ export interface FeishuQuotedMessage {
 
 interface FeishuInboundMessageBase {
   identity: UserIdentity;
+  conversationTarget: ConversationTarget;
   messageId: string;
   rootMessageId?: string;
   parentMessageId?: string;

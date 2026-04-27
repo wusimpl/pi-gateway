@@ -15,6 +15,13 @@ const baseOptions = {
   audioTranscribeDoubaoApiKey: "",
 };
 
+const p2pConversationTarget = {
+  kind: "p2p",
+  key: "ou_1",
+  receiveIdType: "open_id",
+  receiveId: "ou_1",
+} as const;
+
 describe("normalizeFeishuInboundMessage", () => {
   it("应把图片消息标准化", () => {
     const result = normalizeFeishuInboundMessage({
@@ -39,6 +46,7 @@ describe("normalizeFeishuInboundMessage", () => {
     expect(result).toEqual({
       kind: "image",
       identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: p2pConversationTarget,
       messageId: "om_1",
       rootMessageId: "om_root_1",
       parentMessageId: "om_parent_1",
@@ -73,6 +81,7 @@ describe("normalizeFeishuInboundMessage", () => {
     expect(result).toEqual({
       kind: "audio",
       identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: p2pConversationTarget,
       messageId: "om_2",
       rootMessageId: "om_root_2",
       parentMessageId: "om_parent_2",
@@ -108,6 +117,7 @@ describe("normalizeFeishuInboundMessage", () => {
     expect(result).toEqual({
       kind: "file",
       identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: p2pConversationTarget,
       messageId: "om_file_1",
       rootMessageId: "om_root_file_1",
       parentMessageId: "om_parent_file_1",
@@ -152,6 +162,7 @@ describe("normalizeFeishuInboundMessage", () => {
     expect(result).toEqual({
       kind: "text",
       identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: p2pConversationTarget,
       messageId: "om_3",
       rootMessageId: "om_root_3",
       parentMessageId: "om_parent_3",
@@ -169,6 +180,39 @@ describe("normalizeFeishuInboundMessage", () => {
         },
       }),
       text: "你为什么会说这些话：\n🔧 调试代码\n📁 查看或修改文件\n🎨 设计 UI 界面",
+    });
+  });
+
+  it("应为群聊消息生成群会话目标", () => {
+    const result = normalizeFeishuInboundMessage({
+      sender: {
+        senderId: { openId: "ou_1", userId: "u_1", unionId: "on_1" },
+        senderType: "user",
+        tenantKey: "tk",
+      },
+      message: {
+        messageId: "om_group_1",
+        chatId: "oc_group_1",
+        chatType: "group",
+        messageType: "text",
+        content: '{"text":"hello group"}',
+        createTime: "123",
+      },
+    });
+
+    expect(result).toMatchObject({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: {
+        kind: "group",
+        key: "oc_group_1",
+        receiveIdType: "chat_id",
+        receiveId: "oc_group_1",
+        chatId: "oc_group_1",
+      },
+      messageId: "om_group_1",
+      messageType: "text",
+      text: "hello group",
     });
   });
 });
