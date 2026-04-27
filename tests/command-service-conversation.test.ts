@@ -5,6 +5,7 @@ describe("createCommandService conversation target", () => {
   it("/stop 使用当前会话目标 key", async () => {
     const requestStop = vi.fn().mockResolvedValue("requested");
     const sendRenderedMessage = vi.fn().mockResolvedValue(undefined);
+    const sendRenderedMessageToTarget = vi.fn().mockResolvedValue(undefined);
     const service = createCommandService({
       config: {
         TEXT_CHUNK_LIMIT: 2000,
@@ -14,6 +15,7 @@ describe("createCommandService conversation target", () => {
       },
       messenger: {
         sendRenderedMessage,
+        sendRenderedMessageToTarget,
         sendTextMessage: vi.fn().mockResolvedValue("om_reply"),
       },
       sessionService: {
@@ -56,6 +58,17 @@ describe("createCommandService conversation target", () => {
     );
 
     expect(requestStop).toHaveBeenCalledWith("oc_1");
-    expect(sendRenderedMessage).toHaveBeenCalledWith("ou_1", expect.any(String), 2000);
+    expect(sendRenderedMessageToTarget).toHaveBeenCalledWith(
+      {
+        kind: "group",
+        key: "oc_1",
+        receiveIdType: "chat_id",
+        receiveId: "oc_1",
+        chatId: "oc_1",
+      },
+      expect.any(String),
+      2000,
+    );
+    expect(sendRenderedMessage).not.toHaveBeenCalled();
   });
 });

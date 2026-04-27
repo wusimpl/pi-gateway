@@ -51,6 +51,8 @@ export interface SessionService {
   listSessionsForTarget(identity: UserIdentity, target: ConversationTarget): Promise<ListedSession[]>;
   resumeSession(identity: UserIdentity, ref: string): Promise<SessionResult>;
   resumeSessionForTarget(identity: UserIdentity, target: ConversationTarget, ref: string): Promise<SessionResult>;
+  readSessionState(identity: UserIdentity, target?: ConversationTarget): Promise<UserState | null>;
+  writeSessionState(identity: UserIdentity, target: ConversationTarget | undefined, state: UserState): Promise<void>;
   touchSession(openId: string, messageId: string): Promise<void>;
   touchSessionForTarget(identity: UserIdentity, target: ConversationTarget, messageId: string): Promise<void>;
   disposeAllSessions(): void;
@@ -384,6 +386,20 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     await deps.userStateStore.touchUserState(openId, messageId);
   }
 
+  async function readSessionState(identity: UserIdentity, target?: ConversationTarget): Promise<UserState | null> {
+    const scope = resolveScope(identity, target);
+    return scope.readState();
+  }
+
+  async function writeSessionState(
+    identity: UserIdentity,
+    target: ConversationTarget | undefined,
+    state: UserState,
+  ): Promise<void> {
+    const scope = resolveScope(identity, target);
+    await scope.writeState(state);
+  }
+
   async function touchSessionForTarget(
     identity: UserIdentity,
     target: ConversationTarget,
@@ -429,6 +445,8 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     listSessionsForTarget,
     resumeSession,
     resumeSessionForTarget,
+    readSessionState,
+    writeSessionState,
     touchSession,
     touchSessionForTarget,
     disposeAllSessions,
@@ -540,6 +558,21 @@ export async function resumeSessionForTarget(
   ref: string,
 ): Promise<SessionResult> {
   return ensureDefaultSessionService().resumeSessionForTarget(identity, target, ref);
+}
+
+export async function readSessionState(
+  identity: UserIdentity,
+  target?: ConversationTarget,
+): Promise<UserState | null> {
+  return ensureDefaultSessionService().readSessionState(identity, target);
+}
+
+export async function writeSessionState(
+  identity: UserIdentity,
+  target: ConversationTarget | undefined,
+  state: UserState,
+): Promise<void> {
+  return ensureDefaultSessionService().writeSessionState(identity, target, state);
 }
 
 export async function touchSession(openId: string, messageId: string): Promise<void> {

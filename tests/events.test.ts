@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseMessageEvent, isP2PTextMessage, isSupportedP2PMessage, extractTextContent } from "../src/feishu/events.js";
+import { isSupportedFeishuMessage } from "../src/feishu/group-routing.js";
 import type { FeishuMessageEvent } from "../src/types.js";
 
 describe("parseMessageEvent", () => {
@@ -55,6 +56,14 @@ describe("parseMessageEvent", () => {
         chat_type: "p2p",
         message_type: "text",
         content: '{"text":"hello"}',
+        mentions: [
+          {
+            key: "@_user_1",
+            id: { open_id: "ou_bot_1", user_id: "u_bot_1" },
+            name: "Pi",
+            tenant_key: "tk_456",
+          },
+        ],
         create_time: "1234567890",
       },
     };
@@ -65,6 +74,14 @@ describe("parseMessageEvent", () => {
     expect(result!.message.parentId).toBe("om_parent_456");
     expect(result!.message.rootId).toBe("om_root_456");
     expect(result!.message.threadId).toBe("omt_456");
+    expect(result!.message.mentions).toEqual([
+      {
+        key: "@_user_1",
+        id: { openId: "ou_bot_1", userId: "u_bot_1" },
+        name: "Pi",
+        tenantKey: "tk_456",
+      },
+    ]);
   });
 
   it("缺少 messageId 应返回 null", () => {
@@ -73,6 +90,58 @@ describe("parseMessageEvent", () => {
       message: { chatType: "p2p", messageType: "text", content: "{}", createTime: "" },
     };
     expect(parseMessageEvent(data as Record<string, unknown>)).toBeNull();
+  });
+});
+
+describe("isSupportedFeishuMessage", () => {
+  const baseEvent: FeishuMessageEvent = {
+    sender: { senderId: { openId: "ou_1", userId: "u1", unionId: "on1" }, senderType: "user", tenantKey: "tk" },
+    message: { messageId: "om_1", chatId: "oc_1", chatType: "group", messageType: "text", content: "{}", createTime: "" },
+  };
+  const baseConfig = {
+    FEISHU_GROUP_CHAT_POLICY: "open" as const,
+    FEISHU_GROUP_CHAT_ALLOWLIST: [],
+    FEISHU_GROUP_MESSAGE_MODE: "mention" as const,
+    FEISHU_BOT_OPEN_ID: "ou_bot_1",
+  };
+
+  it("默认 disabled 时应忽略群聊消息", () => {
+    expect(isSupportedFeishuMessage(baseEvent, {
+      ...baseConfig,
+      FEISHU_GROUP_CHAT_POLICY: "disabled",
+    })).toBe(false);
+  });
+
+  it("allowlist 模式应只放行允许的群", () => {
+    expect(isSupportedFeishuMessage(baseEvent, {
+      ...baseConfig,
+      FEISHU_GROUP_CHAT_POLICY: "allowlist",
+      FEISHU_GROUP_CHAT_ALLOWLIST: ["oc_2"],
+    })).toBe(false);
+    expect(isSupportedFeishuMessage(baseEvent, {
+      ...baseConfig,
+      FEISHU_GROUP_CHAT_POLICY: "allowlist",
+      FEISHU_GROUP_CHAT_ALLOWLIST: ["oc_1"],
+      FEISHU_GROUP_MESSAGE_MODE: "all",
+    })).toBe(true);
+  });
+
+  it("mention 模式应要求 @ 机器人", () => {
+    expect(isSupportedFeishuMessage(baseEvent, baseConfig)).toBe(false);
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        mentions: [{ key: "@_user_1", id: { openId: "ou_bot_1" }, name: "Pi" }],
+      },
+    }, baseConfig)).toBe(true);
+  });
+
+  it("all 模式应放行普通群消息", () => {
+    expect(isSupportedFeishuMessage(baseEvent, {
+      ...baseConfig,
+      FEISHU_GROUP_MESSAGE_MODE: "all",
+    })).toBe(true);
   });
 });
 

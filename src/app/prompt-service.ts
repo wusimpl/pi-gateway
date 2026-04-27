@@ -3,7 +3,7 @@ import { formatError } from "../feishu/format.js";
 import { readFeishuQuotedMessage } from "../feishu/inbound/message.js";
 import { downloadFeishuResource } from "../feishu/inbound/resource.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
-import type { FeishuInboundMessage, FeishuMediaProcessingOptions } from "../feishu/inbound/types.js";
+import type { FeishuInboundMessage, FeishuMediaProcessingOptions, PreparedPromptInput } from "../feishu/inbound/types.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import { registerSessionReaction, type PromptRunner } from "../pi/stream.js";
 import type { SessionService } from "../pi/sessions.js";
@@ -13,7 +13,7 @@ import { readQuotedMessage as readCachedQuotedMessage } from "../storage/quoted-
 import type { UserIdentity, UserState } from "../types.js";
 import type { UserStateStore } from "../storage/users.js";
 import type { DeferredCronRunService } from "../cron/deferred-run.js";
-import { getConversationTargetKey } from "../conversation.js";
+import { getConversationTargetKey, type ConversationTarget } from "../conversation.js";
 import { logger } from "./logger.js";
 import type { RuntimeStateStore } from "./state.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
@@ -43,6 +43,7 @@ interface PromptServiceDeps {
     | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE"
     | "FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY"
     | "FEISHU_PROCESSING_REACTION_TYPE"
+    | "FEISHU_GROUP_MESSAGE_MODE"
     | "STREAMING_ENABLED"
     | "TEXT_CHUNK_LIMIT"
   > & Partial<Pick<Config, "FEISHU_STEERING_REACTION_TYPE">>;
@@ -50,11 +51,14 @@ interface PromptServiceDeps {
     RuntimeStateStore,
     "acquireLock" | "releaseLock" | "setAbortHandler" | "isStopRequested" | "isDraining"
   >;
-  sessionService: Pick<SessionService, "getOrCreateActiveSession" | "touchSession">;
+  sessionService: Pick<SessionService, "getOrCreateActiveSession" | "touchSession"> &
+    Partial<Pick<SessionService, "getOrCreateActiveSessionForTarget" | "touchSessionForTarget" | "readSessionState">>;
   userStateStore?: Pick<UserStateStore, "readUserState">;
-  workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
+  workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir"> &
+    Partial<Pick<WorkspaceService, "getConversationWorkspaceDir">>;
   promptRunner: Pick<PromptRunner, "promptSession">;
-  messenger: Pick<FeishuMessenger, "sendTextMessage"> & Partial<Pick<FeishuMessenger, "addProcessingReaction">>;
+  messenger: Pick<FeishuMessenger, "sendTextMessage"> &
+    Partial<Pick<FeishuMessenger, "sendTextMessageToTarget" | "addProcessingReaction">>;
   quotedMessageStore?: Pick<QuotedMessageStore, "readQuotedMessage">;
   downloadResource?: typeof downloadFeishuResource;
   readQuotedMessage?: typeof readFeishuQuotedMessage;
@@ -76,13 +80,16 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     readQuotedMessage: readCachedQuotedMessage,
   };
 
-  function buildPromptPreparationOptions(identity: UserIdentity): FeishuMediaProcessingOptions {
+  function buildPromptPreparationOptions(
+    identity: UserIdentity,
+    conversationTarget?: ConversationTarget,
+  ): FeishuMediaProcessingOptions {
     const audioTranscribeProvider = deps.runtimeConfig
       ? deps.runtimeConfig.getAudioTranscribeProvider()
       : deps.config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER;
 
     return {
-      workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
+      workspaceDir: getWorkspaceDir(identity, conversationTarget),
       ollamaBaseUrl: deps.config.FEISHU_MEDIA_OLLAMA_BASE_URL,
       ocrModel: deps.config.FEISHU_MEDIA_OCR_MODEL,
       audioTranscribeProvider,
@@ -95,22 +102,71 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     };
   }
 
+  function getWorkspaceDir(identity: UserIdentity, conversationTarget?: ConversationTarget): string {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.workspaceService.getConversationWorkspaceDir) {
+      return deps.workspaceService.getConversationWorkspaceDir(identity, conversationTarget);
+    }
+    return deps.workspaceService.getUserWorkspaceDir(identity);
+  }
+
+  async function getActiveSession(identity: UserIdentity, conversationTarget?: ConversationTarget) {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.getOrCreateActiveSessionForTarget) {
+      return deps.sessionService.getOrCreateActiveSessionForTarget(identity, conversationTarget);
+    }
+    return deps.sessionService.getOrCreateActiveSession(identity);
+  }
+
+  async function readTargetState(
+    identity: UserIdentity,
+    conversationTarget?: ConversationTarget,
+  ): Promise<UserState | null | undefined> {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.readSessionState) {
+      return deps.sessionService.readSessionState(identity, conversationTarget);
+    }
+    return deps.userStateStore?.readUserState(identity.openId);
+  }
+
+  async function touchSession(
+    identity: UserIdentity,
+    conversationTarget: ConversationTarget | undefined,
+    messageId: string,
+  ): Promise<void> {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.touchSessionForTarget) {
+      await deps.sessionService.touchSessionForTarget(identity, conversationTarget, messageId);
+      return;
+    }
+    await deps.sessionService.touchSession(identity.openId, messageId);
+  }
+
+  async function sendTextReply(
+    identity: UserIdentity,
+    conversationTarget: ConversationTarget | undefined,
+    text: string,
+  ): Promise<void> {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.messenger.sendTextMessageToTarget) {
+      await deps.messenger.sendTextMessageToTarget(conversationTarget, text);
+      return;
+    }
+    await deps.messenger.sendTextMessage(identity.openId, text);
+  }
+
   async function handleUserPrompt(
     identity: UserIdentity,
     message: FeishuInboundMessage,
   ): Promise<void> {
     const openId = identity.openId;
     const conversationKey = getConversationTargetKey(message.conversationTarget, openId);
+    const conversationTarget = message.conversationTarget;
     const messageId = message.messageId;
     let lockAcquired = false;
     if (deps.runtimeState.isDraining()) {
-      await deps.messenger.sendTextMessage(openId, "网关正在重启，暂时不接新任务，请稍后再试。");
+      await sendTextReply(identity, conversationTarget, "网关正在重启，暂时不接新任务，请稍后再试。");
       return;
     }
 
     if (!deps.runtimeState.acquireLock(conversationKey, messageId)) {
       if (deps.runtimeState.isDraining()) {
-        await deps.messenger.sendTextMessage(openId, "网关正在重启，暂时不接新任务，请稍后再试。");
+        await sendTextReply(identity, conversationTarget, "网关正在重启，暂时不接新任务，请稍后再试。");
         return;
       }
       logger.info("用户消息因已有处理中任务被忽略", { openId, conversationKey, messageId });
@@ -119,8 +175,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     lockAcquired = true;
 
     try {
-      const { activeSessionId, piSession } = await deps.sessionService.getOrCreateActiveSession(identity);
-      const userState = await deps.userStateStore?.readUserState(openId);
+      const { activeSessionId, piSession } = await getActiveSession(identity, conversationTarget);
+      const userState = await readTargetState(identity, conversationTarget);
       applyUserPromptPreferences(piSession, userState);
       const stoppedBeforePrompt = await deps.runtimeState.setAbortHandler(
         conversationKey,
@@ -143,38 +199,59 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
           ? deps.runtimeConfig.getStreamingEnabled()
           : deps.config.STREAMING_ENABLED);
       const toolCallsDisplayMode = userState?.toolCallsDisplayMode ?? "off";
-      const promptInput = await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity), {
-        downloadResource: deps.downloadResource,
-      });
+      const promptInput = addConversationPromptContext(
+        await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity, conversationTarget), {
+          downloadResource: deps.downloadResource,
+        }),
+        identity,
+        conversationTarget,
+        deps.config.FEISHU_GROUP_MESSAGE_MODE,
+      );
       if (deps.runtimeState.isStopRequested(conversationKey, messageId)) {
         logger.info("prompt 输入准备完成前收到停止请求，已跳过 prompt", { openId, conversationKey, messageId });
         return;
       }
 
       const logCtx = { openId, conversationKey, sessionId: activeSessionId, messageId };
-      const result = await deps.promptRunner.promptSession(
-        piSession,
-        promptInput,
-        openId,
-        messageId,
-        processingReactionType,
-        streamingEnabled,
-        deps.config.TEXT_CHUNK_LIMIT,
-        toolCallsDisplayMode,
-        undefined,
-        () => deps.runtimeState.isStopRequested(conversationKey, messageId),
-      );
+      const targetForRunner = conversationTarget?.kind === "p2p" ? undefined : conversationTarget;
+      const result = targetForRunner
+        ? await deps.promptRunner.promptSession(
+            piSession,
+            promptInput,
+            openId,
+            messageId,
+            processingReactionType,
+            false,
+            deps.config.TEXT_CHUNK_LIMIT,
+            toolCallsDisplayMode,
+            undefined,
+            () => deps.runtimeState.isStopRequested(conversationKey, messageId),
+            targetForRunner,
+          )
+        : await deps.promptRunner.promptSession(
+            piSession,
+            promptInput,
+            openId,
+            messageId,
+            processingReactionType,
+            streamingEnabled,
+            deps.config.TEXT_CHUNK_LIMIT,
+            toolCallsDisplayMode,
+            undefined,
+            () => deps.runtimeState.isStopRequested(conversationKey, messageId),
+          );
 
       if (result.error && !result.text && !result.aborted && !result.displayed) {
-        await deps.messenger.sendTextMessage(openId, formatError(result.error));
+        await sendTextReply(identity, conversationTarget, formatError(result.error));
       }
 
-      await deps.sessionService.touchSession(openId, messageId);
+      await touchSession(identity, conversationTarget, messageId);
       logger.info("Pi prompt 完成", logCtx);
     } catch (err) {
       logger.error("Pi prompt 处理失败", { openId, messageId, error: String(err) });
-      await deps.messenger.sendTextMessage(
-        openId,
+      await sendTextReply(
+        identity,
+        conversationTarget,
         formatError(formatPromptPreparationError(err) ?? "处理失败，请稍后重试或使用 /new 新建会话"),
       );
     } finally {
@@ -196,6 +273,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
     const openId = identity.openId;
     const messageId = message.messageId;
+    const conversationTarget = message.conversationTarget;
     if (deps.runtimeState.isDraining()) {
       return "not_running";
     }
@@ -203,10 +281,10 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     let activeSessionId = "unknown";
     let piSession: Awaited<ReturnType<SessionService["getOrCreateActiveSession"]>>["piSession"];
     try {
-      const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+      const sessionState = await getActiveSession(identity, conversationTarget);
       activeSessionId = sessionState.activeSessionId;
       piSession = sessionState.piSession;
-      const userState = await deps.userStateStore?.readUserState(openId);
+      const userState = await readTargetState(identity, conversationTarget);
       applyUserPromptPreferences(piSession, userState);
     } catch (error) {
       logger.warn("获取运行中 Pi session 失败，退回普通队列", { openId, messageId, error: String(error) });
@@ -220,9 +298,14 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     let promptText: string;
     try {
       const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
-      const promptInput = await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity), {
-        downloadResource: deps.downloadResource,
-      });
+      const promptInput = addConversationPromptContext(
+        await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity, conversationTarget), {
+          downloadResource: deps.downloadResource,
+        }),
+        identity,
+        conversationTarget,
+        deps.config.FEISHU_GROUP_MESSAGE_MODE,
+      );
       promptText = promptInput.text;
       if (behavior === "followUp") {
         await piSession.followUp(promptInput.text, promptInput.images);
@@ -258,7 +341,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     }
 
     try {
-      await deps.sessionService.touchSession(openId, messageId);
+      await touchSession(identity, conversationTarget, messageId);
     } catch (error) {
       logger.warn("运行中队列消息 touch session 失败", { openId, sessionId: activeSessionId, messageId, error: String(error) });
     }
@@ -288,6 +371,31 @@ function applyUserPromptPreferences(
   }
 
   session.setThinkingLevel(userState.thinkingLevel);
+}
+
+function addConversationPromptContext(
+  promptInput: PreparedPromptInput,
+  identity: UserIdentity,
+  conversationTarget: ConversationTarget | undefined,
+  groupMessageMode: string | undefined,
+): PreparedPromptInput {
+  if (!conversationTarget || conversationTarget.kind === "p2p") {
+    return promptInput;
+  }
+
+  const context = [
+    "当前对话来自飞书群聊。",
+    `群 chat_id: ${conversationTarget.chatId ?? conversationTarget.key}`,
+    `发送者 open_id: ${identity.openId}`,
+    identity.userId ? `发送者 user_id: ${identity.userId}` : "",
+    `群消息接收模式: ${groupMessageMode ?? "mention"}`,
+    "请回复当前群聊，不要把回复写成私聊。",
+  ].filter(Boolean).join("\n");
+
+  return {
+    ...promptInput,
+    text: `${context}\n\n用户消息：\n${promptInput.text}`,
+  };
 }
 
 function formatPromptPreparationError(error: unknown): string | undefined {

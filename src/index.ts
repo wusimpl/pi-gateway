@@ -182,6 +182,7 @@ async function main() {
     promptRunner,
     messenger: {
       sendTextMessage: (...args) => feishuMessenger.sendTextMessage(...args),
+      sendTextMessageToTarget: (...args) => feishuMessenger.sendTextMessageToTarget(...args),
       addProcessingReaction: (...args) => feishuMessenger.addProcessingReaction(...args),
     },
     downloadResource: feishuResourceDownloader,
@@ -192,6 +193,7 @@ async function main() {
     stateStore: runtimeState,
     commandService,
     promptService,
+    config,
   });
   logger.info("消息路由就绪");
 

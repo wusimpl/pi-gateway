@@ -16,6 +16,10 @@ const envSchema = z.object({
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: z.string().default("iic/SenseVoiceSmall"),
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: z.string().default("cpu"),
   FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: z.string().default(""),
+  FEISHU_GROUP_CHAT_POLICY: z.enum(["disabled", "allowlist", "open"]).default("disabled"),
+  FEISHU_GROUP_CHAT_ALLOWLIST: z.string().default("").transform(parseCommaSeparatedList),
+  FEISHU_GROUP_MESSAGE_MODE: z.enum(["mention", "all"]).default("mention"),
+  FEISHU_BOT_OPEN_ID: z.string().default("").transform((value) => value.trim() || undefined),
   DATA_DIR: z.string().default("./data"),
   PI_WORKSPACE_ROOT: z.string().default("~/code/pi-workspace"),
   PI_DISABLE_GLOBAL_AGENTS: z
@@ -97,4 +101,11 @@ function expandHomeDir(value: string): string {
   }
 
   return value;
+}
+
+function parseCommaSeparatedList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

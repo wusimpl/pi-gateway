@@ -5,10 +5,13 @@ const mocks = vi.hoisted(() => ({
   sendRenderedMessage: vi.fn(),
   promptSession: vi.fn(),
   getOrCreateActiveSession: vi.fn(),
+  getOrCreateActiveSessionForTarget: vi.fn(),
   touchSession: vi.fn(),
+  touchSessionForTarget: vi.fn(),
   createNewSession: vi.fn(),
   listSessions: vi.fn(),
   resumeSession: vi.fn(),
+  readSessionState: vi.fn(),
   readUserState: vi.fn(),
   parseMessageEvent: vi.fn(),
   isSupportedP2PMessage: vi.fn(),
@@ -19,6 +22,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../src/feishu/send.js", () => ({
   sendTextMessage: mocks.sendTextMessage,
   sendRenderedMessage: mocks.sendRenderedMessage,
+  sendTextMessageToTarget: vi.fn(),
+  sendRenderedMessageToTarget: vi.fn(),
 }));
 
 vi.mock("../src/pi/stream.js", () => ({
@@ -27,10 +32,13 @@ vi.mock("../src/pi/stream.js", () => ({
 
 vi.mock("../src/pi/sessions.js", () => ({
   getOrCreateActiveSession: mocks.getOrCreateActiveSession,
+  getOrCreateActiveSessionForTarget: mocks.getOrCreateActiveSessionForTarget,
   createNewSession: mocks.createNewSession,
   touchSession: mocks.touchSession,
+  touchSessionForTarget: mocks.touchSessionForTarget,
   listSessions: mocks.listSessions,
   resumeSession: mocks.resumeSession,
+  readSessionState: mocks.readSessionState,
 }));
 
 vi.mock("../src/storage/users.js", () => ({
@@ -44,6 +52,7 @@ vi.mock("../src/feishu/events.js", () => ({
 
 vi.mock("../src/pi/workspace.js", () => ({
   getUserWorkspaceDir: () => "workspace/user",
+  getConversationWorkspaceDir: () => "workspace/conversation",
 }));
 
 vi.mock("../src/feishu/inbound/normalize.js", () => ({
@@ -69,9 +78,12 @@ describe("handleFeishuMessage 运行锁", () => {
     mocks.sendRenderedMessage.mockReset();
     mocks.promptSession.mockReset();
     mocks.getOrCreateActiveSession.mockReset();
+    mocks.getOrCreateActiveSessionForTarget.mockReset();
     mocks.touchSession.mockReset();
+    mocks.touchSessionForTarget.mockReset();
     mocks.createNewSession.mockReset();
     mocks.readUserState.mockReset();
+    mocks.readSessionState.mockReset();
     mocks.parseMessageEvent.mockReset();
     mocks.isSupportedP2PMessage.mockReset();
     mocks.normalizeFeishuInboundMessage.mockReset();
@@ -99,7 +111,13 @@ describe("handleFeishuMessage 运行锁", () => {
       activeSessionId: "session_1",
       piSession: { id: "pi_session" },
     });
+    mocks.getOrCreateActiveSessionForTarget.mockResolvedValue({
+      activeSessionId: "session_group_1",
+      piSession: { id: "pi_session_group" },
+    });
     mocks.touchSession.mockResolvedValue(undefined);
+    mocks.touchSessionForTarget.mockResolvedValue(undefined);
+    mocks.readSessionState.mockResolvedValue(null);
   });
 
   it("已有处理中任务时后续消息应排队，首条完成后继续处理", async () => {

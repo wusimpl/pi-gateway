@@ -6,9 +6,12 @@ describe("createPromptService", () => {
   const preparePromptInput = vi.fn();
   const promptSession = vi.fn();
   const sendTextMessage = vi.fn();
+  const sendTextMessageToTarget = vi.fn();
   const addProcessingReaction = vi.fn();
   const getOrCreateActiveSession = vi.fn();
+  const getOrCreateActiveSessionForTarget = vi.fn();
   const touchSession = vi.fn();
+  const touchSessionForTarget = vi.fn();
   const acquireLock = vi.fn();
   const releaseLock = vi.fn();
   const setAbortHandler = vi.fn();
@@ -23,9 +26,12 @@ describe("createPromptService", () => {
     preparePromptInput.mockReset();
     promptSession.mockReset();
     sendTextMessage.mockReset();
+    sendTextMessageToTarget.mockReset();
     addProcessingReaction.mockReset();
     getOrCreateActiveSession.mockReset();
+    getOrCreateActiveSessionForTarget.mockReset();
     touchSession.mockReset();
+    touchSessionForTarget.mockReset();
     acquireLock.mockReset();
     releaseLock.mockReset();
     setAbortHandler.mockReset();
@@ -49,12 +55,20 @@ describe("createPromptService", () => {
         abort: vi.fn().mockResolvedValue(undefined),
       },
     });
+    getOrCreateActiveSessionForTarget.mockResolvedValue({
+      activeSessionId: "session_group_1",
+      piSession: {
+        model: { input: ["text"] },
+        abort: vi.fn().mockResolvedValue(undefined),
+      },
+    });
     preparePromptInput.mockResolvedValue({
       text: "转写后的文本",
       localFiles: ["/tmp/workspace/.feishu-inbox/om_1/audio.ogg"],
     });
     promptSession.mockResolvedValue({ text: "done", error: undefined });
     touchSession.mockResolvedValue(undefined);
+    touchSessionForTarget.mockResolvedValue(undefined);
     readQuotedMessage.mockResolvedValue({
       messageId: "om_parent_1",
       messageType: "text",
@@ -154,6 +168,104 @@ describe("createPromptService", () => {
     expect(promptSession.mock.calls[0]?.[7]).toBe("name");
     expect(sendTextMessage).not.toHaveBeenCalled();
     expect(releaseLock).toHaveBeenCalledWith("ou_1");
+  });
+
+  it("群聊 prompt 应使用群会话、群 workspace，并把回复目标传给 runner", async () => {
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        FEISHU_GROUP_MESSAGE_MODE: "mention",
+        STREAMING_ENABLED: true,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        getOrCreateActiveSessionForTarget,
+        touchSession,
+        touchSessionForTarget,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace/user",
+        getConversationWorkspaceDir: () => "/tmp/workspace/conversations/oc_1",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+        sendTextMessageToTarget,
+        addProcessingReaction,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        conversationTarget: target,
+        messageId: "om_group_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"hello"}',
+        text: "hello",
+      },
+    );
+
+    expect(getOrCreateActiveSessionForTarget).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target);
+    expect(preparePromptInput).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: "om_group_1" }),
+      expect.anything(),
+      expect.objectContaining({ workspaceDir: "/tmp/workspace/conversations/oc_1" }),
+      expect.anything(),
+    );
+    expect(promptSession).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        text: expect.stringContaining("当前对话来自飞书群聊。"),
+      }),
+      "ou_1",
+      "om_group_1",
+      "SMILE",
+      false,
+      2000,
+      "off",
+      undefined,
+      expect.any(Function),
+      target,
+    );
+    expect(touchSessionForTarget).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target, "om_group_1");
+    expect(touchSession).not.toHaveBeenCalled();
+    expect(releaseLock).toHaveBeenCalledWith("oc_1");
   });
 
   it("回复结束释放锁后会触发延后补跑的 cron", async () => {

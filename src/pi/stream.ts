@@ -1,6 +1,7 @@
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { ToolCallsDisplayMode } from "../types.js";
+import type { ConversationTarget } from "../conversation.js";
 import { logger } from "../app/logger.js";
 import { BridgeError, withTimeout } from "../app/errors.js";
 import { formatModelLabel } from "./models.js";
@@ -54,6 +55,15 @@ const TOOL_PROGRESS_SUMMARY_FIELDS = [
   "name",
 ];
 
+function createP2PTarget(openId: string): ConversationTarget {
+  return {
+    kind: "p2p",
+    key: openId,
+    receiveIdType: "open_id",
+    receiveId: openId,
+  };
+}
+
 type PromptMessenger = Pick<
   FeishuMessenger,
   | "sendRenderedMessage"
@@ -61,7 +71,7 @@ type PromptMessenger = Pick<
   | "startStreamingMessage"
   | "addProcessingReaction"
   | "removeReaction"
->;
+> & Partial<Pick<FeishuMessenger, "sendRenderedMessageToTarget">>;
 
 export interface PromptRunner {
   promptSession(
@@ -75,6 +85,7 @@ export interface PromptRunner {
     toolCallsDisplayMode?: ToolCallsDisplayMode | boolean,
     timeoutMs?: number,
     isAbortRequested?: () => boolean,
+    conversationTarget?: ConversationTarget,
   ): Promise<PromptResult>;
 }
 
@@ -118,6 +129,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       toolCallsDisplayMode: ToolCallsDisplayMode | boolean = "off",
       timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
       isAbortRequested?: () => boolean,
+      conversationTarget?: ConversationTarget,
     ): Promise<PromptResult> {
       const normalizedPrompt = typeof promptInput === "string" ? { text: promptInput } : promptInput;
       let fullText = "";
@@ -134,8 +146,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let streamingInitAttempted = false;
       const docPreviewMap = new Map<string, FeishuDocPreviewCardInput>();
       const toolCallMap = new Map<string, ToolCallState>();
+      const target = conversationTarget ?? createP2PTarget(openId);
       const normalizedToolCallsDisplayMode = normalizeToolCallsDisplayMode(toolCallsDisplayMode);
       const showToolCallsInReply = normalizedToolCallsDisplayMode !== "off";
+      const streamingAllowed = streamingEnabled && target.kind === "p2p";
 
       try {
         const reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
@@ -153,6 +167,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       ): Promise<void> {
         if (
           !streamingEnabled ||
+          !streamingAllowed ||
           streamingBroken ||
           streamingMessage ||
           streamingInitAttempted ||
@@ -184,7 +199,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       function queueStreamingFlush(force: boolean = false): void {
         const toolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "";
-        if (!streamingEnabled || streamingBroken || !hasVisibleStreamingContent(fullText, toolsSnapshot, preludeText)) {
+        if (!streamingAllowed || streamingBroken || !hasVisibleStreamingContent(fullText, toolsSnapshot, preludeText)) {
           return;
         }
         if (force) {
@@ -403,7 +418,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           pendingTimer = null;
         }
         if (
-          streamingEnabled &&
+          streamingAllowed &&
           !streamingBroken &&
           hasVisibleStreamingContent(
             fullText,
@@ -450,9 +465,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           preludeText,
           streamingMessage,
           streamingBroken,
+          target,
         );
       }
-      await sendCollectedDocPreviewCards(messenger, openId, docPreviewMap);
+      await sendCollectedDocPreviewCards(messenger, openId, docPreviewMap, target);
 
       return {
         text: fullText,
@@ -483,6 +499,7 @@ export async function promptSession(
   toolCallsDisplayMode: ToolCallsDisplayMode | boolean = "off",
   timeoutMs: number = PROMPT_IDLE_TIMEOUT_MS,
   isAbortRequested?: () => boolean,
+  conversationTarget?: ConversationTarget,
 ): Promise<PromptResult> {
   return defaultPromptRunner.promptSession(
     session,
@@ -495,12 +512,13 @@ export async function promptSession(
     toolCallsDisplayMode,
     timeoutMs,
     isAbortRequested,
+    conversationTarget,
   );
 }
 
 /** 最终发送飞书消息 */
 async function finalizeMessage(
-  messenger: Pick<FeishuMessenger, "sendRenderedMessage">,
+  messenger: Pick<FeishuMessenger, "sendRenderedMessage"> & Partial<Pick<FeishuMessenger, "sendRenderedMessageToTarget">>,
   openId: string,
   fullText: string,
   textChunkLimit: number,
@@ -508,6 +526,7 @@ async function finalizeMessage(
   preludeText: string = "",
   streamingMessage?: FeishuStreamingMessage | null,
   streamingBroken: boolean = false,
+  conversationTarget?: ConversationTarget,
 ): Promise<void> {
   if (streamingMessage && !streamingBroken) {
     try {
@@ -521,14 +540,25 @@ async function finalizeMessage(
     }
   }
   if (!fullText && !toolsText && !preludeText) return;
-  await messenger.sendRenderedMessage(openId, appendDisplayedSections(fullText, preludeText, toolsText), textChunkLimit);
+  const target = conversationTarget ?? createP2PTarget(openId);
+  const text = appendDisplayedSections(fullText, preludeText, toolsText);
+  if (conversationTarget && messenger.sendRenderedMessageToTarget) {
+    await messenger.sendRenderedMessageToTarget(target, text, textChunkLimit);
+    return;
+  }
+  await messenger.sendRenderedMessage(openId, text, textChunkLimit);
 }
 
 async function sendCollectedDocPreviewCards(
   messenger: Pick<FeishuMessenger, "sendDocPreviewCard">,
   openId: string,
   docPreviewMap: ReadonlyMap<string, FeishuDocPreviewCardInput>,
+  conversationTarget?: ConversationTarget,
 ): Promise<void> {
+  if (conversationTarget?.kind && conversationTarget.kind !== "p2p") {
+    return;
+  }
+
   for (const preview of docPreviewMap.values()) {
     try {
       await messenger.sendDocPreviewCard(openId, preview);

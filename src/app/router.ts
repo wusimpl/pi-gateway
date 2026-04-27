@@ -1,19 +1,33 @@
 import { normalizeFeishuInboundMessage } from "../feishu/inbound/normalize.js";
 import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
 import { parseMessageEvent, isSupportedP2PMessage } from "../feishu/events.js";
-import { addProcessingReaction, sendRenderedMessage, sendTextMessage } from "../feishu/send.js";
+import { isSupportedFeishuMessage } from "../feishu/group-routing.js";
+import {
+  addProcessingReaction,
+  sendRenderedMessage,
+  sendRenderedMessageToTarget,
+  sendTextMessage,
+  sendTextMessageToTarget,
+} from "../feishu/send.js";
 import { promptSession } from "../pi/stream.js";
 import {
   createNewSession,
+  createNewSessionForTarget,
   getOrCreateActiveSession,
+  getOrCreateActiveSessionForTarget,
   listSessions,
+  listSessionsForTarget,
+  readSessionState,
   resumeSession,
+  resumeSessionForTarget,
   touchSession,
+  touchSessionForTarget,
+  writeSessionState,
 } from "../pi/sessions.js";
-import { getUserWorkspaceDir } from "../pi/workspace.js";
+import { getConversationWorkspaceDir, getUserWorkspaceDir } from "../pi/workspace.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
 import { readUserState } from "../storage/users.js";
-import { getConversationTargetKey } from "../conversation.js";
+import { createP2PConversationTarget, getConversationTargetKey } from "../conversation.js";
 import {
   findAvailableModel,
   listAvailableModels,
@@ -55,8 +69,10 @@ interface MessageRouterDeps {
   stateStore: Pick<RuntimeStateStore, "isDuplicate">;
   commandService: Pick<CommandService, "handleBridgeCommand" | "handleUnsupportedSlashCommand">;
   promptService: Pick<PromptService, "handleUserPrompt" | "queueRunningPrompt">;
+  config?: Partial<Config>;
   parseMessageEvent?: typeof parseMessageEvent;
   isSupportedP2PMessage?: typeof isSupportedP2PMessage;
+  isSupportedMessage?: (event: ReturnType<typeof parseMessageEvent> extends infer T ? NonNullable<T> : never) => boolean;
   normalizeFeishuInboundMessage?: typeof normalizeFeishuInboundMessage;
 }
 
@@ -69,7 +85,8 @@ interface QueuedPrompt {
 
 export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
   const parseEvent = deps.parseMessageEvent ?? parseMessageEvent;
-  const isSupportedMessage = deps.isSupportedP2PMessage ?? isSupportedP2PMessage;
+  const isSupportedMessage = deps.isSupportedMessage
+    ?? createSupportedMessagePredicate(deps.config, deps.isSupportedP2PMessage ?? isSupportedP2PMessage);
   const normalizeMessage = deps.normalizeFeishuInboundMessage ?? normalizeFeishuInboundMessage;
   const promptQueues = new Map<string, QueuedPrompt[]>();
   const drainingUsers = new Set<string>();
@@ -85,6 +102,9 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 
     const identity = message.identity;
     const openId = identity.openId;
+    const conversationTarget = message.conversationTarget ?? createP2PConversationTarget(openId);
+    if (!conversationTarget) return;
+    const routedMessage = message.conversationTarget ? message : { ...message, conversationTarget };
     const messageId = message.messageId;
 
     if (deps.stateStore.isDuplicate(messageId)) {
@@ -92,8 +112,10 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       return;
     }
 
-    logger.info("收到私聊消息", {
+    logger.info(conversationTarget.kind === "p2p" ? "收到私聊消息" : "收到群聊消息", {
       openId,
+      conversationKey: conversationTarget.key,
+      chatId: conversationTarget.chatId,
       messageId,
       messageType: message.messageType,
       ...buildMessageLogPayload(message),
@@ -108,25 +130,25 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     const bridgeCommand = message.kind === "text" ? parseBridgeCommand(message.text) : null;
     if (bridgeCommand?.name === "next") {
       if (!bridgeCommand.args) {
-        await deps.commandService.handleBridgeCommand(identity, bridgeCommand, message.conversationTarget);
+        await deps.commandService.handleBridgeCommand(identity, bridgeCommand, conversationTarget);
         return;
       }
 
-      await enqueuePrompt(identity, createTextPromptMessage(message, bridgeCommand.args), "followUp");
+      await enqueuePrompt(identity, createTextPromptMessage(routedMessage, bridgeCommand.args), "followUp");
       return;
     }
 
     if (bridgeCommand) {
-      await deps.commandService.handleBridgeCommand(identity, bridgeCommand, message.conversationTarget);
+      await deps.commandService.handleBridgeCommand(identity, bridgeCommand, conversationTarget);
       return;
     }
 
     if (hasSlashPrefix) {
-      await deps.commandService.handleUnsupportedSlashCommand(identity, message.text, message.conversationTarget);
+      await deps.commandService.handleUnsupportedSlashCommand(identity, message.text, conversationTarget);
       return;
     }
 
-    await enqueuePrompt(identity, message, "steer");
+    await enqueuePrompt(identity, routedMessage, "steer");
   }
 
   function enqueuePrompt(
@@ -227,6 +249,17 @@ function createTextPromptMessage(message: FeishuInboundMessage, text: string): F
   };
 }
 
+function createSupportedMessagePredicate(
+  config: Partial<Config> | undefined,
+  fallback: typeof isSupportedP2PMessage,
+): (event: NonNullable<ReturnType<typeof parseMessageEvent>>) => boolean {
+  if (!config?.FEISHU_GROUP_CHAT_POLICY) {
+    return fallback;
+  }
+
+  return (event) => isSupportedFeishuMessage(event, config as Config);
+}
+
 let defaultRouter: MessageRouter | null = null;
 
 export function initRouter(cfg: Config): void {
@@ -236,13 +269,21 @@ export function initRouter(cfg: Config): void {
     runtimeConfig,
     messenger: {
       sendRenderedMessage: (...args) => sendRenderedMessage(...args),
+      sendRenderedMessageToTarget: (...args) => sendRenderedMessageToTarget(...args),
       sendTextMessage: (...args) => sendTextMessage(...args),
+      sendTextMessageToTarget: (...args) => sendTextMessageToTarget(...args),
     },
     sessionService: {
       getOrCreateActiveSession: (...args) => getOrCreateActiveSession(...args),
+      getOrCreateActiveSessionForTarget: (...args) => getOrCreateActiveSessionForTarget(...args),
       createNewSession: (...args) => createNewSession(...args),
+      createNewSessionForTarget: (...args) => createNewSessionForTarget(...args),
       listSessions: (...args) => listSessions(...args),
+      listSessionsForTarget: (...args) => listSessionsForTarget(...args),
       resumeSession: (...args) => resumeSession(...args),
+      resumeSessionForTarget: (...args) => resumeSessionForTarget(...args),
+      readSessionState: (...args) => readSessionState(...args),
+      writeSessionState: (...args) => writeSessionState(...args),
     },
     userStateStore: {
       readUserState: (...args) => readUserState(...args),
@@ -252,6 +293,7 @@ export function initRouter(cfg: Config): void {
     },
     workspaceService: {
       getUserWorkspaceDir: (...args) => getUserWorkspaceDir(...args),
+      getConversationWorkspaceDir: (...args) => getConversationWorkspaceDir(...args),
     },
     runtimeState: {
       isLocked: (...args) => isLocked(...args),
@@ -277,19 +319,24 @@ export function initRouter(cfg: Config): void {
     },
     sessionService: {
       getOrCreateActiveSession: (...args) => getOrCreateActiveSession(...args),
+      getOrCreateActiveSessionForTarget: (...args) => getOrCreateActiveSessionForTarget(...args),
       touchSession: (...args) => touchSession(...args),
+      touchSessionForTarget: (...args) => touchSessionForTarget(...args),
+      readSessionState: (...args) => readSessionState(...args),
     },
     userStateStore: {
       readUserState: (...args) => readUserState(...args),
     },
     workspaceService: {
       getUserWorkspaceDir: (...args) => getUserWorkspaceDir(...args),
+      getConversationWorkspaceDir: (...args) => getConversationWorkspaceDir(...args),
     },
     promptRunner: {
       promptSession: (...args) => promptSession(...args),
     },
     messenger: {
       sendTextMessage: (...args) => sendTextMessage(...args),
+      sendTextMessageToTarget: (...args) => sendTextMessageToTarget(...args),
       addProcessingReaction: (...args) => addProcessingReaction(...args),
     },
     preparePromptInput: prepareFeishuPromptInput,
@@ -301,6 +348,7 @@ export function initRouter(cfg: Config): void {
     },
     commandService,
     promptService,
+    config: cfg,
   });
 }
 

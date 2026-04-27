@@ -56,10 +56,23 @@ interface CommandServiceDeps {
     Config,
     "TEXT_CHUNK_LIMIT" | "CRON_DEFAULT_TZ" | "FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY" | "DATA_DIR"
   >;
-  messenger: Pick<FeishuMessenger, "sendRenderedMessage" | "sendTextMessage">;
-  sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession" | "listSessions" | "resumeSession">;
+  messenger: Pick<FeishuMessenger, "sendRenderedMessage" | "sendTextMessage"> &
+    Partial<Pick<FeishuMessenger, "sendRenderedMessageToTarget" | "sendTextMessageToTarget">>;
+  sessionService: Pick<SessionService, "getOrCreateActiveSession" | "createNewSession" | "listSessions" | "resumeSession"> &
+    Partial<
+      Pick<
+        SessionService,
+        | "getOrCreateActiveSessionForTarget"
+        | "createNewSessionForTarget"
+        | "listSessionsForTarget"
+        | "resumeSessionForTarget"
+        | "readSessionState"
+        | "writeSessionState"
+      >
+    >;
   userStateStore: Pick<UserStateStore, "readUserState" | "writeUserState">;
-  workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir">;
+  workspaceService: Pick<WorkspaceService, "getUserWorkspaceDir"> &
+    Partial<Pick<WorkspaceService, "getConversationWorkspaceDir">>;
   runtimeState: Pick<
     RuntimeStateStore,
     "isLocked" | "hasActiveLocks" | "beginRestartDrain" | "cancelRestartDrain" | "requestStop"
@@ -85,6 +98,95 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
   const SESSION_PAGE_SIZE = 20;
   const SKILL_STATS_PAGE_SIZE = 10;
 
+  async function getActiveSession(identity: UserIdentity, conversationTarget?: ConversationTarget) {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.getOrCreateActiveSessionForTarget) {
+      return deps.sessionService.getOrCreateActiveSessionForTarget(identity, conversationTarget);
+    }
+    return deps.sessionService.getOrCreateActiveSession(identity);
+  }
+
+  async function createSession(identity: UserIdentity, conversationTarget?: ConversationTarget) {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.createNewSessionForTarget) {
+      return deps.sessionService.createNewSessionForTarget(identity, conversationTarget);
+    }
+    return deps.sessionService.createNewSession(identity);
+  }
+
+  async function listTargetSessions(identity: UserIdentity, conversationTarget?: ConversationTarget) {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.listSessionsForTarget) {
+      return deps.sessionService.listSessionsForTarget(identity, conversationTarget);
+    }
+    return deps.sessionService.listSessions(identity);
+  }
+
+  async function resumeTargetSession(
+    identity: UserIdentity,
+    conversationTarget: ConversationTarget | undefined,
+    ref: string,
+  ) {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.resumeSessionForTarget) {
+      return deps.sessionService.resumeSessionForTarget(identity, conversationTarget, ref);
+    }
+    return deps.sessionService.resumeSession(identity, ref);
+  }
+
+  function getWorkspaceDir(identity: UserIdentity, conversationTarget?: ConversationTarget): string {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.workspaceService.getConversationWorkspaceDir) {
+      return deps.workspaceService.getConversationWorkspaceDir(identity, conversationTarget);
+    }
+    return deps.workspaceService.getUserWorkspaceDir(identity);
+  }
+
+  async function readTargetState(
+    identity: UserIdentity,
+    conversationTarget?: ConversationTarget,
+  ): Promise<UserState | null> {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.readSessionState) {
+      return deps.sessionService.readSessionState(identity, conversationTarget);
+    }
+    return deps.userStateStore.readUserState(identity.openId);
+  }
+
+  async function writeTargetState(
+    identity: UserIdentity,
+    conversationTarget: ConversationTarget | undefined,
+    state: UserState,
+  ): Promise<void> {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.writeSessionState) {
+      await deps.sessionService.writeSessionState(identity, conversationTarget, state);
+      return;
+    }
+    await deps.userStateStore.writeUserState(identity.openId, state);
+  }
+
+  async function sendTextReply(
+    identity: UserIdentity,
+    conversationTarget: ConversationTarget | undefined,
+    text: string,
+  ): Promise<void> {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.messenger.sendTextMessageToTarget) {
+      await deps.messenger.sendTextMessageToTarget(conversationTarget, text);
+      return;
+    }
+    await deps.messenger.sendTextMessage(identity.openId, text);
+  }
+
+  async function sendCommandReply(
+    identity: UserIdentity,
+    conversationTarget: ConversationTarget | undefined,
+    text: string,
+  ): Promise<void> {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && deps.messenger.sendRenderedMessageToTarget) {
+      await deps.messenger.sendRenderedMessageToTarget(conversationTarget, text, deps.config.TEXT_CHUNK_LIMIT);
+      return;
+    }
+    await deps.messenger.sendRenderedMessage(identity.openId, text, deps.config.TEXT_CHUNK_LIMIT);
+  }
+
+  function isConversationLocked(identity: UserIdentity, conversationTarget?: ConversationTarget): boolean {
+    return deps.runtimeState.isLocked(getConversationTargetKey(conversationTarget, identity.openId));
+  }
+
   async function handleBridgeCommandFlow(
     identity: UserIdentity,
     command: BridgeCommand,
@@ -94,36 +196,36 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     const conversationKey = getConversationTargetKey(conversationTarget, openId);
     try {
       if (command.name === "new" || command.name === "reset") {
-        const sessionState = await deps.sessionService.createNewSession(identity);
+        const sessionState = await createSession(identity, conversationTarget);
         const reply = handleBridgeCommand(command, {
           openId,
           sessionId: sessionState.activeSessionId,
-          workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
+          workspaceDir: getWorkspaceDir(identity, conversationTarget),
           currentModel: getCurrentModelLabel(sessionState.piSession),
         });
-        await sendCommandReply(openId, reply);
+        await sendCommandReply(identity, conversationTarget, reply);
       } else if (command.name === "status") {
-        const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
-        const userState = await deps.userStateStore.readUserState(openId);
+        const sessionState = await getActiveSession(identity, conversationTarget);
+        const userState = await readTargetState(identity, conversationTarget);
         const reply = handleBridgeCommand(command, {
           openId,
           sessionId: sessionState.activeSessionId,
           createdAt: userState?.createdAt,
           piSessionFile: userState?.piSessionFile,
-          workspaceDir: deps.workspaceService.getUserWorkspaceDir(identity),
+          workspaceDir: getWorkspaceDir(identity, conversationTarget),
           currentModel: getCurrentModelLabel(sessionState.piSession),
           currentThinkingLevel: getCurrentThinkingLevel(sessionState.piSession),
           streamingEnabled: userState?.streamingEnabled ?? deps.runtimeConfig?.getStreamingEnabled() ?? false,
         });
-        await sendCommandReply(openId, reply);
+        await sendCommandReply(identity, conversationTarget, reply);
       } else if (command.name === "context" || command.name === "skills") {
-        const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+        const sessionState = await getActiveSession(identity, conversationTarget);
         const reply = handleBridgeCommand(command, {
           openId,
           contextFiles: getLoadedContextFiles(sessionState.piSession),
           skills: getLoadedSkills(sessionState.piSession),
         });
-        await sendCommandReply(openId, reply);
+        await sendCommandReply(identity, conversationTarget, reply);
       } else if (command.name === "models") {
         const availableModels = await deps.listAvailableModels();
         const filteredModels = filterAvailableModels(availableModels, command.args);
@@ -132,28 +234,29 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           requestedProvider: command.args,
           availableModels: filteredModels,
         });
-        await sendCommandReply(openId, reply);
+        await sendCommandReply(identity, conversationTarget, reply);
       } else if (command.name === "sessions") {
         const pageResult = parsePageArg(command.args, {
           commandName: "sessions",
           extraUsage: "",
         });
         if (pageResult.error) {
-          await deps.messenger.sendTextMessage(openId, pageResult.error);
+          await sendTextReply(identity, conversationTarget, pageResult.error);
           return;
         }
         const page = pageResult.page;
         if (page === undefined) {
-          await deps.messenger.sendTextMessage(openId, "页码解析失败。");
+          await sendTextReply(identity, conversationTarget, "页码解析失败。");
           return;
         }
 
-        const sessions = await deps.sessionService.listSessions(identity);
+        const sessions = await listTargetSessions(identity, conversationTarget);
         const totalCount = sessions.length;
         const totalPages = Math.max(1, Math.ceil(totalCount / SESSION_PAGE_SIZE));
         if (totalCount > 0 && page > totalPages) {
-          await deps.messenger.sendTextMessage(
-            openId,
+          await sendTextReply(
+            identity,
+            conversationTarget,
             `页码超出范围，目前只有 ${totalPages} 页。\n\n用 /sessions 看第一页，或用 /sessions -n <页码> 翻页。`,
           );
           return;
@@ -167,33 +270,33 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           sessionsTotalPages: totalPages,
           sessionsTotalCount: totalCount,
         });
-        await sendCommandReply(openId, reply);
+        await sendCommandReply(identity, conversationTarget, reply);
       } else if (command.name === "skillstat") {
-        await handleSkillStatCommand(identity, command);
+        await handleSkillStatCommand(identity, command, conversationTarget);
       } else if (command.name === "resume") {
-        await handleResumeCommand(identity, command);
+        await handleResumeCommand(identity, command, conversationTarget);
       } else if (command.name === "model") {
-        await handleModelCommand(identity, command);
+        await handleModelCommand(identity, command, conversationTarget);
       } else if (command.name === "settings") {
-        await handleSettingsCommand(identity, command);
+        await handleSettingsCommand(identity, command, conversationTarget);
       } else if (command.name === "tools") {
-        await handleToolsCommand(identity, command);
+        await handleToolsCommand(identity, command, conversationTarget);
       } else if (command.name === "toolcalls") {
-        await handleToolCallsCommand(identity, command);
+        await handleToolCallsCommand(identity, command, conversationTarget);
       } else if (command.name === "cron") {
-        await handleCronCommand(identity, command);
+        await handleCronCommand(identity, command, conversationTarget);
       } else if (command.name === "stt") {
-        await handleSttCommand(identity, command);
+        await handleSttCommand(identity, command, conversationTarget);
       } else if (command.name === "stream") {
-        await handleStreamCommand(identity, command);
+        await handleStreamCommand(identity, command, conversationTarget);
       } else if (command.name === "reaction") {
-        await handleReactionCommand(identity, command);
+        await handleReactionCommand(identity, command, conversationTarget);
       } else if (command.name === "stop") {
-        await handleStopCommand(identity, command, conversationKey);
+        await handleStopCommand(identity, command, conversationKey, conversationTarget);
       } else if (command.name === "next") {
-        await sendCommandReply(openId, handleBridgeCommand(command, { openId }));
+        await sendCommandReply(identity, conversationTarget, handleBridgeCommand(command, { openId }));
       } else if (command.name === "restart") {
-        await handleRestartCommand(identity, command);
+        await handleRestartCommand(identity, command, conversationTarget);
       }
     } catch (err) {
       logger.error("桥接层命令处理失败", {
@@ -203,21 +306,25 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         args: command.args,
         error: String(err),
       });
-      await deps.messenger.sendTextMessage(openId, formatError("命令处理失败，请稍后重试"));
+      await sendTextReply(identity, conversationTarget, formatError("命令处理失败，请稍后重试"));
     }
   }
 
-  async function handleSkillStatCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleSkillStatCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     if (!deps.skillStatsStore) {
-      await deps.messenger.sendTextMessage(openId, "当前没有启用 skill 使用统计。");
+      await sendTextReply(identity, conversationTarget, "当前没有启用 skill 使用统计。");
       return;
     }
 
     const argText = command.args.trim();
     if (argText.toLowerCase() === "reset") {
       await deps.skillStatsStore.reset();
-      await deps.messenger.sendTextMessage(openId, "✅ 已清空 skill 使用统计。");
+      await sendTextReply(identity, conversationTarget, "✅ 已清空 skill 使用统计。");
       return;
     }
 
@@ -226,13 +333,13 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       extraUsage: " 或 /skillstat reset",
     });
     if (pageResult.error) {
-      await deps.messenger.sendTextMessage(openId, pageResult.error);
+      await sendTextReply(identity, conversationTarget, pageResult.error);
       return;
     }
 
     const page = pageResult.page;
     if (page === undefined) {
-      await deps.messenger.sendTextMessage(openId, "页码解析失败。");
+      await sendTextReply(identity, conversationTarget, "页码解析失败。");
       return;
     }
 
@@ -240,8 +347,9 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     const totalCount = records.length;
     const totalPages = Math.max(1, Math.ceil(totalCount / SKILL_STATS_PAGE_SIZE));
     if (totalCount > 0 && page > totalPages) {
-      await deps.messenger.sendTextMessage(
-        openId,
+      await sendTextReply(
+        identity,
+        conversationTarget,
         `页码超出范围，目前只有 ${totalPages} 页。\n\n用 /skillstat 看第一页，或用 /skillstat -n <页码> 翻页。`,
       );
       return;
@@ -255,36 +363,41 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       skillUsageTotalPages: totalPages,
       skillUsageTotalCount: totalCount,
     });
-    await sendCommandReply(openId, reply);
+    await sendCommandReply(identity, conversationTarget, reply);
   }
 
   async function handleStopCommand(
     identity: UserIdentity,
     command: BridgeCommand,
     conversationKey: string,
+    conversationTarget?: ConversationTarget,
   ): Promise<void> {
     const openId = identity.openId;
     await deps.runtimeState.requestStop(conversationKey);
     const reply = handleBridgeCommand(command, { openId });
-    await sendCommandReply(openId, reply);
+    await sendCommandReply(identity, conversationTarget, reply);
   }
 
-  async function handleRestartCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleRestartCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     const drainState = deps.runtimeState.beginRestartDrain();
     if (drainState === "busy") {
-      await deps.messenger.sendTextMessage(openId, "当前还有任务在跑，等这条回复结束后再重启网关。");
+      await sendTextReply(identity, conversationTarget, "当前还有任务在跑，等这条回复结束后再重启网关。");
       return;
     }
     if (drainState === "already_draining") {
-      await deps.messenger.sendTextMessage(openId, "网关正在重启，暂时不接新任务，请稍后再试。");
+      await sendTextReply(identity, conversationTarget, "网关正在重启，暂时不接新任务，请稍后再试。");
       return;
     }
 
     try {
       await recordRestartReadyNotification(deps.config.DATA_DIR, openId);
       const reply = handleBridgeCommand(command, { openId });
-      await sendCommandReply(openId, reply);
+      await sendCommandReply(identity, conversationTarget, reply);
       await deps.restartService.restartGateway();
     } catch (error) {
       deps.runtimeState.cancelRestartDrain();
@@ -293,40 +406,45 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
   }
 
-  async function handleModelCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleModelCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     const argText = command.args.trim();
 
     if (!argText || argText.toLowerCase() === "status") {
-      const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+      const sessionState = await getActiveSession(identity, conversationTarget);
       const availableModels = await deps.listAvailableModels();
       const reply = handleBridgeCommand(command, {
         openId,
         currentModel: getCurrentModelLabel(sessionState.piSession),
         availableModelCount: availableModels.length,
       });
-      await sendCommandReply(openId, reply);
+      await sendCommandReply(identity, conversationTarget, reply);
       return;
     }
 
-    if (deps.runtimeState.isLocked(openId)) {
-      await deps.messenger.sendTextMessage(openId, "当前还有任务在跑，等这条回复结束后再切模型。");
+    if (isConversationLocked(identity, conversationTarget)) {
+      await sendTextReply(identity, conversationTarget, "当前还有任务在跑，等这条回复结束后再切模型。");
       return;
     }
 
     const targetModel = await deps.findAvailableModel(argText);
     if (!targetModel) {
-      await deps.messenger.sendTextMessage(
-        openId,
+      await sendTextReply(
+        identity,
+        conversationTarget,
         "没找到这个模型，或者它现在还不能用。\n\n先用 /models 看编号，再用 /model <序号> 或 /model <provider/model> 切。",
       );
       return;
     }
 
-    const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+    const sessionState = await getActiveSession(identity, conversationTarget);
     const previousModel = getCurrentModelLabel(sessionState.piSession);
     await sessionState.piSession.setModel(targetModel.model);
-    const userState = await deps.userStateStore.readUserState(openId);
+    const userState = await readTargetState(identity, conversationTarget);
     if (userState?.thinkingLevel) {
       sessionState.piSession.setThinkingLevel(userState.thinkingLevel);
     }
@@ -337,40 +455,46 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       currentThinkingLevel: getCurrentThinkingLevel(sessionState.piSession),
       previousModel,
     });
-    await sendCommandReply(openId, reply);
+    await sendCommandReply(identity, conversationTarget, reply);
   }
 
-  async function handleResumeCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleResumeCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     const argText = command.args.trim();
 
     if (!argText) {
-      await deps.messenger.sendTextMessage(
-        openId,
+      await sendTextReply(
+        identity,
+        conversationTarget,
         "请先给出要恢复的会话。\n\n先用 /sessions 看列表，再用 /resume <序号> 或 /resume <sessionId前缀>。",
       );
       return;
     }
 
-    if (deps.runtimeState.isLocked(openId)) {
-      await deps.messenger.sendTextMessage(openId, "当前还有任务在跑，等这条回复结束后再切会话。");
+    if (isConversationLocked(identity, conversationTarget)) {
+      await sendTextReply(identity, conversationTarget, "当前还有任务在跑，等这条回复结束后再切会话。");
       return;
     }
 
     try {
-      const sessionState = await deps.sessionService.resumeSession(identity, argText);
+      const sessionState = await resumeTargetSession(identity, conversationTarget, argText);
       const baseReply = handleBridgeCommand(command, {
         openId,
         sessionId: sessionState.activeSessionId,
         currentModel: getCurrentModelLabel(sessionState.piSession),
       });
       const reply = appendRecentHistory(baseReply, sessionState.piSession);
-      await sendCommandReply(openId, reply);
+      await sendCommandReply(identity, conversationTarget, reply);
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
       if (code === "RESUME_SESSION_NOT_FOUND") {
-        await deps.messenger.sendTextMessage(
-          openId,
+        await sendTextReply(
+          identity,
+          conversationTarget,
           "没找到这个会话。\n\n先用 /sessions 看列表，再用 /resume <序号> 或 /resume <sessionId前缀>。",
         );
         return;
@@ -379,28 +503,32 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
   }
 
-  async function handleCronCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleCronCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     const cronService = deps.cronService;
     if (!cronService?.isEnabled()) {
-      await deps.messenger.sendTextMessage(openId, "当前网关没有开启定时任务。");
+      await sendTextReply(identity, conversationTarget, "当前网关没有开启定时任务。");
       return;
     }
 
     const parsed = parseCronBridgeCommand(command.args);
     if (parsed.error) {
-      await deps.messenger.sendTextMessage(openId, parsed.error);
+      await sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
 
     const defaultTz = cronService.getDefaultTimezone?.() ?? deps.config.CRON_DEFAULT_TZ;
     switch (parsed.command?.action) {
       case "help":
-        await sendCommandReply(openId, formatCronHelp(defaultTz));
+        await sendCommandReply(identity, conversationTarget, formatCronHelp(defaultTz));
         return;
       case "list": {
         const jobs = await cronService.listJobs(openId);
-        await sendCommandReply(openId, formatCronJobList(jobs, defaultTz));
+        await sendCommandReply(identity, conversationTarget, formatCronJobList(jobs, defaultTz));
         return;
       }
       case "add": {
@@ -423,20 +551,20 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           schedule,
           deleteAfterRun: parsedSchedule.deleteAfterRun,
         });
-        await sendCommandReply(openId, formatCronJobAdded(job, defaultTz));
+        await sendCommandReply(identity, conversationTarget, formatCronJobAdded(job, defaultTz));
         return;
       }
       case "remove": {
         try {
           const removed = await cronService.removeJob(openId, parsed.command.jobId);
           if (!removed) {
-            await deps.messenger.sendTextMessage(openId, "没找到这个定时任务。");
+            await sendTextReply(identity, conversationTarget, "没找到这个定时任务。");
             return;
           }
-          await sendCommandReply(openId, formatCronJobRemoved(removed));
+          await sendCommandReply(identity, conversationTarget, formatCronJobRemoved(removed));
         } catch (error) {
           if ((error instanceof Error ? error.message : String(error)) === "CRON_JOB_RUNNING") {
-            await deps.messenger.sendTextMessage(openId, "这个定时任务正在执行，先用 /stop 停掉再删。");
+            await sendTextReply(identity, conversationTarget, "这个定时任务正在执行，先用 /stop 停掉再删。");
             return;
           }
           throw error;
@@ -449,15 +577,15 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
             deps.runtimeState.isLocked(openId) && deps.deferredCronRunService
               ? await deps.deferredCronRunService.queueRun(openId, parsed.command.jobId)
               : await cronService.runJobNow(openId, parsed.command.jobId);
-          await sendCommandReply(openId, formatCronJobRunResult(result, defaultTz));
+          await sendCommandReply(identity, conversationTarget, formatCronJobRunResult(result, defaultTz));
         } catch (error) {
           const code = error instanceof Error ? error.message : String(error);
           if (code === "CRON_JOB_NOT_FOUND") {
-            await deps.messenger.sendTextMessage(openId, "没找到这个定时任务。");
+            await sendTextReply(identity, conversationTarget, "没找到这个定时任务。");
             return;
           }
           if (code === "CRON_JOB_RUNNING") {
-            await deps.messenger.sendTextMessage(openId, "这个定时任务已经在执行中了。");
+            await sendTextReply(identity, conversationTarget, "这个定时任务已经在执行中了。");
             return;
           }
           throw error;
@@ -466,16 +594,20 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
   }
 
-  async function handleSettingsCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleSettingsCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     const parsed = parseSettingsArgs(command.args);
     if (parsed.error) {
-      await deps.messenger.sendTextMessage(openId, parsed.error);
+      await sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
 
-    const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
-    const userState = (await deps.userStateStore.readUserState(openId)) ?? {
+    const sessionState = await getActiveSession(identity, conversationTarget);
+    const userState = (await readTargetState(identity, conversationTarget)) ?? {
       activeSessionId: sessionState.activeSessionId,
       piSessionFile: sessionState.piSession.sessionFile ?? undefined,
       createdAt: new Date().toISOString(),
@@ -490,14 +622,14 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         currentThinkingLevel: userState.thinkingLevel ?? getCurrentThinkingLevel(sessionState.piSession),
         streamingEnabled: userState.streamingEnabled ?? deps.runtimeConfig?.getStreamingEnabled() ?? false,
       });
-      await sendCommandReply(openId, reply);
+      await sendCommandReply(identity, conversationTarget, reply);
       return;
     }
 
     if (parsed.kind === "think") {
       userState.thinkingLevel = parsed.level;
       userState.updatedAt = new Date().toISOString();
-      await deps.userStateStore.writeUserState(openId, userState);
+      await writeTargetState(identity, conversationTarget, userState);
       sessionState.piSession.setThinkingLevel(parsed.level);
       const effectiveThinkingLevel = getCurrentThinkingLevel(sessionState.piSession);
       const reply = handleBridgeCommand(command, {
@@ -507,121 +639,139 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         requestedThinkingLevel: parsed.level,
         effectiveThinkingLevel,
       });
-      await sendCommandReply(openId, reply);
+      await sendCommandReply(identity, conversationTarget, reply);
       return;
     }
 
     if (parsed.kind !== "stream") {
-      await deps.messenger.sendTextMessage(openId, "settings 参数解析失败。");
+      await sendTextReply(identity, conversationTarget, "settings 参数解析失败。");
       return;
     }
 
     userState.streamingEnabled = parsed.enabled;
     userState.updatedAt = new Date().toISOString();
-    await deps.userStateStore.writeUserState(openId, userState);
+    await writeTargetState(identity, conversationTarget, userState);
     const reply = handleBridgeCommand(command, {
       openId,
       streamingEnabled: parsed.enabled,
     });
-    await sendCommandReply(openId, reply);
+    await sendCommandReply(identity, conversationTarget, reply);
   }
 
-  async function handleSttCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleSttCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     if (!deps.runtimeConfig) {
-      await deps.messenger.sendTextMessage(openId, "当前环境不支持这个命令。");
+      await sendTextReply(identity, conversationTarget, "当前环境不支持这个命令。");
       return;
     }
 
     const parsed = parseSttProviderArgs(command.args);
     if (parsed.error) {
-      await deps.messenger.sendTextMessage(openId, parsed.error);
+      await sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
 
     if (!parsed.provider) {
-      await deps.messenger.sendTextMessage(openId, "语音转写 provider 解析失败。");
+      await sendTextReply(identity, conversationTarget, "语音转写 provider 解析失败。");
       return;
     }
 
     if (parsed.provider === "doubao" && !deps.config.FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY.trim()) {
-      await deps.messenger.sendTextMessage(
-        openId,
+      await sendTextReply(
+        identity,
+        conversationTarget,
         "当前 .env 里没配置 FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY，不能切到 doubao。",
       );
       return;
     }
 
     deps.runtimeConfig.setAudioTranscribeProvider(parsed.provider);
-    await sendCommandReply(openId, `✅ 语音转写已切到 ${parsed.provider}。`);
+    await sendCommandReply(identity, conversationTarget, `✅ 语音转写已切到 ${parsed.provider}。`);
   }
 
-  async function handleStreamCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleStreamCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     if (!deps.runtimeConfig) {
-      await deps.messenger.sendTextMessage(openId, "当前环境不支持这个命令。");
+      await sendTextReply(identity, conversationTarget, "当前环境不支持这个命令。");
       return;
     }
 
     const parsed = parseOnOffArgs(command.args, "stream");
     if (parsed.error) {
-      await deps.messenger.sendTextMessage(openId, parsed.error);
+      await sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
 
     if (parsed.enabled === undefined) {
-      await deps.messenger.sendTextMessage(openId, "stream 开关解析失败。");
+      await sendTextReply(identity, conversationTarget, "stream 开关解析失败。");
       return;
     }
 
     deps.runtimeConfig.setStreamingEnabled(parsed.enabled);
     const action = parsed.enabled ? "开启" : "关闭";
-    await sendCommandReply(openId, `✅ 已${action}流式回复。`);
+    await sendCommandReply(identity, conversationTarget, `✅ 已${action}流式回复。`);
   }
 
-  async function handleReactionCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleReactionCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     if (!deps.runtimeConfig) {
-      await deps.messenger.sendTextMessage(openId, "当前环境不支持这个命令。");
+      await sendTextReply(identity, conversationTarget, "当前环境不支持这个命令。");
       return;
     }
 
     const parsed = parseOnOffArgs(command.args, "reaction");
     if (parsed.error) {
-      await deps.messenger.sendTextMessage(openId, parsed.error);
+      await sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
 
     if (!parsed.enabled) {
       deps.runtimeConfig.disableProcessingReaction();
-      await sendCommandReply(openId, "✅ 已关闭处理中 reaction。");
+      await sendCommandReply(identity, conversationTarget, "✅ 已关闭处理中 reaction。");
       return;
     }
 
     const reactionType = deps.runtimeConfig.enableProcessingReaction();
     if (!reactionType) {
-      await deps.messenger.sendTextMessage(
-        openId,
+      await sendTextReply(
+        identity,
+        conversationTarget,
         "当前 .env 里没配置 FEISHU_PROCESSING_REACTION_TYPE，不能开启 reaction。",
       );
       return;
     }
 
-    await sendCommandReply(openId, `✅ 已开启处理中 reaction，表情继续使用 .env 里的 ${reactionType}。`);
+    await sendCommandReply(identity, conversationTarget, `✅ 已开启处理中 reaction，表情继续使用 .env 里的 ${reactionType}。`);
   }
 
-  async function handleToolsCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleToolsCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
-    const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
+    const sessionState = await getActiveSession(identity, conversationTarget);
     const toolSession = getToolConfigSession(sessionState.piSession);
     if (!toolSession) {
-      await deps.messenger.sendTextMessage(openId, "当前 session 不支持 tool 配置。");
+      await sendTextReply(identity, conversationTarget, "当前 session 不支持 tool 配置。");
       return;
     }
 
     const parsed = parseToolsArgs(command.args);
     if (parsed.error) {
-      await deps.messenger.sendTextMessage(openId, parsed.error);
+      await sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
 
@@ -631,7 +781,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
 
     if (parsed.action === "show") {
       await sendCommandReply(
-        openId,
+        identity,
+        conversationTarget,
         handleBridgeCommand(command, {
           openId,
           tools: buildToolStatusList(allToolNames, currentActiveTools),
@@ -646,21 +797,22 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       );
       toolSession.setActiveToolsByName(defaultTools);
       persistSessionToolSelection(sessionState.piSession);
-      await sendCommandReply(openId, formatToolsActionReply("reset", [], defaultTools, allToolNames));
+      await sendCommandReply(identity, conversationTarget, formatToolsActionReply("reset", [], defaultTools, allToolNames));
       return;
     }
 
     const action = parsed.action;
     if (action !== "on" && action !== "off" && action !== "set") {
-      await deps.messenger.sendTextMessage(openId, "tools 参数解析失败。");
+      await sendTextReply(identity, conversationTarget, "tools 参数解析失败。");
       return;
     }
 
     const requestedTools = dedupeToolNames(parsed.toolNames);
     const missingTools = requestedTools.filter((tool) => !allToolNameSet.has(tool));
     if (missingTools.length > 0) {
-      await deps.messenger.sendTextMessage(
-        openId,
+      await sendTextReply(
+        identity,
+        conversationTarget,
         `这些 tools 不存在：${missingTools.join(", ")}。\n\n先用 /tools 看当前 session 里的可用 tools。`,
       );
       return;
@@ -678,19 +830,23 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
 
     toolSession.setActiveToolsByName(nextActiveTools);
     persistSessionToolSelection(sessionState.piSession);
-    await sendCommandReply(openId, formatToolsActionReply(action, requestedTools, nextActiveTools, allToolNames));
+    await sendCommandReply(identity, conversationTarget, formatToolsActionReply(action, requestedTools, nextActiveTools, allToolNames));
   }
 
-  async function handleToolCallsCommand(identity: UserIdentity, command: BridgeCommand): Promise<void> {
+  async function handleToolCallsCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
     const openId = identity.openId;
     const parsed = parseToolCallsArgs(command.args);
     if (parsed.error) {
-      await deps.messenger.sendTextMessage(openId, parsed.error);
+      await sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
 
-    const sessionState = await deps.sessionService.getOrCreateActiveSession(identity);
-    const existingState = await deps.userStateStore.readUserState(openId);
+    const sessionState = await getActiveSession(identity, conversationTarget);
+    const existingState = await readTargetState(identity, conversationTarget);
     const now = new Date().toISOString();
     const userState: UserState = existingState ?? {
       activeSessionId: sessionState.activeSessionId,
@@ -705,30 +861,26 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         openId,
         toolCallsDisplayMode: userState.toolCallsDisplayMode ?? "off",
       });
-      await sendCommandReply(openId, reply);
+      await sendCommandReply(identity, conversationTarget, reply);
       return;
     }
 
     userState.toolCallsDisplayMode = parsed.mode;
     userState.updatedAt = new Date().toISOString();
-    await deps.userStateStore.writeUserState(openId, userState);
+    await writeTargetState(identity, conversationTarget, userState);
     const reply = handleBridgeCommand(command, {
       openId,
       toolCallsDisplayMode: parsed.mode,
     });
-    await sendCommandReply(openId, reply);
-  }
-
-  async function sendCommandReply(openId: string, text: string): Promise<void> {
-    await deps.messenger.sendRenderedMessage(openId, text, deps.config.TEXT_CHUNK_LIMIT);
+    await sendCommandReply(identity, conversationTarget, reply);
   }
 
   async function handleUnsupportedSlashCommand(
     identity: UserIdentity,
     rawText: string,
-    _conversationTarget?: ConversationTarget,
+    conversationTarget?: ConversationTarget,
   ): Promise<void> {
-    await sendCommandReply(identity.openId, formatUnsupportedSlashCommand(rawText));
+    await sendCommandReply(identity, conversationTarget, formatUnsupportedSlashCommand(rawText));
   }
 
   return {

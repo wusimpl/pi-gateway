@@ -18,8 +18,20 @@ export interface FeishuMessageEvent {
     chatType: "p2p" | "group";
     messageType: string;
     content: string;
+    mentions?: FeishuMessageMention[];
     createTime: string;
   };
+}
+
+export interface FeishuMessageMention {
+  key: string;
+  id: {
+    openId?: string;
+    userId?: string;
+    unionId?: string;
+  };
+  name: string;
+  tenantKey?: string;
 }
 
 export interface UserIdentity {

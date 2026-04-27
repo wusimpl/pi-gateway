@@ -70,6 +70,32 @@ describe("loadConfig", () => {
     expect(config.CRON_DEFAULT_TZ).toBe("Asia/Shanghai");
   });
 
+  it("群聊配置默认应关闭并使用 mention 模式", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.FEISHU_GROUP_CHAT_POLICY).toBe("disabled");
+    expect(config.FEISHU_GROUP_CHAT_ALLOWLIST).toEqual([]);
+    expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("mention");
+  });
+
+  it("群聊 allowlist 应按逗号解析", async () => {
+    applyBaseEnv({
+      FEISHU_GROUP_CHAT_POLICY: "allowlist",
+      FEISHU_GROUP_CHAT_ALLOWLIST: "oc_1, oc_2,,",
+      FEISHU_GROUP_MESSAGE_MODE: "all",
+      FEISHU_BOT_OPEN_ID: " ou_bot_1 ",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.FEISHU_GROUP_CHAT_POLICY).toBe("allowlist");
+    expect(config.FEISHU_GROUP_CHAT_ALLOWLIST).toEqual(["oc_1", "oc_2"]);
+    expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("all");
+    expect(config.FEISHU_BOT_OPEN_ID).toBe("ou_bot_1");
+  });
+
   it("PI_DISABLE_GLOBAL_AGENTS=true 时应禁用全局 context 文件", async () => {
     applyBaseEnv({ PI_DISABLE_GLOBAL_AGENTS: "true" });
     const { loadConfig } = await import("../src/config.js");

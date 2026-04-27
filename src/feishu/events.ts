@@ -1,4 +1,4 @@
-import type { FeishuMessageEvent } from "../types.js";
+import type { FeishuMessageEvent, FeishuMessageMention } from "../types.js";
 import { logger } from "../app/logger.js";
 
 export const SUPPORTED_P2P_MESSAGE_TYPES = ["text", "post", "image", "audio", "file"] as const;
@@ -71,9 +71,44 @@ function normalizeMessageEvent(payload: Record<string, unknown>): Partial<Feishu
       chatType: asString(message?.chat_type ?? message?.chatType) as "p2p" | "group",
       messageType: asString(message?.message_type ?? message?.messageType),
       content: asString(message?.content),
+      mentions: normalizeMentions(message?.mentions),
       createTime: asString(message?.create_time ?? message?.createTime),
     },
   };
+}
+
+function normalizeMentions(value: unknown): FeishuMessageMention[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const mentions: FeishuMessageMention[] = [];
+  for (const item of value) {
+    const mention = asRecord(item);
+    const id = asRecord(mention?.id);
+    const key = asString(mention?.key);
+    if (!key && !id) {
+      continue;
+    }
+
+    const normalizedId: FeishuMessageMention["id"] = {};
+    const openId = asOptionalString(id?.open_id ?? id?.openId);
+    const userId = asOptionalString(id?.user_id ?? id?.userId);
+    const unionId = asOptionalString(id?.union_id ?? id?.unionId);
+    if (openId) normalizedId.openId = openId;
+    if (userId) normalizedId.userId = userId;
+    if (unionId) normalizedId.unionId = unionId;
+
+    const tenantKey = asOptionalString(mention?.tenant_key ?? mention?.tenantKey);
+    mentions.push({
+      key,
+      id: normalizedId,
+      name: asString(mention?.name),
+      ...(tenantKey ? { tenantKey } : {}),
+    });
+  }
+
+  return mentions.length > 0 ? mentions : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
