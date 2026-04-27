@@ -49,6 +49,11 @@ export interface CommandService {
     rawText: string,
     conversationTarget?: ConversationTarget,
   ): Promise<void>;
+  handleUnauthorizedBridgeCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void>;
 }
 
 interface CommandServiceDeps {
@@ -883,9 +888,18 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await sendCommandReply(identity, conversationTarget, formatUnsupportedSlashCommand(rawText));
   }
 
+  async function handleUnauthorizedBridgeCommand(
+    identity: UserIdentity,
+    _command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
+    await sendTextReply(identity, conversationTarget, "这个命令只有 owner 可以在群里使用。");
+  }
+
   return {
     handleBridgeCommand: handleBridgeCommandFlow,
     handleUnsupportedSlashCommand,
+    handleUnauthorizedBridgeCommand,
   };
 }
 

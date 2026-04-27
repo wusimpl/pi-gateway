@@ -78,6 +78,7 @@ describe("loadConfig", () => {
     expect(config.FEISHU_GROUP_CHAT_POLICY).toBe("disabled");
     expect(config.FEISHU_GROUP_CHAT_ALLOWLIST).toEqual([]);
     expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("mention");
+    expect(config.FEISHU_OWNER_OPEN_IDS).toEqual([]);
   });
 
   it("群聊 allowlist 应按逗号解析", async () => {
@@ -86,6 +87,7 @@ describe("loadConfig", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: "oc_1, oc_2,,",
       FEISHU_GROUP_MESSAGE_MODE: "all",
       FEISHU_BOT_OPEN_ID: " ou_bot_1 ",
+      FEISHU_OWNER_OPEN_IDS: "ou_owner_1, ou_owner_2",
     });
     const { loadConfig } = await import("../src/config.js");
 
@@ -94,6 +96,7 @@ describe("loadConfig", () => {
     expect(config.FEISHU_GROUP_CHAT_ALLOWLIST).toEqual(["oc_1", "oc_2"]);
     expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("all");
     expect(config.FEISHU_BOT_OPEN_ID).toBe("ou_bot_1");
+    expect(config.FEISHU_OWNER_OPEN_IDS).toEqual(["ou_owner_1", "ou_owner_2"]);
   });
 
   it("PI_DISABLE_GLOBAL_AGENTS=true 时应禁用全局 context 文件", async () => {

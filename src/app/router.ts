@@ -35,6 +35,7 @@ import {
 import type { Config } from "../config.js";
 import type { UserIdentity } from "../types.js";
 import { parseBridgeCommand } from "./commands.js";
+import { canRunBridgeCommand } from "./command-permissions.js";
 import { createCommandService, type CommandService } from "./command-service.js";
 import { logger } from "./logger.js";
 import {
@@ -67,7 +68,10 @@ export interface MessageRouter {
 
 interface MessageRouterDeps {
   stateStore: Pick<RuntimeStateStore, "isDuplicate">;
-  commandService: Pick<CommandService, "handleBridgeCommand" | "handleUnsupportedSlashCommand">;
+  commandService: Pick<
+    CommandService,
+    "handleBridgeCommand" | "handleUnsupportedSlashCommand" | "handleUnauthorizedBridgeCommand"
+  >;
   promptService: Pick<PromptService, "handleUserPrompt" | "queueRunningPrompt">;
   config?: Partial<Config>;
   parseMessageEvent?: typeof parseMessageEvent;
@@ -129,6 +133,11 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     const hasSlashPrefix = message.kind === "text" && message.text.trim().startsWith("/");
     const bridgeCommand = message.kind === "text" ? parseBridgeCommand(message.text) : null;
     if (bridgeCommand?.name === "next") {
+      if (!canRunBridgeCommand(identity, bridgeCommand, conversationTarget, deps.config?.FEISHU_OWNER_OPEN_IDS ?? [])) {
+        await deps.commandService.handleUnauthorizedBridgeCommand(identity, bridgeCommand, conversationTarget);
+        return;
+      }
+
       if (!bridgeCommand.args) {
         await deps.commandService.handleBridgeCommand(identity, bridgeCommand, conversationTarget);
         return;
@@ -139,6 +148,11 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     }
 
     if (bridgeCommand) {
+      if (!canRunBridgeCommand(identity, bridgeCommand, conversationTarget, deps.config?.FEISHU_OWNER_OPEN_IDS ?? [])) {
+        await deps.commandService.handleUnauthorizedBridgeCommand(identity, bridgeCommand, conversationTarget);
+        return;
+      }
+
       await deps.commandService.handleBridgeCommand(identity, bridgeCommand, conversationTarget);
       return;
     }

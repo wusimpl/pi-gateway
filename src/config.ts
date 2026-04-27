@@ -20,6 +20,7 @@ const envSchema = z.object({
   FEISHU_GROUP_CHAT_ALLOWLIST: z.string().default("").transform(parseCommaSeparatedList),
   FEISHU_GROUP_MESSAGE_MODE: z.enum(["mention", "all"]).default("mention"),
   FEISHU_BOT_OPEN_ID: z.string().default("").transform((value) => value.trim() || undefined),
+  FEISHU_OWNER_OPEN_IDS: z.string().default("").transform(parseCommaSeparatedList),
   DATA_DIR: z.string().default("./data"),
   PI_WORKSPACE_ROOT: z.string().default("~/code/pi-workspace"),
   PI_DISABLE_GLOBAL_AGENTS: z

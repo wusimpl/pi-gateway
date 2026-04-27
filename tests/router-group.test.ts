@@ -27,6 +27,7 @@ function createDeps(config: Record<string, unknown>) {
     commandService: {
       handleBridgeCommand: vi.fn().mockResolvedValue(undefined),
       handleUnsupportedSlashCommand: vi.fn().mockResolvedValue(undefined),
+      handleUnauthorizedBridgeCommand: vi.fn().mockResolvedValue(undefined),
     },
     promptService: {
       handleUserPrompt: vi.fn().mockResolvedValue(undefined),
@@ -57,6 +58,7 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_POLICY: "disabled",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "mention",
+      FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter(deps as any);
 
@@ -71,6 +73,7 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "all",
+      FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter(deps as any);
 
@@ -80,5 +83,93 @@ describe("createMessageRouter 群聊入口", () => {
       { openId: "ou_1", userId: "u_1" },
       expect.objectContaining({ conversationTarget: groupTarget }),
     );
+  });
+
+  it("群聊普通成员只能执行公开命令", async () => {
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "all",
+      FEISHU_OWNER_OPEN_IDS: [],
+    });
+    deps.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: groupTarget,
+      messageId: "om_group_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/new"}',
+      text: "/new",
+    });
+    const router = createMessageRouter(deps as any);
+
+    await router.handleFeishuMessage({});
+
+    expect(deps.commandService.handleUnauthorizedBridgeCommand).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "new", args: "" },
+      groupTarget,
+    );
+    expect(deps.commandService.handleBridgeCommand).not.toHaveBeenCalled();
+  });
+
+  it("群聊 owner 可以执行 owner-only 命令", async () => {
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "all",
+      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
+    });
+    deps.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: groupTarget,
+      messageId: "om_group_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/new"}',
+      text: "/new",
+    });
+    const router = createMessageRouter(deps as any);
+
+    await router.handleFeishuMessage({});
+
+    expect(deps.commandService.handleBridgeCommand).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "new", args: "" },
+      groupTarget,
+    );
+    expect(deps.commandService.handleUnauthorizedBridgeCommand).not.toHaveBeenCalled();
+  });
+
+  it("群聊普通成员可以执行 /tools /skills /status", async () => {
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "all",
+      FEISHU_OWNER_OPEN_IDS: [],
+    });
+    const router = createMessageRouter(deps as any);
+
+    for (const command of ["/tools", "/skills", "/status"]) {
+      deps.commandService.handleBridgeCommand.mockClear();
+      deps.commandService.handleUnauthorizedBridgeCommand.mockClear();
+      deps.normalizeFeishuInboundMessage.mockReturnValue({
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        conversationTarget: groupTarget,
+        messageId: `om_group_${command}`,
+        messageType: "text",
+        createTime: "123",
+        rawContent: JSON.stringify({ text: command }),
+        text: command,
+      });
+
+      await router.handleFeishuMessage({});
+
+      expect(deps.commandService.handleBridgeCommand).toHaveBeenCalled();
+      expect(deps.commandService.handleUnauthorizedBridgeCommand).not.toHaveBeenCalled();
+    }
   });
 });
