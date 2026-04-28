@@ -94,22 +94,46 @@ export interface PromptRunner {
   ): Promise<PromptResult>;
 }
 
-const sessionReactionRegistry = new WeakMap<AgentSession, Array<{ messageId: string; reactionId: string }>>();
+interface SessionReactionEntry {
+  messageId: string;
+  reactionId: string;
+  pendingText?: string;
+  deliveredReactionType?: string;
+  deliveryInFlight?: boolean;
+}
+
+const sessionReactionRegistry = new WeakMap<AgentSession, SessionReactionEntry[]>();
 
 export function registerSessionReaction(
   session: AgentSession,
   messageId: string,
   reactionId: string,
+  options: {
+    pendingText?: string;
+    deliveredReactionType?: string;
+  } = {},
 ): void {
   const reactions = sessionReactionRegistry.get(session) ?? [];
-  reactions.push({ messageId, reactionId });
+  reactions.push({ messageId, reactionId, ...options });
   sessionReactionRegistry.set(session, reactions);
 }
 
-function takeSessionReactions(session: AgentSession): Array<{ messageId: string; reactionId: string }> {
+function takeSessionReactions(session: AgentSession): SessionReactionEntry[] {
   const reactions = sessionReactionRegistry.get(session) ?? [];
   sessionReactionRegistry.delete(session);
   return reactions;
+}
+
+function findDeliverableSessionReaction(
+  session: AgentSession,
+  messageText: string,
+): SessionReactionEntry | undefined {
+  const reactions = sessionReactionRegistry.get(session) ?? [];
+  return reactions.find((reaction) =>
+    !reaction.deliveryInFlight
+    && Boolean(reaction.deliveredReactionType)
+    && reaction.pendingText === messageText
+  );
 }
 
 interface ToolCallState {
@@ -148,6 +172,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let flushedTools = "";
       let pendingTimer: NodeJS.Timeout | null = null;
       let flushChain: Promise<void> = Promise.resolve();
+      let reactionUpdateChain: Promise<void> = Promise.resolve();
       let streamingInitAttempted = false;
       const docPreviewMap = new Map<string, FeishuDocPreviewCardInput>();
       const toolCallMap = new Map<string, ToolCallState>();
@@ -281,6 +306,40 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         }
       }
 
+      function queueDeliveredReactionSwitch(messageText: string): void {
+        const reaction = findDeliverableSessionReaction(session, messageText);
+        if (!reaction?.deliveredReactionType) return;
+        reaction.deliveryInFlight = true;
+        reactionUpdateChain = reactionUpdateChain.then(async () => {
+          const removed = await messenger.removeReaction(reaction.messageId, reaction.reactionId);
+          if (!removed) {
+            logger.warn("steering reaction 切换前删除失败", {
+              openId,
+              sourceMessageId,
+              messageId: reaction.messageId,
+              reactionId: reaction.reactionId,
+            });
+            reaction.deliveryInFlight = false;
+            return;
+          }
+
+          const deliveredReactionId = await messenger.addProcessingReaction(
+            reaction.messageId,
+            reaction.deliveredReactionType,
+          );
+          reaction.reactionId = deliveredReactionId ?? "";
+          reaction.pendingText = undefined;
+        }).catch((error) => {
+          reaction.deliveryInFlight = false;
+          logger.warn("steering reaction 切换失败", {
+            openId,
+            sourceMessageId,
+            messageId: reaction.messageId,
+            error: String(error),
+          });
+        });
+      }
+
       // 启动初始空闲计时器
       resetIdleTimer();
 
@@ -290,6 +349,14 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       const unsubscribe = session.subscribe((event) => {
         switch (event.type) {
+          case "message_start":
+            {
+              const messageText = extractUserMessageText(event.message);
+              if (messageText) {
+                queueDeliveredReactionSwitch(messageText);
+              }
+            }
+            break;
           case "message_update":
             if (event.assistantMessageEvent.type === "text_delta") {
               fullText += event.assistantMessageEvent.delta;
@@ -434,8 +501,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           flushChain = flushChain.then(() => flushStreamingState());
         }
         await flushChain;
+        await reactionUpdateChain;
         reactionEntries.push(...takeSessionReactions(session));
         for (const { messageId, reactionId } of reactionEntries) {
+          if (!reactionId) continue;
           const removed = await messenger.removeReaction(messageId, reactionId);
           if (!removed) {
             logger.warn("reaction 删除失败", { openId, sourceMessageId, messageId, reactionId });
@@ -674,6 +743,36 @@ function extractExplicitToolResultDetails(result: unknown): Record<string, unkno
   }
 
   return undefined;
+}
+
+function extractUserMessageText(message: unknown): string | undefined {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return undefined;
+  }
+
+  const record = message as Record<string, unknown>;
+  if (record.role !== "user") {
+    return undefined;
+  }
+
+  const content = record.content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  const text = content
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return "";
+      }
+      const part = item as Record<string, unknown>;
+      return part.type === "text" && typeof part.text === "string" ? part.text : "";
+    })
+    .join("");
+  return text || undefined;
 }
 
 function extractAssistantErrorMessage(message: unknown): string | undefined {

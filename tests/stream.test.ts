@@ -18,6 +18,13 @@ vi.mock("../src/feishu/send.js", () => ({
 }));
 
 type StreamEvent =
+  | {
+      type: "message_start";
+      message: {
+        role?: string;
+        content?: string | Array<{ type: string; text?: string }>;
+      };
+    }
   | { type: "message_update"; assistantMessageEvent: { type: "text_delta"; delta: string } }
   | {
       type: "message_end";
@@ -611,6 +618,36 @@ describe("promptSession", () => {
     expect(result).toEqual({ text: "done", error: undefined });
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_source_1", "reaction_1");
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_steer_1", "reaction_steer_1");
+  });
+
+  it("steering 消息送达模型时应切换为 GoGoGo reaction", async () => {
+    mockAddProcessingReaction
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce("reaction_gogogo_1");
+    const { promptSession, registerSessionReaction } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "message_start",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "second" }],
+        },
+      },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "done" } },
+      { type: "message_end" },
+    ]);
+
+    registerSessionReaction(session as any, "om_steer_1", "reaction_waiting_1", {
+      pendingText: "second",
+      deliveredReactionType: "GoGoGo",
+    });
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(result).toEqual({ text: "done", error: undefined });
+    expect(mockRemoveReaction).toHaveBeenCalledWith("om_steer_1", "reaction_waiting_1");
+    expect(mockAddProcessingReaction).toHaveBeenCalledWith("om_steer_1", "GoGoGo");
+    expect(mockRemoveReaction).toHaveBeenCalledWith("om_steer_1", "reaction_gogogo_1");
   });
 
   it("长文本应交给渲染发送层处理", async () => {

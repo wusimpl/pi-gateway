@@ -30,6 +30,8 @@ export interface PromptService {
 export type RunningPromptBehavior = "steer" | "followUp";
 export type RunningPromptQueueResult = "queued" | "not_running" | "unsupported";
 
+const QUEUED_PROMPT_DELIVERED_REACTION_TYPE = "GoGoGo";
+
 interface PromptServiceDeps {
   config: Pick<
     Config,
@@ -148,6 +150,20 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       return;
     }
     await deps.messenger.sendTextMessage(identity.openId, text);
+  }
+
+  function readLastQueuedPromptText(
+    piSession: unknown,
+    behavior: RunningPromptBehavior,
+  ): string | undefined {
+    const queueReader = piSession as {
+      getSteeringMessages?: () => readonly string[];
+      getFollowUpMessages?: () => readonly string[];
+    };
+    const messages = behavior === "followUp"
+      ? queueReader.getFollowUpMessages?.()
+      : queueReader.getSteeringMessages?.();
+    return messages?.[messages.length - 1];
   }
 
   async function handleUserPrompt(
@@ -312,13 +328,17 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       } else {
         await piSession.steer(promptInput.text, promptInput.images);
       }
+      const queuedPromptText = readLastQueuedPromptText(piSession, behavior) ?? promptText;
 
       const steeringReactionType = deps.runtimeConfig?.getSteeringReactionType() ?? deps.config.FEISHU_STEERING_REACTION_TYPE;
       if (steeringReactionType) {
         try {
           const reactionId = await deps.messenger.addProcessingReaction?.(messageId, steeringReactionType);
           if (reactionId) {
-            registerSessionReaction(piSession as any, messageId, reactionId);
+            registerSessionReaction(piSession as any, messageId, reactionId, {
+              pendingText: queuedPromptText,
+              deliveredReactionType: QUEUED_PROMPT_DELIVERED_REACTION_TYPE,
+            });
           }
         } catch (error) {
           logger.warn("steering reaction 添加失败", {
