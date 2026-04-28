@@ -43,6 +43,7 @@ const PROMPT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const PROMPT_TOTAL_TIMEOUT_MS = 30 * 60 * 1000;
 const STREAMING_UPDATE_INTERVAL_MS = 300;
 const MAX_VISIBLE_TOOL_CALLS = 5;
+const TOOL_CALL_NAMES_PER_LINE = 3;
 const TOOL_SUMMARY_MAX_CHARS = 80;
 const TOOL_PROGRESS_SUMMARY_FIELDS = [
   "message",
@@ -872,6 +873,18 @@ function formatToolCallsSection(
   if (toolCalls.length === 0) return "";
 
   const lines = [" ---", "**工具调用**"];
+  if (displayMode === "name") {
+    for (let index = 0; index < toolCalls.length; index += TOOL_CALL_NAMES_PER_LINE) {
+      lines.push(
+        toolCalls
+          .slice(index, index + TOOL_CALL_NAMES_PER_LINE)
+          .map((toolCall) => formatToolCallLines(toolCall, displayMode)[0])
+          .join(" "),
+      );
+    }
+    return lines.join("\n");
+  }
+
   for (const toolCall of toolCalls) {
     lines.push(...formatToolCallLines(toolCall, displayMode));
   }

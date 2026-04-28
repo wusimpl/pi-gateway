@@ -524,6 +524,36 @@ describe("promptSession", () => {
     );
   });
 
+  it("工具调用 name 模式每行最多显示三个工具名", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const toolNames = ["read", "bash", "edit", "grep", "write"];
+    const events = toolNames.flatMap((toolName, index) => [
+      {
+        type: "tool_execution_start",
+        toolCallId: `call_${index}`,
+        toolName,
+        args: {},
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: `call_${index}`,
+        toolName,
+        isError: false,
+        result: {},
+      } as any,
+    ]);
+    const session = createSession([...events, { type: "message_end" }]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, false, 2000, "name");
+
+    expect(result).toEqual({ text: "", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      " ---\n**工具调用**\n🛠️ read 🛠️ bash 🛠️ edit\n🛠️ grep 🛠️ write",
+      2000,
+    );
+  });
+
   it("bash 工具无输出时也应保留命令和输出摘要", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([
