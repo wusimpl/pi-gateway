@@ -31,6 +31,8 @@ export interface PromptResult {
 
 export interface PromptInput {
   text: string;
+  displayHeaderText?: string;
+  footerLabel?: string;
   preludeText?: string;
   images?: ImageContent[];
 }
@@ -183,6 +185,12 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const normalizedToolCallsDisplayMode = normalizeToolCallsDisplayMode(toolCallsDisplayMode);
       const showToolCallsInReply = normalizedToolCallsDisplayMode !== "off";
       const streamingAllowed = streamingEnabled && isStreamingTargetSupported(target);
+      const displayHeaderText = normalizedPrompt.displayHeaderText ?? "";
+      const footerLabel = normalizedPrompt.footerLabel ?? "";
+
+      function formatDisplayBody(text: string = fullText): string {
+        return prependMessageHeader(stripLeadingBlankLines(text), displayHeaderText);
+      }
 
       try {
         const reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
@@ -194,7 +202,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       }
 
       async function ensureStreamingMessage(
-        initialBody: string = stripLeadingBlankLines(fullText),
+        initialBody: string = formatDisplayBody(),
         initialTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "",
         initialPrelude: string = preludeText,
       ): Promise<void> {
@@ -204,7 +212,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           streamingBroken ||
           streamingMessage ||
           streamingInitAttempted ||
-          !hasVisibleStreamingContent(fullText, initialTools, initialPrelude)
+          !hasVisibleStreamingContent(initialBody, initialTools, initialPrelude)
         ) {
           return;
         }
@@ -232,11 +240,11 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
       function queueStreamingFlush(force: boolean = false): void {
         const toolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "";
-        if (!streamingAllowed || streamingBroken || !hasVisibleStreamingContent(fullText, toolsSnapshot, preludeText)) {
+        if (!streamingAllowed || streamingBroken || !hasVisibleStreamingContent(formatDisplayBody(), toolsSnapshot, preludeText)) {
           return;
         }
         if (force) {
-          const bodySnapshot = stripLeadingBlankLines(fullText);
+          const bodySnapshot = formatDisplayBody();
           const forcedToolsSnapshot = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "";
           if (pendingTimer) {
             clearTimeout(pendingTimer);
@@ -253,7 +261,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       }
 
       async function flushStreamingState(
-        nextBody: string = stripLeadingBlankLines(fullText),
+        nextBody: string = formatDisplayBody(),
         nextTools: string = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "",
       ): Promise<void> {
         if (streamingBroken) return;
@@ -503,7 +511,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           streamingAllowed &&
           !streamingBroken &&
           hasVisibleStreamingContent(
-            fullText,
+            formatDisplayBody(),
             showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "",
             preludeText,
           )
@@ -528,8 +536,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
               : (preludeText ? `⚠️ 回复中断: ${lastError}` : ""))
           : fullText;
-      const footer = formatPromptFooter(session);
-      const finalText = appendMessageFooter(stripLeadingBlankLines(displayText), footer);
+      const footer = formatLabeledFooter(formatPromptFooter(session), footerLabel);
+      const finalText = appendMessageFooter(formatDisplayBody(displayText), footer);
       const finalToolsText = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "";
       const finalOutputText = abortedByUser
         ? (streamingMessage ? STOP_MESSAGE : "")
@@ -834,6 +842,17 @@ function hasVisiblePreludeText(preludeText: string): boolean {
 function appendMessageFooter(text: string, footer?: string): string {
   if (!text || !footer) return text;
   return text ? `${text}\n\n${footer}` : footer;
+}
+
+function prependMessageHeader(text: string, header?: string): string {
+  const normalizedHeader = header?.trimEnd() ?? "";
+  if (!normalizedHeader) return text;
+  return text ? `${normalizedHeader}\n\n${text}` : normalizedHeader;
+}
+
+function formatLabeledFooter(footer: string | undefined, label: string): string | undefined {
+  if (!footer) return undefined;
+  return label ? `${label}${footer}` : footer;
 }
 
 function appendToolCallsSection(text: string, toolsText: string): string {

@@ -4,6 +4,7 @@ import type { RuntimeStateStore } from "../app/state.js";
 import type { CronService } from "./service.js";
 import type { CronJob, CronManualRunResult, CronScopeInput, CronScopeSelector } from "./types.js";
 import { resolveCronScopeInput } from "./scope.js";
+import { formatCronResultMessage } from "./result-message.js";
 
 export interface DeferredCronRunService {
   queueRun(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult>;
@@ -141,12 +142,13 @@ export function createDeferredCronRunService(
   }
 
   async function sendJobNotification(job: CronJob, text: string): Promise<void> {
+    const message = formatCronResultMessage(job, text);
     if (job.conversationTarget && job.conversationTarget.kind !== "p2p" && deps.messenger.sendTextMessageToTarget) {
-      await deps.messenger.sendTextMessageToTarget(job.conversationTarget, text);
+      await deps.messenger.sendTextMessageToTarget(job.conversationTarget, message);
       return;
     }
 
-    await deps.messenger.sendTextMessage(job.openId, text);
+    await deps.messenger.sendTextMessage(job.openId, message);
   }
 
   function cloneQueuedJob(job: CronJob): CronJob {

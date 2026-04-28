@@ -32,6 +32,7 @@ describe("cron runner", () => {
         DATA_DIR: "/tmp/pi-gateway-data",
         TEXT_CHUNK_LIMIT: 2000,
         CRON_JOB_TIMEOUT_MS: 30_000,
+        CRON_DEFAULT_TZ: "Asia/Shanghai",
       },
       runtime: {
         createPiSession,
@@ -78,7 +79,11 @@ describe("cron runner", () => {
     );
     expect(promptSession).toHaveBeenCalledWith(
       expect.anything(),
-      "[cron:cron_1 早报]\n总结今天的待办。",
+      expect.objectContaining({
+        text: "[cron:cron_1 早报]\n总结今天的待办。",
+        displayHeaderText: expect.stringContaining("任务：早报"),
+        footerLabel: "定时任务会话：",
+      }),
       "ou_1",
       expect.stringMatching(/^cron:cron_1:/),
       undefined,
@@ -116,6 +121,7 @@ describe("cron runner", () => {
         DATA_DIR: "/tmp/pi-gateway-data",
         TEXT_CHUNK_LIMIT: 2000,
         CRON_JOB_TIMEOUT_MS: 30_000,
+        CRON_DEFAULT_TZ: "Asia/Shanghai",
       },
       runtime: {
         createPiSession,
@@ -166,7 +172,11 @@ describe("cron runner", () => {
     );
     expect(promptSession).toHaveBeenCalledWith(
       expect.anything(),
-      "[cron:cron_group_1 群早报]\n总结群里的待办。",
+      expect.objectContaining({
+        text: "[cron:cron_group_1 群早报]\n总结群里的待办。",
+        displayHeaderText: expect.stringContaining("任务：群早报"),
+        footerLabel: "定时任务会话：",
+      }),
       "ou_1",
       expect.stringMatching(/^cron:cron_group_1:/),
       undefined,
@@ -187,6 +197,7 @@ describe("cron runner", () => {
         DATA_DIR: "/tmp/pi-gateway-data",
         TEXT_CHUNK_LIMIT: 2000,
         CRON_JOB_TIMEOUT_MS: 30_000,
+        CRON_DEFAULT_TZ: "Asia/Shanghai",
       },
       runtime: {
         createPiSession: vi.fn(),
@@ -232,5 +243,72 @@ describe("cron runner", () => {
       status: "busy",
       error: "当前会话还有任务在跑",
     });
+  });
+
+  it("任务失败且没有可展示正文时，会把失败通知标成定时任务结果", async () => {
+    const abort = vi.fn().mockResolvedValue(undefined);
+    const dispose = vi.fn();
+    const sendTextMessage = vi.fn().mockResolvedValue(undefined);
+    const runner = createCronRunner({
+      config: {
+        DATA_DIR: "/tmp/pi-gateway-data",
+        TEXT_CHUNK_LIMIT: 2000,
+        CRON_JOB_TIMEOUT_MS: 30_000,
+        CRON_DEFAULT_TZ: "Asia/Shanghai",
+      },
+      runtime: {
+        createPiSession: vi.fn().mockResolvedValue({
+          abort,
+          dispose,
+        }),
+      },
+      runtimeState: {
+        acquireLock: vi.fn(() => true),
+        releaseLock: vi.fn(),
+        setAbortHandler: vi.fn().mockResolvedValue(false),
+        isStopRequested: vi.fn(() => false),
+      },
+      workspaceService: {
+        ensureUserWorkspace: vi.fn().mockResolvedValue("/tmp/workspace/u_1"),
+      },
+      promptRunner: {
+        promptSession: vi.fn().mockResolvedValue({
+          text: "",
+          error: "boom",
+        }),
+      },
+      messenger: {
+        sendTextMessage,
+      },
+    });
+
+    const result = await runner.run({
+      id: "cron_1",
+      openId: "ou_1",
+      scopeType: "dm",
+      scopeKey: "ou_1",
+      name: "早报",
+      enabled: true,
+      prompt: "总结今天的待办。",
+      schedule: {
+        kind: "cron",
+        expr: "0 9 * * *",
+        tz: "Asia/Shanghai",
+      },
+      deleteAfterRun: false,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+      state: {},
+    });
+
+    expect(result).toEqual({
+      jobId: "cron_1",
+      status: "error",
+      error: "boom",
+    });
+    expect(sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      expect.stringContaining("【定时任务结果】\n任务：早报"),
+    );
   });
 });

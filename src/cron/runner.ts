@@ -12,6 +12,11 @@ import type { UserIdentity } from "../types.js";
 import { logger } from "../app/logger.js";
 import type { RuntimeStateStore } from "../app/state.js";
 import type { DeferredCronRunService } from "./deferred-run.js";
+import {
+  CRON_RESULT_FOOTER_LABEL,
+  formatCronResultHeader,
+  formatCronResultMessage,
+} from "./result-message.js";
 import type { CronJob, CronJobRunResult } from "./types.js";
 
 export interface CronRunner {
@@ -19,7 +24,7 @@ export interface CronRunner {
 }
 
 interface CronRunnerDeps {
-  config: Pick<Config, "DATA_DIR" | "TEXT_CHUNK_LIMIT" | "CRON_JOB_TIMEOUT_MS">;
+  config: Pick<Config, "DATA_DIR" | "TEXT_CHUNK_LIMIT" | "CRON_JOB_TIMEOUT_MS" | "CRON_DEFAULT_TZ">;
   runtime: Pick<PiRuntime, "createPiSession">;
   runtimeState: Pick<
     RuntimeStateStore,
@@ -39,7 +44,8 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       openId: job.openId,
       userId: job.userId,
     };
-    const syntheticMessageId = `cron:${job.id}:${Date.now()}`;
+    const startedAtMs = Date.now();
+    const syntheticMessageId = `cron:${job.id}:${startedAtMs}`;
     const openId = job.openId;
     const scopeKey = job.scopeKey?.trim() || job.conversationTarget?.key.trim() || openId;
     const conversationTarget = job.conversationTarget?.kind === "p2p" ? undefined : job.conversationTarget;
@@ -93,7 +99,11 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
 
       const result = await deps.promptRunner.promptSession(
         session as any,
-        buildCronPrompt(job),
+        {
+          text: buildCronPrompt(job),
+          displayHeaderText: formatCronResultHeader(job, startedAtMs, deps.config.CRON_DEFAULT_TZ),
+          footerLabel: CRON_RESULT_FOOTER_LABEL,
+        },
         openId,
         syntheticMessageId,
         undefined,
@@ -114,7 +124,15 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
 
       if (result.error) {
         if (!result.text && !result.displayed) {
-          await sendJobReply(job, formatError(`定时任务「${job.name}」执行失败：${result.error}`));
+          await sendJobReply(
+            job,
+            formatCronResultMessage(
+              job,
+              formatError(`定时任务「${job.name}」执行失败：${result.error}`),
+              startedAtMs,
+              deps.config.CRON_DEFAULT_TZ,
+            ),
+          );
         }
         return {
           jobId: job.id,
@@ -135,7 +153,15 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
         jobId: job.id,
         error: message,
       });
-      await sendJobReply(job, formatError(`定时任务「${job.name}」执行失败：${message}`));
+      await sendJobReply(
+        job,
+        formatCronResultMessage(
+          job,
+          formatError(`定时任务「${job.name}」执行失败：${message}`),
+          startedAtMs,
+          deps.config.CRON_DEFAULT_TZ,
+        ),
+      );
       return {
         jobId: job.id,
         status: "error",
