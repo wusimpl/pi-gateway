@@ -650,6 +650,34 @@ describe("promptSession", () => {
     expect(mockRemoveReaction).toHaveBeenCalledWith("om_steer_1", "reaction_gogogo_1");
   });
 
+  it("steering 消息送达后，下一段回复前应插入分隔", async () => {
+    mockAddProcessingReaction.mockResolvedValue(null);
+    const { promptSession, registerSessionReaction } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "before" } },
+      {
+        type: "message_start",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "second" }],
+        },
+      },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "after" } },
+      { type: "message_end" },
+    ]);
+
+    registerSessionReaction(session as any, "om_steer_1", "reaction_waiting_1", {
+      pendingText: "second",
+      deliveredReactionType: "GoGoGo",
+      replySeparator: "\n\n---queued---\n",
+    });
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(result.text).toBe("before\n\n---queued---\nafter");
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "before\n\n---queued---\nafter", 2000);
+  });
+
   it("长文本应交给渲染发送层处理", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const longText = "a".repeat(4005);

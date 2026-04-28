@@ -31,6 +31,7 @@ export type RunningPromptBehavior = "steer" | "followUp";
 export type RunningPromptQueueResult = "queued" | "not_running" | "unsupported";
 
 const QUEUED_PROMPT_DELIVERED_REACTION_TYPE = "GoGoGo";
+const STEER_REPLY_SEPARATOR = "\n\n ---\n**继续处理你刚发来的消息**\n";
 
 interface PromptServiceDeps {
   config: Pick<
@@ -338,6 +339,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
             registerSessionReaction(piSession as any, messageId, reactionId, {
               pendingText: queuedPromptText,
               deliveredReactionType: QUEUED_PROMPT_DELIVERED_REACTION_TYPE,
+              replySeparator: behavior === "steer" ? STEER_REPLY_SEPARATOR : undefined,
             });
           }
         } catch (error) {

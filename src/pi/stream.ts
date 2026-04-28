@@ -99,6 +99,7 @@ interface SessionReactionEntry {
   reactionId: string;
   pendingText?: string;
   deliveredReactionType?: string;
+  replySeparator?: string;
   deliveryInFlight?: boolean;
 }
 
@@ -111,6 +112,7 @@ export function registerSessionReaction(
   options: {
     pendingText?: string;
     deliveredReactionType?: string;
+    replySeparator?: string;
   } = {},
 ): void {
   const reactions = sessionReactionRegistry.get(session) ?? [];
@@ -171,6 +173,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let flushedBody = "";
       let flushedTools = "";
       let pendingTimer: NodeJS.Timeout | null = null;
+      let pendingReplySeparator = "";
       let flushChain: Promise<void> = Promise.resolve();
       let reactionUpdateChain: Promise<void> = Promise.resolve();
       let streamingInitAttempted = false;
@@ -309,6 +312,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       function queueDeliveredReactionSwitch(messageText: string): void {
         const reaction = findDeliverableSessionReaction(session, messageText);
         if (!reaction?.deliveredReactionType) return;
+        if (reaction.replySeparator) {
+          pendingReplySeparator = reaction.replySeparator;
+        }
         reaction.deliveryInFlight = true;
         reactionUpdateChain = reactionUpdateChain.then(async () => {
           const removed = await messenger.removeReaction(reaction.messageId, reaction.reactionId);
@@ -359,6 +365,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             break;
           case "message_update":
             if (event.assistantMessageEvent.type === "text_delta") {
+              if (pendingReplySeparator) {
+                fullText += pendingReplySeparator;
+                pendingReplySeparator = "";
+              }
               fullText += event.assistantMessageEvent.delta;
               queueStreamingFlush();
               // 收到新 token，重置空闲计时器
