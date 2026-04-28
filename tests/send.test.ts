@@ -200,6 +200,40 @@ describe("send helpers", () => {
     });
   });
 
+  it("sendLocalFileMessage: 群聊目标应使用 chat_id 发送 file 消息", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-gateway-send-file-group-"));
+    tempDirs.push(dir);
+    const filePath = join(dir, "group-report.txt");
+    await writeFile(filePath, "hello group file", "utf-8");
+
+    mockFileCreate.mockResolvedValue({ file_key: "file_v2_group_1" });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_file_group_1" } });
+    const { sendLocalFileMessage } = await import("../src/feishu/send.js");
+
+    await expect(sendLocalFileMessage(
+      {
+        kind: "group",
+        key: "oc_1",
+        receiveIdType: "chat_id",
+        receiveId: "oc_1",
+        chatId: "oc_1",
+      },
+      { path: filePath },
+    )).resolves.toMatchObject({
+      fileKey: "file_v2_group_1",
+      messageId: "om_file_group_1",
+    });
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      params: { receive_id_type: "chat_id" },
+      data: {
+        receive_id: "oc_1",
+        msg_type: "file",
+        content: JSON.stringify({ file_key: "file_v2_group_1" }),
+      },
+    });
+  });
+
   it("sendDocPreviewCard: 应发送带打开按钮的飞书文档卡片", async () => {
     mockCreate.mockResolvedValue({ data: { message_id: "om_doc_1" } });
     const { sendDocPreviewCard } = await import("../src/feishu/send.js");

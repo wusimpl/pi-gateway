@@ -9,9 +9,14 @@ import {
   type FeishuChoiceOption,
 } from "../../feishu/choice-card.js";
 import type { FeishuChoiceInteractionStore } from "../../feishu/choice-interactions.js";
-import type { FeishuMessenger } from "../../feishu/send.js";
+import type { FeishuMessageRecipient, FeishuMessenger } from "../../feishu/send.js";
 import type { UserIdentity } from "../../types.js";
-import { getWorkspaceIdentity } from "../workspace-identity.js";
+import {
+  getWorkspaceContext,
+  type WorkspaceContext,
+} from "../workspace-identity.js";
+
+type WorkspaceChoiceContext = UserIdentity | WorkspaceContext;
 
 const DEFAULT_TIMEOUT_SECONDS = 300;
 const MIN_TIMEOUT_SECONDS = 10;
@@ -42,15 +47,15 @@ function normalizeArgs(args: unknown): Record<string, unknown> {
 }
 
 export function createAskUserChoiceExtension(
-  messenger: Pick<FeishuMessenger, "sendFeishuMessage">,
+  messenger: Pick<FeishuMessenger, "sendFeishuMessage"> & Partial<Pick<FeishuMessenger, "sendFeishuMessageToTarget">>,
   choiceStore: Pick<FeishuChoiceInteractionStore, "waitForChoice">,
-  resolveIdentityByWorkspace: (cwd: string) => UserIdentity | null = getWorkspaceIdentity,
+  resolveIdentityByWorkspace: (cwd: string) => WorkspaceChoiceContext | null = getWorkspaceContext,
 ): ExtensionFactory {
   const askUserChoiceTool = defineTool({
     name: "ask_user_choice",
     label: "Ask User Choice",
     description:
-      "在飞书私聊里向当前用户发送一个单选按钮卡片，并等待用户点击后把选择返回给模型。适合需要用户在 2-4 个明确方案中做决定时使用。",
+      "在当前飞书会话里发送一个单选按钮卡片，并等待当前用户点击后把选择返回给模型。适合需要用户在 2-4 个明确方案中做决定时使用。",
     promptSnippet:
       "ask_user_choice: 在飞书里向当前用户展示 2-4 个按钮选项，等待用户点击后返回选择。",
     promptGuidelines: [
@@ -75,27 +80,28 @@ export function createAskUserChoiceExtension(
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const identity = resolveIdentityByWorkspace(ctx.cwd);
-      if (!identity?.openId) {
+      const workspaceContext = normalizeWorkspaceChoiceContext(resolveIdentityByWorkspace(ctx.cwd));
+      if (!workspaceContext?.identity.openId) {
         throw new Error("当前 workspace 没有关联到飞书用户，暂时不能发起选择卡片");
       }
+      const identity = workspaceContext.identity;
 
       const question = normalizeRequiredText(params.question, "question");
       const options = normalizeOptions(params.options);
       const title = normalizeOptionalText(params.title) ?? "需要你选择";
       const timeoutSeconds = normalizeTimeoutSeconds(params.timeout_seconds);
       const requestId = createFeishuChoiceRequestId();
+      const target = resolveChoiceRecipient(identity, workspaceContext);
 
-      const messageId = await messenger.sendFeishuMessage(
-        identity.openId,
-        "interactive",
-        buildFeishuChoiceCardContent({
-          requestId,
-          title,
-          question,
-          options,
-        }),
-      );
+      const content = buildFeishuChoiceCardContent({
+        requestId,
+        title,
+        question,
+        options,
+      });
+      const messageId = typeof target === "string" || !messenger.sendFeishuMessageToTarget
+        ? await messenger.sendFeishuMessage(identity.openId, "interactive", content)
+        : await messenger.sendFeishuMessageToTarget(target, "interactive", content);
 
       if (!messageId) {
         throw new Error("飞书选择卡片发送失败");
@@ -137,6 +143,26 @@ export function createAskUserChoiceExtension(
   return (pi) => {
     pi.registerTool(askUserChoiceTool);
   };
+}
+
+function normalizeWorkspaceChoiceContext(raw: WorkspaceChoiceContext | null): WorkspaceContext | null {
+  if (!raw) {
+    return null;
+  }
+  if ("identity" in raw) {
+    return raw;
+  }
+  return {
+    identity: raw,
+  };
+}
+
+function resolveChoiceRecipient(
+  identity: UserIdentity,
+  workspaceContext: WorkspaceContext,
+): FeishuMessageRecipient {
+  const target = workspaceContext.conversationTarget;
+  return target && target.kind !== "p2p" ? target : identity.openId;
 }
 
 function normalizeRequiredText(value: unknown, fieldName: string): string {

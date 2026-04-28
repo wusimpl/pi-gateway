@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   sendTextMessage: vi.fn(),
+  sendTextMessageToTarget: vi.fn(),
   sendRenderedMessage: vi.fn(),
+  sendRenderedMessageToTarget: vi.fn(),
   promptSession: vi.fn(),
   getOrCreateActiveSession: vi.fn(),
   touchSession: vi.fn(),
@@ -23,7 +25,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../src/feishu/send.js", () => ({
   sendTextMessage: mocks.sendTextMessage,
+  sendTextMessageToTarget: mocks.sendTextMessageToTarget,
   sendRenderedMessage: mocks.sendRenderedMessage,
+  sendRenderedMessageToTarget: mocks.sendRenderedMessageToTarget,
 }));
 
 vi.mock("../src/pi/stream.js", () => ({
@@ -96,7 +100,9 @@ describe("handleFeishuMessage /restart", () => {
     releaseLock("ou_other");
 
     mocks.sendTextMessage.mockReset();
+    mocks.sendTextMessageToTarget.mockReset();
     mocks.sendRenderedMessage.mockReset();
+    mocks.sendRenderedMessageToTarget.mockReset();
     mocks.promptSession.mockReset();
     mocks.getOrCreateActiveSession.mockReset();
     mocks.touchSession.mockReset();
@@ -114,6 +120,7 @@ describe("handleFeishuMessage /restart", () => {
 
     initRouter({
       DATA_DIR: "/tmp/pi-gateway-data",
+      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,
@@ -122,7 +129,9 @@ describe("handleFeishuMessage /restart", () => {
     mocks.parseMessageEvent.mockReturnValue(baseEvent);
     mocks.isSupportedP2PMessage.mockReturnValue(true);
     mocks.sendRenderedMessage.mockResolvedValue(undefined);
+    mocks.sendRenderedMessageToTarget.mockResolvedValue(undefined);
     mocks.sendTextMessage.mockResolvedValue("om_reply");
+    mocks.sendTextMessageToTarget.mockResolvedValue("om_group_reply");
     mocks.restartGateway.mockResolvedValue(undefined);
     mocks.recordRestartReadyNotification.mockResolvedValue(undefined);
     mocks.clearRestartReadyNotification.mockResolvedValue(undefined);
@@ -141,10 +150,50 @@ describe("handleFeishuMessage /restart", () => {
 
     await handleFeishuMessage({});
 
-    expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith("/tmp/pi-gateway-data", "ou_1");
+    expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith(
+      "/tmp/pi-gateway-data",
+      "ou_1",
+      {
+        kind: "p2p",
+        key: "ou_1",
+        receiveIdType: "open_id",
+        receiveId: "ou_1",
+      },
+    );
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith("ou_1", "🔄 正在重启网关...", 2000);
     expect(mocks.restartGateway).toHaveBeenCalledTimes(1);
     expect(mocks.clearRestartReadyNotification).not.toHaveBeenCalled();
+  });
+
+  it("群聊里重启会把完成通知登记到当前群聊", async () => {
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_group_restart",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/restart"}',
+      text: "/restart",
+      conversationTarget: target,
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith(
+      "/tmp/pi-gateway-data",
+      "ou_1",
+      target,
+    );
+    expect(mocks.sendRenderedMessageToTarget).toHaveBeenCalledWith(target, "🔄 正在重启网关...", 2000);
+    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
+    expect(mocks.restartGateway).toHaveBeenCalledTimes(1);
   });
 
   it("只要还有任何用户任务在跑，就拒绝重启", async () => {
@@ -216,7 +265,16 @@ describe("handleFeishuMessage /restart", () => {
 
     await handleFeishuMessage({});
 
-    expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith("/tmp/pi-gateway-data", "ou_1");
+    expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith(
+      "/tmp/pi-gateway-data",
+      "ou_1",
+      {
+        kind: "p2p",
+        key: "ou_1",
+        receiveIdType: "open_id",
+        receiveId: "ou_1",
+      },
+    );
     expect(mocks.clearRestartReadyNotification).toHaveBeenCalledWith("/tmp/pi-gateway-data");
     expect(mocks.sendTextMessage).toHaveBeenCalledWith("ou_1", "❌ 错误: 命令处理失败，请稍后重试");
   });

@@ -145,7 +145,7 @@ export interface FeishuMessenger {
   sendTextMessageToTarget(target: ConversationTarget, text: string): Promise<string | null>;
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
   sendRenderedMessageToTarget(target: ConversationTarget, text: string, textChunkLimit: number): Promise<void>;
-  sendLocalFileMessage(openId: string, input: SendLocalFileInput): Promise<SentFeishuFile>;
+  sendLocalFileMessage(target: FeishuMessageRecipient, input: SendLocalFileInput): Promise<SentFeishuFile>;
   sendDocPreviewCard(target: FeishuMessageRecipient, input: FeishuDocPreviewCardInput): Promise<string | null>;
   startStreamingMessage(
     target: FeishuMessageRecipient,
@@ -317,9 +317,10 @@ export function createFeishuMessenger(
   }
 
   async function sendLocalFileMessage(
-    openId: string,
+    targetOrOpenId: FeishuMessageRecipient,
     input: SendLocalFileInput,
   ): Promise<SentFeishuFile> {
+    const target = resolveMessageTarget(targetOrOpenId);
     const fileStats = await stat(input.path);
     if (!fileStats.isFile()) {
       throw new Error(`要发送的路径不是文件: ${input.path}`);
@@ -337,7 +338,13 @@ export function createFeishuMessenger(
     }
 
     const fileType = inferFeishuUploadFileType(fileName);
-    const uploadResp = await retryRequest("飞书文件上传", { openId, path: input.path, fileName, fileType }, () =>
+    const uploadResp = await retryRequest("飞书文件上传", {
+      receiveIdType: target.receiveIdType,
+      receiveId: target.receiveId,
+      path: input.path,
+      fileName,
+      fileType,
+    }, () =>
       client.im.file.create({
         data: {
           file_type: fileType,
@@ -350,12 +357,19 @@ export function createFeishuMessenger(
       throw new Error(`飞书文件上传成功但未返回 file_key: ${input.path}`);
     }
 
-    const messageId = await sendFeishuMessage(openId, "file", { file_key: fileKey });
+    const messageId = await sendFeishuMessageToTarget(target, "file", { file_key: fileKey });
     if (!messageId) {
       throw new Error(`飞书文件消息发送失败: ${fileName}`);
     }
 
-    logger.debug("飞书文件已发送", { openId, path: input.path, fileName, fileKey, messageId });
+    logger.debug("飞书文件已发送", {
+      receiveIdType: target.receiveIdType,
+      receiveId: target.receiveId,
+      path: input.path,
+      fileName,
+      fileKey,
+      messageId,
+    });
     return {
       fileKey,
       fileName,
@@ -679,10 +693,10 @@ export async function sendRenderedMessageToTarget(
 }
 
 export async function sendLocalFileMessage(
-  openId: string,
+  target: FeishuMessageRecipient,
   input: SendLocalFileInput,
 ): Promise<SentFeishuFile> {
-  return getDefaultFeishuMessenger().sendLocalFileMessage(openId, input);
+  return getDefaultFeishuMessenger().sendLocalFileMessage(target, input);
 }
 
 export async function sendDocPreviewCard(

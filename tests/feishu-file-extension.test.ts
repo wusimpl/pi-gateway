@@ -3,7 +3,7 @@ import { createFeishuFilesExtension } from "../src/pi/extensions/feishu-files.js
 
 function collectTools(
   messengerOverrides?: Record<string, unknown>,
-  resolveIdentityByWorkspace: (cwd: string) => { openId: string; userId?: string } | null = () => ({
+  resolveIdentityByWorkspace: (cwd: string) => any = () => ({
     openId: "ou_1",
     userId: "u_1",
   }),
@@ -63,6 +63,41 @@ describe("feishu files extension", () => {
     expect(messenger.sendLocalFileMessage).toHaveBeenCalledWith("ou_1", {
       path: "/tmp/workspace/ou_1/exports/report.txt",
       fileName: "日报.txt",
+    });
+  });
+
+  it("群聊 workspace 会把文件发回当前群聊", async () => {
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const { tools, messenger } = collectTools(undefined, () => ({
+      identity: {
+        openId: "ou_1",
+        userId: "u_1",
+      },
+      conversationTarget: target,
+    }));
+    const sendTool = tools[0];
+
+    const result = await sendTool.execute(
+      "call-1",
+      { path: "exports/report.txt" },
+      undefined,
+      undefined,
+      createToolContext("/tmp/workspace/conversations/oc_1"),
+    );
+
+    expect(messenger.sendLocalFileMessage).toHaveBeenCalledWith(target, {
+      path: "/tmp/workspace/conversations/oc_1/exports/report.txt",
+      fileName: undefined,
+    });
+    expect(result.details).toMatchObject({
+      receive_id_type: "chat_id",
+      receive_id: "oc_1",
     });
   });
 

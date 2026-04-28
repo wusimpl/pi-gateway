@@ -409,7 +409,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
 
     try {
-      await recordRestartReadyNotification(deps.config.DATA_DIR, openId);
+      await recordRestartReadyNotification(deps.config.DATA_DIR, openId, conversationTarget);
       const reply = handleBridgeCommand(command, { openId });
       await sendCommandReply(identity, conversationTarget, reply);
       await deps.restartService.restartGateway();

@@ -1,6 +1,7 @@
 import { spawn, type SpawnOptions } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ConversationTarget } from "../conversation.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import { logger } from "./logger.js";
 
@@ -42,6 +43,7 @@ interface RestartSnapshot {
 
 interface RestartReadyNotification {
   openId: string;
+  conversationTarget?: ConversationTarget;
   requestedAt: string;
 }
 
@@ -78,7 +80,11 @@ export function createRestartService(options: RestartServiceOptions = {}): Resta
   };
 }
 
-export async function recordRestartReadyNotification(dataDir: string, openId: string): Promise<void> {
+export async function recordRestartReadyNotification(
+  dataDir: string,
+  openId: string,
+  conversationTarget?: ConversationTarget,
+): Promise<void> {
   const filePath = restartReadyNotificationPath(dataDir);
   await mkdir(restartReadyNotificationDir(dataDir), { recursive: true });
   await writeFile(
@@ -86,6 +92,7 @@ export async function recordRestartReadyNotification(dataDir: string, openId: st
     JSON.stringify(
       {
         openId,
+        conversationTarget: conversationTarget ? { ...conversationTarget } : undefined,
         requestedAt: new Date().toISOString(),
       } satisfies RestartReadyNotification,
       null,
@@ -93,7 +100,11 @@ export async function recordRestartReadyNotification(dataDir: string, openId: st
     ),
     "utf-8",
   );
-  logger.debug("重启完成通知已记录", { openId, filePath });
+  logger.debug("重启完成通知已记录", {
+    openId,
+    conversationKey: conversationTarget?.key,
+    filePath,
+  });
 }
 
 export async function clearRestartReadyNotification(dataDir: string): Promise<void> {
@@ -106,7 +117,7 @@ export async function clearRestartReadyNotification(dataDir: string): Promise<vo
 
 export async function notifyRestartReadyIfNeeded(
   dataDir: string,
-  messenger: Pick<FeishuMessenger, "sendTextMessage">,
+  messenger: Pick<FeishuMessenger, "sendTextMessage"> & Partial<Pick<FeishuMessenger, "sendTextMessageToTarget">>,
 ): Promise<void> {
   const notification = await consumeRestartReadyNotification(dataDir);
   if (!notification) {
@@ -114,13 +125,20 @@ export async function notifyRestartReadyIfNeeded(
   }
 
   try {
-    const messageId = await messenger.sendTextMessage(notification.openId, RESTART_READY_MESSAGE);
+    const target = notification.conversationTarget;
+    const messageId = target && target.kind !== "p2p" && messenger.sendTextMessageToTarget
+      ? await messenger.sendTextMessageToTarget(target, RESTART_READY_MESSAGE)
+      : await messenger.sendTextMessage(notification.openId, RESTART_READY_MESSAGE);
     if (!messageId) {
-      logger.warn("重启完成通知发送失败", { openId: notification.openId });
+      logger.warn("重启完成通知发送失败", {
+        openId: notification.openId,
+        conversationKey: target?.key,
+      });
     }
   } catch (error) {
     logger.warn("重启完成通知发送失败", {
       openId: notification.openId,
+      conversationKey: notification.conversationTarget?.key,
       error: String(error),
     });
   }
@@ -172,7 +190,28 @@ function isRestartReadyNotification(value: unknown): value is RestartReadyNotifi
 
   return (
     typeof Reflect.get(value, "openId") === "string"
+    && isOptionalConversationTarget(Reflect.get(value, "conversationTarget"))
     && typeof Reflect.get(value, "requestedAt") === "string"
+  );
+}
+
+function isOptionalConversationTarget(value: unknown): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const target = value as Record<string, unknown>;
+  const kind = target.kind;
+  const receiveIdType = target.receiveIdType;
+  return (
+    (kind === "p2p" || kind === "group" || kind === "thread")
+    && typeof target.key === "string"
+    && (receiveIdType === "open_id" || receiveIdType === "chat_id")
+    && typeof target.receiveId === "string"
+    && (target.chatId === undefined || typeof target.chatId === "string")
+    && (target.threadId === undefined || typeof target.threadId === "string")
   );
 }
 

@@ -82,7 +82,7 @@ export function createFeishuDocsExtension(
     promptGuidelines: [
       ...DOCX_ONLY_GUIDELINES,
       ...DOCX_IMAGE_GUIDELINES,
-      "新建文档后，默认会尝试把文档所有权转给当前飞书私聊用户，同时给应用自己保留管理权限。",
+      "新建文档后，默认会尝试把文档所有权转给当前飞书用户，同时给应用自己保留管理权限。",
       "如果所有权转移失败，要明确告诉用户文档虽然已创建，但当前仍不是用户本人所有。",
     ],
     parameters: Type.Object({

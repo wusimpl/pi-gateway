@@ -168,4 +168,29 @@ describe("restart service", () => {
     expect(messenger.sendTextMessage).toHaveBeenCalledTimes(1);
     expect(messenger.sendTextMessage).toHaveBeenCalledWith("ou_1", RESTART_READY_MESSAGE);
   });
+
+  it("群聊触发重启后，上线通知会发回群聊", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "pi-gateway-restart-group-"));
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const messenger = {
+      sendTextMessage: vi.fn().mockResolvedValue("om_private"),
+      sendTextMessageToTarget: vi.fn().mockResolvedValue("om_group_ready"),
+    };
+
+    try {
+      await recordRestartReadyNotification(dataDir, "ou_1", target);
+      await notifyRestartReadyIfNeeded(dataDir, messenger);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+
+    expect(messenger.sendTextMessageToTarget).toHaveBeenCalledWith(target, RESTART_READY_MESSAGE);
+    expect(messenger.sendTextMessage).not.toHaveBeenCalled();
+  });
 });
