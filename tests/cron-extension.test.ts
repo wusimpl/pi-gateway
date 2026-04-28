@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCronTaskExtension } from "../src/pi/extensions/cron-task.js";
 
+const groupTarget = {
+  kind: "group",
+  key: "oc_group_1",
+  receiveIdType: "chat_id",
+  receiveId: "oc_group_1",
+  chatId: "oc_group_1",
+} as const;
+
 function collectTools(
-  resolveIdentityByWorkspace = () => ({ openId: "ou_1", userId: "u_1" }),
+  resolveIdentityByWorkspace: (cwd: string) => any = () => ({ openId: "ou_1", userId: "u_1" }),
 ) {
   const cronService = {
     isEnabled: () => true,
@@ -83,12 +91,49 @@ describe("cron task extension", () => {
       expect.objectContaining({
         openId: "ou_1",
         userId: "u_1",
+        scopeType: "dm",
+        scopeKey: "ou_1",
         name: "提醒我喝水",
         prompt: "20分钟后提醒我喝水。",
         deleteAfterRun: true,
         schedule: expect.objectContaining({
           kind: "at",
         }),
+      }),
+    );
+  });
+
+  it("群聊 workspace 里的 add 会把任务绑定到当前群聊", async () => {
+    const { tools, cronService } = collectTools(() => ({
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: groupTarget,
+    }));
+    const tool = tools[0];
+
+    await tool.execute(
+      "call-1",
+      tool.prepareArguments({
+        action: "add",
+        name: "群早报",
+        time: "0 9 * * *",
+        prompt: "总结群里的待办。",
+      }),
+      undefined,
+      undefined,
+      {
+        cwd: "/tmp/workspace/conversations/oc_group_1",
+      },
+    );
+
+    expect(cronService.addJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openId: "ou_1",
+        userId: "u_1",
+        scopeType: "group",
+        scopeKey: "oc_group_1",
+        conversationTarget: groupTarget,
+        name: "群早报",
+        prompt: "总结群里的待办。",
       }),
     );
   });
@@ -129,7 +174,10 @@ describe("cron task extension", () => {
       },
     );
 
-    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith("ou_1", "cron_1");
+    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith(
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_1",
+    );
     expect(cronService.runJobNow).not.toHaveBeenCalled();
     expect(result.details).toMatchObject({
       action: "run",

@@ -52,6 +52,7 @@ describe("cron runner", () => {
       id: "cron_1",
       openId: "ou_1",
       userId: "u_1",
+      scopeType: "dm",
       scopeKey: "ou_1",
       name: "早报",
       enabled: true,
@@ -137,6 +138,7 @@ describe("cron runner", () => {
       id: "cron_group_1",
       openId: "ou_1",
       userId: "u_1",
+      scopeType: "group",
       scopeKey: "oc_group_1",
       conversationTarget: groupTarget,
       name: "群早报",
@@ -209,6 +211,7 @@ describe("cron runner", () => {
     const result = await runner.run({
       id: "cron_1",
       openId: "ou_1",
+      scopeType: "dm",
       scopeKey: "ou_1",
       name: "早报",
       enabled: true,

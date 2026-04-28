@@ -1,5 +1,14 @@
 import type { ConversationTarget } from "../conversation.js";
 
+export type CronScopeType = "dm" | "group" | "thread";
+
+export interface CronScopeSelector {
+  scopeKey: string;
+  scopeType: CronScopeType;
+}
+
+export type CronScopeInput = string | CronScopeSelector;
+
 export type CronSchedule =
   | {
       kind: "at";
@@ -25,6 +34,7 @@ export interface CronJob {
   id: string;
   openId: string;
   userId?: string;
+  scopeType: CronScopeType;
   scopeKey: string;
   conversationTarget?: ConversationTarget;
   name: string;
@@ -40,6 +50,7 @@ export interface CronJob {
 export interface CreateCronJobInput {
   openId: string;
   userId?: string;
+  scopeType?: CronScopeType;
   scopeKey?: string;
   conversationTarget?: ConversationTarget;
   name?: string;

@@ -7,6 +7,7 @@ function createJob(id: string): CronJob {
     id,
     openId: "ou_1",
     userId: "u_1",
+    scopeType: "dm",
     scopeKey: "ou_1",
     name: `任务 ${id}`,
     enabled: true,
@@ -60,7 +61,7 @@ describe("deferred cron run service", () => {
       status: "queued",
       queued: true,
     });
-    expect(runJobNow).toHaveBeenCalledWith("ou_1", "cron_1");
+    expect(runJobNow).toHaveBeenCalledWith({ scopeKey: "ou_1", scopeType: "dm" }, "cron_1");
     expect(sendTextMessage).not.toHaveBeenCalled();
   });
 

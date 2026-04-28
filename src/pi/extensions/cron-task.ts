@@ -3,11 +3,22 @@ import {
   defineTool,
   type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
-import { getWorkspaceIdentity } from "../workspace-identity.js";
 import { parseScheduleInput } from "../../cron/schedule.js";
 import type { CronService } from "../../cron/service.js";
 import type { DeferredCronRunService } from "../../cron/deferred-run.js";
 import type { UserIdentity } from "../../types.js";
+import type { ConversationTarget } from "../../conversation.js";
+import type { CronScopeSelector } from "../../cron/types.js";
+import {
+  createCronScopeSelector,
+  getCronConversationTargetForStorage,
+} from "../../cron/scope.js";
+import {
+  getWorkspaceContext,
+  type WorkspaceContext,
+} from "../workspace-identity.js";
+
+type WorkspaceCronContext = UserIdentity | WorkspaceContext;
 
 function toToolResult(details: unknown) {
   return {
@@ -35,7 +46,7 @@ function normalizeArgs(args: unknown): Record<string, unknown> {
 
 export function createCronTaskExtension(
   getCronService: () => CronService | null,
-  resolveIdentityByWorkspace: (cwd: string) => UserIdentity | null = getWorkspaceIdentity,
+  resolveIdentityByWorkspace: (cwd: string) => WorkspaceCronContext | null = getWorkspaceContext,
   getDeferredCronRunService: () => DeferredCronRunService | null = () => null,
 ): ExtensionFactory {
   const cronTaskTool = defineTool({
@@ -67,10 +78,13 @@ export function createCronTaskExtension(
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const identity = resolveIdentityByWorkspace(ctx.cwd);
-      if (!identity?.openId) {
+      const workspaceContext = normalizeWorkspaceCronContext(resolveIdentityByWorkspace(ctx.cwd));
+      if (!workspaceContext?.identity.openId) {
         throw new Error("当前 workspace 没有关联到飞书用户，暂时不能管理定时任务");
       }
+      const identity = workspaceContext.identity;
+      const conversationTarget = workspaceContext.conversationTarget;
+      const cronScope = createCronScope(identity, conversationTarget);
 
       const cronService = getCronService();
       if (!cronService?.isEnabled()) {
@@ -80,7 +94,7 @@ export function createCronTaskExtension(
       const action = typeof params.action === "string" ? params.action.trim().toLowerCase() : "";
       switch (action) {
         case "list": {
-          const jobs = await cronService.listJobs(identity.openId);
+          const jobs = await cronService.listJobs(cronScope);
           return toToolResult({
             action,
             jobs,
@@ -107,6 +121,9 @@ export function createCronTaskExtension(
           const job = await cronService.addJob({
             openId: identity.openId,
             userId: identity.userId,
+            scopeType: cronScope.scopeType,
+            scopeKey: cronScope.scopeKey,
+            conversationTarget: getCronConversationTargetForStorage(conversationTarget),
             name: typeof params.name === "string" ? params.name : undefined,
             prompt: params.prompt,
             schedule,
@@ -121,7 +138,7 @@ export function createCronTaskExtension(
           if (typeof params.job_id !== "string" || !params.job_id.trim()) {
             throw new Error("action=remove 时必须提供 job_id");
           }
-          const removed = await cronService.removeJob(identity.openId, params.job_id.trim());
+          const removed = await cronService.removeJob(cronScope, params.job_id.trim());
           if (!removed) {
             throw new Error("没找到这个定时任务");
           }
@@ -136,8 +153,8 @@ export function createCronTaskExtension(
           }
           const deferredCronRunService = getDeferredCronRunService();
           const result = deferredCronRunService
-            ? await deferredCronRunService.queueRun(identity.openId, params.job_id.trim())
-            : await cronService.runJobNow(identity.openId, params.job_id.trim());
+            ? await deferredCronRunService.queueRun(cronScope, params.job_id.trim())
+            : await cronService.runJobNow(cronScope, params.job_id.trim());
           return toToolResult({
             action,
             result,
@@ -156,4 +173,23 @@ export function createCronTaskExtension(
   return (pi) => {
     pi.registerTool(cronTaskTool);
   };
+}
+
+function normalizeWorkspaceCronContext(raw: WorkspaceCronContext | null): WorkspaceContext | null {
+  if (!raw) {
+    return null;
+  }
+  if ("identity" in raw) {
+    return raw;
+  }
+  return {
+    identity: raw,
+  };
+}
+
+function createCronScope(
+  identity: UserIdentity,
+  conversationTarget?: ConversationTarget,
+): CronScopeSelector {
+  return createCronScopeSelector(identity.openId, conversationTarget);
 }

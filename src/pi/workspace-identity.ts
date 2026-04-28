@@ -1,16 +1,41 @@
+import type { ConversationTarget } from "../conversation.js";
 import type { UserIdentity } from "../types.js";
 
-const workspaceIdentityMap = new Map<string, UserIdentity>();
+export interface WorkspaceContext {
+  identity: UserIdentity;
+  conversationTarget?: ConversationTarget;
+}
 
-export function bindWorkspaceIdentity(workspaceDir: string, identity: UserIdentity): void {
+const workspaceIdentityMap = new Map<string, WorkspaceContext>();
+
+export function bindWorkspaceIdentity(
+  workspaceDir: string,
+  identity: UserIdentity,
+  conversationTarget?: ConversationTarget,
+): void {
   workspaceIdentityMap.set(workspaceDir, {
-    openId: identity.openId,
-    userId: identity.userId,
+    identity: {
+      openId: identity.openId,
+      userId: identity.userId,
+    },
+    conversationTarget: conversationTarget ? { ...conversationTarget } : undefined,
   });
 }
 
 export function getWorkspaceIdentity(workspaceDir: string): UserIdentity | null {
-  return workspaceIdentityMap.get(workspaceDir) ?? null;
+  return workspaceIdentityMap.get(workspaceDir)?.identity ?? null;
+}
+
+export function getWorkspaceContext(workspaceDir: string): WorkspaceContext | null {
+  const context = workspaceIdentityMap.get(workspaceDir);
+  if (!context) {
+    return null;
+  }
+
+  return {
+    identity: { ...context.identity },
+    conversationTarget: context.conversationTarget ? { ...context.conversationTarget } : undefined,
+  };
 }
 
 export function clearWorkspaceIdentities(): void {

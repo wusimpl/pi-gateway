@@ -2,10 +2,11 @@ import { formatError } from "../feishu/format.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import type { RuntimeStateStore } from "../app/state.js";
 import type { CronService } from "./service.js";
-import type { CronJob, CronManualRunResult } from "./types.js";
+import type { CronJob, CronManualRunResult, CronScopeInput, CronScopeSelector } from "./types.js";
+import { resolveCronScopeInput } from "./scope.js";
 
 export interface DeferredCronRunService {
-  queueRun(scopeKey: string, jobId: string): Promise<CronManualRunResult>;
+  queueRun(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult>;
   flush(scopeKey: string): Promise<void>;
 }
 
@@ -22,17 +23,19 @@ export function createDeferredCronRunService(
   const pendingRuns = new Map<string, CronJob[]>();
   const flushingScopeKeys = new Set<string>();
 
-  async function queueRun(scopeKey: string, jobId: string): Promise<CronManualRunResult> {
+  async function queueRun(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult> {
     const cronService = deps.getCronService();
     if (!cronService?.isEnabled()) {
       throw new Error("CRON_DISABLED");
     }
 
-    const job = await findOwnedJob(cronService, scopeKey, jobId);
+    const owner = resolveCronScopeInput(scope);
+    const job = await findOwnedJob(cronService, owner, jobId);
     if (!job) {
       throw new Error("CRON_JOB_NOT_FOUND");
     }
 
+    const scopeKey = owner.scopeKey;
     const queue = pendingRuns.get(scopeKey) ?? [];
     if (!queue.some((queuedJob) => queuedJob.id === job.id)) {
       queue.push(cloneQueuedJob(job));
@@ -67,7 +70,7 @@ export function createDeferredCronRunService(
         }
 
         try {
-          const result = await cronService.runJobNow(scopeKey, queuedJob.id);
+          const result = await cronService.runJobNow(getJobScope(queuedJob), queuedJob.id);
           if (result.status === "busy") {
             prependPendingRun(scopeKey, queuedJob);
             break;
@@ -101,11 +104,18 @@ export function createDeferredCronRunService(
 
   async function findOwnedJob(
     cronService: Pick<CronService, "listJobs">,
-    scopeKey: string,
+    scope: CronScopeSelector,
     jobId: string,
   ): Promise<CronJob | null> {
-    const jobs = await cronService.listJobs(scopeKey);
+    const jobs = await cronService.listJobs(scope);
     return jobs.find((job) => job.id === jobId) ?? null;
+  }
+
+  function getJobScope(job: CronJob): CronScopeSelector {
+    return {
+      scopeKey: job.scopeKey,
+      scopeType: job.scopeType,
+    };
   }
 
   function shiftPendingRun(scopeKey: string): CronJob | null {

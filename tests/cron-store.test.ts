@@ -21,6 +21,7 @@ describe("cron store", () => {
         id: "cron_1",
         openId: "ou_1",
         userId: "u_1",
+        scopeType: "dm",
         scopeKey: "ou_1",
         name: "提醒我喝水",
         enabled: true,

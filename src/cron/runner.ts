@@ -60,7 +60,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
     let session: { abort(): Promise<void>; dispose(): void } | null = null;
     try {
       const workspaceDir = await ensureWorkspace(identity, conversationTarget);
-      bindWorkspaceIdentity(workspaceDir, identity);
+      bindWorkspaceIdentity(workspaceDir, identity, conversationTarget);
 
       const sessionDir = join(
         deps.config.DATA_DIR,

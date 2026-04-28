@@ -118,6 +118,7 @@ describe("command service /cron", () => {
     expect(cronService.addJob).toHaveBeenCalledWith({
       openId: "ou_1",
       userId: "u_1",
+      scopeType: "dm",
       scopeKey: "ou_1",
       conversationTarget: undefined,
       name: "早报",
@@ -151,6 +152,7 @@ describe("command service /cron", () => {
     expect(cronService.addJob).toHaveBeenCalledWith({
       openId: "ou_1",
       userId: "u_1",
+      scopeType: "group",
       scopeKey: "oc_group_1",
       conversationTarget: groupTarget,
       name: "群早报",
@@ -178,7 +180,10 @@ describe("command service /cron", () => {
       { name: "cron", args: "run cron_1" },
     );
 
-    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith("ou_1", "cron_1");
+    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith(
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_1",
+    );
     expect(cronService.runJobNow).not.toHaveBeenCalled();
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
@@ -197,7 +202,10 @@ describe("command service /cron", () => {
       groupTarget,
     );
 
-    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith("oc_group_1", "cron_1");
+    expect(deferredCronRunService.queueRun).toHaveBeenCalledWith(
+      { scopeKey: "oc_group_1", scopeType: "group" },
+      "cron_1",
+    );
     expect(cronService.runJobNow).not.toHaveBeenCalled();
   });
 });

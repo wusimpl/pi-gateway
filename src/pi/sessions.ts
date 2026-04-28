@@ -99,7 +99,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 
   async function ensureWorkspaceForTarget(identity: UserIdentity, target: ConversationTarget): Promise<string> {
     const workspaceDir = await deps.workspaceService.ensureConversationWorkspace(identity, target);
-    bindWorkspaceIdentity(workspaceDir, identity);
+    bindWorkspaceIdentity(workspaceDir, identity, target);
     return workspaceDir;
   }
 

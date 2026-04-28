@@ -4,6 +4,14 @@ import type { CronJob } from "../src/cron/types.js";
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
+const groupTarget = {
+  kind: "group",
+  key: "oc_group_1",
+  receiveIdType: "chat_id",
+  receiveId: "oc_group_1",
+  chatId: "oc_group_1",
+} as const;
+
 function createMemoryStore(initialJobs: CronJob[] = []) {
   let jobs = initialJobs.map(cloneJob);
   return {
@@ -57,6 +65,147 @@ describe("cron service", () => {
       expect(runner.run).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }));
     });
     await expect(service.listJobs("ou_1")).resolves.toEqual([]);
+  });
+
+  it("私聊、群聊和其他群的任务互相不可见", async () => {
+    const store = createMemoryStore();
+    const runner = {
+      run: vi.fn(async (job: CronJob) => ({
+        jobId: job.id,
+        status: "success" as const,
+      })),
+    };
+    const service = createCronService({
+      store,
+      runner,
+      defaultTz: "Asia/Shanghai",
+    });
+
+    await service.start();
+    const dmJob = await service.addJob({
+      openId: "ou_1",
+      prompt: "提醒我喝水。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 60_000,
+      },
+    });
+    const groupJob = await service.addJob({
+      openId: "ou_1",
+      scopeType: "group",
+      scopeKey: "oc_group_1",
+      conversationTarget: groupTarget,
+      prompt: "总结群里的待办。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 60_000,
+      },
+    });
+    await service.addJob({
+      openId: "ou_1",
+      scopeType: "group",
+      scopeKey: "oc_group_2",
+      conversationTarget: {
+        ...groupTarget,
+        key: "oc_group_2",
+        receiveId: "oc_group_2",
+        chatId: "oc_group_2",
+      },
+      prompt: "总结另一个群里的待办。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 60_000,
+      },
+    });
+
+    await expect(service.listJobs("ou_1")).resolves.toMatchObject([{ id: dmJob.id }]);
+    await expect(service.listJobs({ scopeKey: "oc_group_1", scopeType: "group" })).resolves.toMatchObject([
+      { id: groupJob.id },
+    ]);
+  });
+
+  it("私聊不能删除或立即执行群聊任务", async () => {
+    const store = createMemoryStore();
+    const runner = {
+      run: vi.fn(async (job: CronJob) => ({
+        jobId: job.id,
+        status: "success" as const,
+      })),
+    };
+    const service = createCronService({
+      store,
+      runner,
+      defaultTz: "Asia/Shanghai",
+    });
+
+    await service.start();
+    const groupJob = await service.addJob({
+      openId: "ou_1",
+      scopeType: "group",
+      scopeKey: "oc_group_1",
+      conversationTarget: groupTarget,
+      prompt: "总结群里的待办。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 60_000,
+      },
+    });
+
+    await expect(service.removeJob("ou_1", groupJob.id)).resolves.toBeNull();
+    await expect(service.runJobNow("ou_1", groupJob.id)).rejects.toThrow("CRON_JOB_NOT_FOUND");
+    expect(runner.run).not.toHaveBeenCalled();
+    await expect(service.listJobs({ scopeKey: "oc_group_1", scopeType: "group" })).resolves.toMatchObject([
+      { id: groupJob.id },
+    ]);
+  });
+
+  it("会把旧的群聊提示词任务迁移回群聊范围", async () => {
+    const legacyJob = {
+      id: "cron_legacy_group",
+      openId: "ou_1",
+      scopeKey: "ou_1",
+      name: "群天气",
+      enabled: true,
+      prompt: "每天早上 7 点在飞书群聊 oc_group_1 播报天气。",
+      schedule: {
+        kind: "cron",
+        expr: "0 7 * * *",
+        tz: "Asia/Shanghai",
+      },
+      deleteAfterRun: false,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+      state: {},
+    } as CronJob;
+    const store = createMemoryStore([legacyJob]);
+    const runner = {
+      run: vi.fn(async (job: CronJob) => ({
+        jobId: job.id,
+        status: "success" as const,
+      })),
+    };
+    const service = createCronService({
+      store,
+      runner,
+      defaultTz: "Asia/Shanghai",
+    });
+
+    await service.start();
+
+    await expect(service.listJobs("ou_1")).resolves.toEqual([]);
+    await expect(service.listJobs({ scopeKey: "oc_group_1", scopeType: "group" })).resolves.toMatchObject([
+      {
+        id: "cron_legacy_group",
+        scopeType: "group",
+        scopeKey: "oc_group_1",
+        conversationTarget: groupTarget,
+      },
+    ]);
+    expect(store.readJobs()[0]).toMatchObject({
+      scopeType: "group",
+      scopeKey: "oc_group_1",
+      conversationTarget: groupTarget,
+    });
   });
 
   it("用户忙时会顺延 60 秒再试", async () => {
@@ -221,6 +370,7 @@ describe("cron service", () => {
 function cloneJob(job: CronJob): CronJob {
   return {
     ...job,
+    conversationTarget: job.conversationTarget ? { ...job.conversationTarget } : undefined,
     schedule: { ...job.schedule },
     state: { ...job.state },
   };

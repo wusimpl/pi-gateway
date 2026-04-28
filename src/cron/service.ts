@@ -7,7 +7,14 @@ import type {
   CronJob,
   CronManualRunResult,
   CronJobRunResult,
+  CronScopeInput,
+  CronScopeSelector,
 } from "./types.js";
+import {
+  resolveCreateCronJobScope,
+  resolveCronScopeInput,
+  resolveLoadedCronJobScope,
+} from "./scope.js";
 
 const BUSY_RETRY_MS = 60_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -17,10 +24,10 @@ export interface CronService {
   stop(): Promise<void>;
   isEnabled(): boolean;
   getDefaultTimezone(): string;
-  listJobs(openId: string): Promise<CronJob[]>;
+  listJobs(scope: CronScopeInput): Promise<CronJob[]>;
   addJob(input: CreateCronJobInput): Promise<CronJob>;
-  removeJob(openId: string, jobId: string): Promise<CronJob | null>;
-  runJobNow(openId: string, jobId: string): Promise<CronManualRunResult>;
+  removeJob(scope: CronScopeInput, jobId: string): Promise<CronJob | null>;
+  runJobNow(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult>;
 }
 
 interface CronServiceDeps {
@@ -140,9 +147,10 @@ export function createCronService(deps: CronServiceDeps): CronService {
     clearTimer();
   }
 
-  async function listJobs(openId: string): Promise<CronJob[]> {
+  async function listJobs(scope: CronScopeInput): Promise<CronJob[]> {
+    const owner = resolveCronScopeInput(scope);
     return [...jobs.values()]
-      .filter((job) => resolveJobScopeKey(job) === openId)
+      .filter((job) => isJobInScope(job, owner))
       .sort((a, b) => {
         const aNext = a.state.nextRunAtMs ?? Number.MAX_SAFE_INTEGER;
         const bNext = b.state.nextRunAtMs ?? Number.MAX_SAFE_INTEGER;
@@ -160,12 +168,14 @@ export function createCronService(deps: CronServiceDeps): CronService {
     }
 
     const currentTime = now();
+    const scope = resolveCreateCronJobScope(input);
     const createdJob: CronJob = {
       id: createJobId(),
       openId: input.openId,
       userId: input.userId,
-      scopeKey: resolveScopeKeyInput(input),
-      conversationTarget: input.conversationTarget ? { ...input.conversationTarget } : undefined,
+      scopeType: scope.scopeType,
+      scopeKey: scope.scopeKey,
+      conversationTarget: scope.conversationTarget,
       name: normalizeJobName(input.name, input.prompt),
       enabled: input.enabled ?? true,
       prompt: input.prompt.trim(),
@@ -190,9 +200,10 @@ export function createCronService(deps: CronServiceDeps): CronService {
     });
   }
 
-  async function removeJob(openId: string, jobId: string): Promise<CronJob | null> {
+  async function removeJob(scope: CronScopeInput, jobId: string): Promise<CronJob | null> {
+    const owner = resolveCronScopeInput(scope);
     return mutate(async () => {
-      const job = requireOwnedJob(openId, jobId);
+      const job = requireOwnedJob(owner, jobId);
       if (!job) {
         return null;
       }
@@ -206,12 +217,13 @@ export function createCronService(deps: CronServiceDeps): CronService {
     });
   }
 
-  async function runJobNow(openId: string, jobId: string): Promise<CronManualRunResult> {
+  async function runJobNow(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult> {
     if (deps.enabled === false) {
       throw new Error("CRON_DISABLED");
     }
 
-    const ownedJob = requireOwnedJob(openId, jobId);
+    const owner = resolveCronScopeInput(scope);
+    const ownedJob = requireOwnedJob(owner, jobId);
     if (!ownedJob) {
       throw new Error("CRON_JOB_NOT_FOUND");
     }
@@ -301,12 +313,16 @@ export function createCronService(deps: CronServiceDeps): CronService {
     runJobNow,
   };
 
-  function requireOwnedJob(openId: string, jobId: string): CronJob | null {
+  function requireOwnedJob(owner: CronScopeSelector, jobId: string): CronJob | null {
     const job = jobs.get(jobId);
-    if (!job || resolveJobScopeKey(job) !== openId) {
+    if (!job || !isJobInScope(job, owner)) {
       return null;
     }
     return job;
+  }
+
+  function isJobInScope(job: CronJob, owner: CronScopeSelector): boolean {
+    return job.scopeType === owner.scopeType && resolveJobScopeKey(job) === owner.scopeKey;
   }
 
   function finalizeJobAfterRun(
@@ -341,7 +357,10 @@ export function createCronService(deps: CronServiceDeps): CronService {
 
 function normalizeLoadedJob(job: CronJob, currentTime: number): CronJob {
   const normalized = cloneJob(job);
-  normalized.scopeKey = resolveJobScopeKey(normalized);
+  const scope = resolveLoadedCronJobScope(normalized);
+  normalized.scopeType = scope.scopeType;
+  normalized.scopeKey = scope.scopeKey;
+  normalized.conversationTarget = scope.conversationTarget;
   normalized.state.runningAtMs = undefined;
   if (normalized.enabled) {
     if (!normalized.state.nextRunAtMs) {
@@ -360,10 +379,6 @@ function cloneJob(job: CronJob): CronJob {
     schedule: { ...job.schedule },
     state: { ...job.state },
   };
-}
-
-function resolveScopeKeyInput(input: CreateCronJobInput): string {
-  return input.scopeKey?.trim() || input.conversationTarget?.key.trim() || input.openId;
 }
 
 function resolveJobScopeKey(job: Pick<CronJob, "scopeKey" | "openId" | "conversationTarget">): string {
