@@ -7,6 +7,7 @@ import { BridgeError, withTimeout } from "../app/errors.js";
 import { formatModelLabel } from "./models.js";
 import {
   sendRenderedMessage,
+  sendRenderedMessageToTarget,
   sendDocPreviewCard,
   startStreamingMessage,
   addProcessingReaction,
@@ -62,6 +63,10 @@ function createP2PTarget(openId: string): ConversationTarget {
     receiveIdType: "open_id",
     receiveId: openId,
   };
+}
+
+function isStreamingTargetSupported(target: ConversationTarget): boolean {
+  return target.kind === "p2p" || target.kind === "group";
 }
 
 type PromptMessenger = Pick<
@@ -149,7 +154,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const target = conversationTarget ?? createP2PTarget(openId);
       const normalizedToolCallsDisplayMode = normalizeToolCallsDisplayMode(toolCallsDisplayMode);
       const showToolCallsInReply = normalizedToolCallsDisplayMode !== "off";
-      const streamingAllowed = streamingEnabled && target.kind === "p2p";
+      const streamingAllowed = streamingEnabled && isStreamingTargetSupported(target);
 
       try {
         const reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
@@ -179,7 +184,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         streamingInitAttempted = true;
         try {
           streamingMessage = await messenger.startStreamingMessage(
-            openId,
+            target.kind === "p2p" ? openId : target,
             initialBody,
             initialTools,
             initialPrelude,
@@ -465,10 +470,10 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           preludeText,
           streamingMessage,
           streamingBroken,
-          target,
+          conversationTarget,
         );
       }
-      await sendCollectedDocPreviewCards(messenger, openId, docPreviewMap, target);
+      await sendCollectedDocPreviewCards(messenger, openId, docPreviewMap, conversationTarget);
 
       return {
         text: fullText,
@@ -482,6 +487,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
 
 const defaultPromptRunner = createPromptRunner({
   sendRenderedMessage,
+  sendRenderedMessageToTarget,
   sendDocPreviewCard,
   startStreamingMessage,
   addProcessingReaction,
@@ -555,13 +561,14 @@ async function sendCollectedDocPreviewCards(
   docPreviewMap: ReadonlyMap<string, FeishuDocPreviewCardInput>,
   conversationTarget?: ConversationTarget,
 ): Promise<void> {
-  if (conversationTarget?.kind && conversationTarget.kind !== "p2p") {
+  const recipient = getDocPreviewCardRecipient(openId, conversationTarget);
+  if (!recipient) {
     return;
   }
 
   for (const preview of docPreviewMap.values()) {
     try {
-      await messenger.sendDocPreviewCard(openId, preview);
+      await messenger.sendDocPreviewCard(recipient, preview);
     } catch (error) {
       logger.warn("飞书文档卡片发送失败，已跳过", {
         openId,
@@ -570,6 +577,19 @@ async function sendCollectedDocPreviewCards(
       });
     }
   }
+}
+
+function getDocPreviewCardRecipient(
+  openId: string,
+  conversationTarget?: ConversationTarget,
+): string | ConversationTarget | null {
+  if (!conversationTarget || conversationTarget.kind === "p2p") {
+    return openId;
+  }
+  if (conversationTarget.kind === "group") {
+    return conversationTarget;
+  }
+  return null;
 }
 
 function collectDocPreviewCardInput(

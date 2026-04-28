@@ -221,7 +221,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
             openId,
             messageId,
             processingReactionType,
-            false,
+            streamingEnabled,
             deps.config.TEXT_CHUNK_LIMIT,
             toolCallsDisplayMode,
             undefined,

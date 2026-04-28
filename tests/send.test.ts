@@ -247,6 +247,38 @@ describe("send helpers", () => {
     ]);
   });
 
+  it("sendDocPreviewCard: 群聊目标应使用 chat_id 发送", async () => {
+    mockCreate.mockResolvedValue({ data: { message_id: "om_doc_group_1" } });
+    const { sendDocPreviewCard } = await import("../src/feishu/send.js");
+
+    await expect(
+      sendDocPreviewCard(
+        {
+          kind: "group",
+          key: "oc_1",
+          receiveIdType: "chat_id",
+          receiveId: "oc_1",
+          chatId: "oc_1",
+        },
+        {
+          documentId: "doxcn_card_1",
+          title: "群聊周报",
+          operation: "created",
+        },
+      ),
+    ).resolves.toBe("om_doc_group_1");
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { receive_id_type: "chat_id" },
+        data: expect.objectContaining({
+          receive_id: "oc_1",
+          msg_type: "interactive",
+        }),
+      }),
+    );
+  });
+
   it("addProcessingReaction: 应添加指定 reaction 并返回 reaction_id", async () => {
     mockReactionCreate.mockResolvedValue({ data: { reaction_id: "reaction_1" } });
     const { addProcessingReaction } = await import("../src/feishu/send.js");
@@ -315,6 +347,38 @@ describe("send helpers", () => {
           type: "card",
           data: {
             card_id: "card_1",
+          },
+        }),
+      },
+    });
+  });
+
+  it("startStreamingMessage: 群聊目标应使用 chat_id 发送流式卡片", async () => {
+    mockCardCreate.mockResolvedValue({ data: { card_id: "card_group_1" } });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_stream_group_1" } });
+    const { startStreamingMessage } = await import("../src/feishu/send.js");
+
+    const stream = await startStreamingMessage(
+      {
+        kind: "group",
+        key: "oc_1",
+        receiveIdType: "chat_id",
+        receiveId: "oc_1",
+        chatId: "oc_1",
+      },
+      "hello group",
+    );
+
+    expect(stream).not.toBeNull();
+    expect(mockCreate).toHaveBeenCalledWith({
+      params: { receive_id_type: "chat_id" },
+      data: {
+        receive_id: "oc_1",
+        msg_type: "interactive",
+        content: JSON.stringify({
+          type: "card",
+          data: {
+            card_id: "card_group_1",
           },
         }),
       },

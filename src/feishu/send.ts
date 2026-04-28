@@ -132,6 +132,7 @@ export interface FeishuStreamingMessage {
 }
 
 export type { FeishuDocPreviewCardInput } from "./doc-preview-card.js";
+export type FeishuMessageRecipient = string | ConversationTarget;
 
 export interface FeishuMessenger {
   sendFeishuMessage(openId: string, msgType: FeishuMessageType, content: Record<string, unknown>): Promise<string | null>;
@@ -145,9 +146,9 @@ export interface FeishuMessenger {
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
   sendRenderedMessageToTarget(target: ConversationTarget, text: string, textChunkLimit: number): Promise<void>;
   sendLocalFileMessage(openId: string, input: SendLocalFileInput): Promise<SentFeishuFile>;
-  sendDocPreviewCard(openId: string, input: FeishuDocPreviewCardInput): Promise<string | null>;
+  sendDocPreviewCard(target: FeishuMessageRecipient, input: FeishuDocPreviewCardInput): Promise<string | null>;
   startStreamingMessage(
-    openId: string,
+    target: FeishuMessageRecipient,
     bodyText?: string,
     toolsText?: string,
     preludeText?: string,
@@ -163,6 +164,10 @@ function createP2PTarget(openId: string): ConversationTarget {
     receiveIdType: "open_id",
     receiveId: openId,
   };
+}
+
+function resolveMessageTarget(target: FeishuMessageRecipient): ConversationTarget {
+  return typeof target === "string" ? createP2PTarget(target) : target;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -360,31 +365,41 @@ export function createFeishuMessenger(
   }
 
   async function sendDocPreviewCard(
-    openId: string,
+    targetOrOpenId: FeishuMessageRecipient,
     input: FeishuDocPreviewCardInput,
   ): Promise<string | null> {
+    const target = resolveMessageTarget(targetOrOpenId);
     const resolved = resolveFeishuDocPreviewCardInput(input, feishuDomain);
     if (!resolved) {
-      logger.warn("飞书文档卡片跳过：缺少可用文档链接", { openId, input });
+      logger.warn("飞书文档卡片跳过：缺少可用文档链接", {
+        receiveIdType: target.receiveIdType,
+        receiveId: target.receiveId,
+        input,
+      });
       return null;
     }
 
-    return sendFeishuMessage(
-      openId,
+    return sendFeishuMessageToTarget(
+      target,
       "interactive",
       buildFeishuDocPreviewCardContent(resolved),
     );
   }
 
   async function startStreamingMessage(
-    openId: string,
+    targetOrOpenId: FeishuMessageRecipient,
     bodyText: string = "",
     toolsText: string = "",
     preludeText: string = "",
   ): Promise<FeishuStreamingMessage | null> {
+    const target = resolveMessageTarget(targetOrOpenId);
+    const logContext = {
+      receiveIdType: target.receiveIdType,
+      receiveId: target.receiveId,
+    };
     try {
       const hasInitialToolsText = toolsText.trim().length > 0;
-      const createResp = await retryRequest("飞书流式卡片创建", { openId }, () => client.cardkit.v1.card.create({
+      const createResp = await retryRequest("飞书流式卡片创建", logContext, () => client.cardkit.v1.card.create({
         data: {
           type: "card_json",
           data: buildStreamingCardData({
@@ -396,19 +411,19 @@ export function createFeishuMessenger(
       }));
       const rawCardId = createResp.data?.card_id ?? null;
       if (!rawCardId) {
-        logger.error("飞书流式卡片创建失败：未返回 card_id", { openId });
+        logger.error("飞书流式卡片创建失败：未返回 card_id", logContext);
         return null;
       }
       const cardId = rawCardId;
 
-      const messageId = await sendFeishuMessage(openId, "interactive", {
+      const messageId = await sendFeishuMessageToTarget(target, "interactive", {
         type: "card",
         data: {
           card_id: cardId,
         },
       });
       if (!messageId) {
-        logger.error("飞书流式卡片发送失败：未返回 message_id", { openId, cardId });
+        logger.error("飞书流式卡片发送失败：未返回 message_id", { ...logContext, cardId });
         return null;
       }
 
@@ -423,7 +438,7 @@ export function createFeishuMessenger(
       };
 
       async function updateElement(elementId: string, content: string): Promise<void> {
-        await retryRequest("飞书流式卡片文本更新", { openId, cardId, elementId }, () =>
+        await retryRequest("飞书流式卡片文本更新", { ...logContext, cardId, elementId }, () =>
           client.cardkit.v1.cardElement.content({
             path: {
               card_id: cardId,
@@ -438,7 +453,7 @@ export function createFeishuMessenger(
       }
 
       async function updateSettings(settings: string): Promise<void> {
-        await retryRequest("飞书流式卡片配置更新", { openId, cardId }, () =>
+        await retryRequest("飞书流式卡片配置更新", { ...logContext, cardId }, () =>
           client.cardkit.v1.card.settings({
             path: {
               card_id: cardId,
@@ -452,7 +467,7 @@ export function createFeishuMessenger(
       }
 
       async function updateCard(cardData: string): Promise<void> {
-        await retryRequest("飞书流式卡片整卡更新", { openId, cardId }, () =>
+        await retryRequest("飞书流式卡片整卡更新", { ...logContext, cardId }, () =>
           client.cardkit.v1.card.update({
             path: {
               card_id: cardId,
@@ -543,7 +558,7 @@ export function createFeishuMessenger(
         },
       };
     } catch (err) {
-      logger.error("飞书流式卡片初始化失败", { openId, error: String(err) });
+      logger.error("飞书流式卡片初始化失败", { ...logContext, error: String(err) });
       return null;
     }
   }
@@ -671,19 +686,19 @@ export async function sendLocalFileMessage(
 }
 
 export async function sendDocPreviewCard(
-  openId: string,
+  target: FeishuMessageRecipient,
   input: FeishuDocPreviewCardInput,
 ): Promise<string | null> {
-  return getDefaultFeishuMessenger().sendDocPreviewCard(openId, input);
+  return getDefaultFeishuMessenger().sendDocPreviewCard(target, input);
 }
 
 export async function startStreamingMessage(
-  openId: string,
+  target: FeishuMessageRecipient,
   bodyText: string = "",
   toolsText: string = "",
   preludeText: string = "",
 ): Promise<FeishuStreamingMessage | null> {
-  return getDefaultFeishuMessenger().startStreamingMessage(openId, bodyText, toolsText, preludeText);
+  return getDefaultFeishuMessenger().startStreamingMessage(target, bodyText, toolsText, preludeText);
 }
 
 function appendDisplayedSections(

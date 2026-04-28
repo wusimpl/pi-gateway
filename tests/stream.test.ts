@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSendRenderedMessage = vi.fn();
+const mockSendRenderedMessageToTarget = vi.fn();
 const mockSendDocPreviewCard = vi.fn();
 const mockStartStreamingMessage = vi.fn();
 const mockAddProcessingReaction = vi.fn();
@@ -8,6 +9,7 @@ const mockRemoveReaction = vi.fn();
 
 vi.mock("../src/feishu/send.js", () => ({
   sendRenderedMessage: mockSendRenderedMessage,
+  sendRenderedMessageToTarget: mockSendRenderedMessageToTarget,
   sendDocPreviewCard: mockSendDocPreviewCard,
   startStreamingMessage: mockStartStreamingMessage,
   addProcessingReaction: mockAddProcessingReaction,
@@ -63,11 +65,13 @@ function createSession(
 describe("promptSession", () => {
   beforeEach(() => {
     mockSendRenderedMessage.mockReset();
+    mockSendRenderedMessageToTarget.mockReset();
     mockSendDocPreviewCard.mockReset();
     mockStartStreamingMessage.mockReset();
     mockAddProcessingReaction.mockReset();
     mockRemoveReaction.mockReset();
     mockSendRenderedMessage.mockResolvedValue(undefined);
+    mockSendRenderedMessageToTarget.mockResolvedValue(undefined);
     mockSendDocPreviewCard.mockResolvedValue("om_doc_1");
     mockStartStreamingMessage.mockResolvedValue(null);
     mockAddProcessingReaction.mockResolvedValue("reaction_1");
@@ -127,6 +131,55 @@ describe("promptSession", () => {
     });
   });
 
+  it("群聊中文档工具创建成功后，应把飞书文档卡片发回群聊", async () => {
+    const groupTarget = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_end",
+        toolName: "feishu_doc_create",
+        isError: false,
+        result: {
+          details: {
+            document_id: "doxcn_group_1",
+            document_url: "https://feishu.cn/docx/doxcn_group_1",
+            title: "群聊周报",
+          },
+        },
+      } as any,
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "已帮大家建好文档" } },
+      { type: "message_end" },
+    ]);
+
+    await promptSession(
+      session as any,
+      "hi",
+      "ou_1",
+      "om_source_1",
+      undefined,
+      false,
+      2000,
+      "off",
+      undefined,
+      undefined,
+      groupTarget,
+    );
+
+    expect(mockSendRenderedMessageToTarget).toHaveBeenCalledWith(groupTarget, "已帮大家建好文档", 2000);
+    expect(mockSendDocPreviewCard).toHaveBeenCalledWith(groupTarget, {
+      documentId: "doxcn_group_1",
+      documentUrl: "https://feishu.cn/docx/doxcn_group_1",
+      title: "群聊周报",
+      operation: "created",
+    });
+  });
+
   it("只读文档工具不应额外补发文档卡片", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([
@@ -179,6 +232,45 @@ describe("promptSession", () => {
       "",
       "",
     );
+  });
+
+  it("群聊启用流式卡片时，应把流式卡片发回群聊", async () => {
+    const groupTarget = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const mockStreamingMessage = {
+      updateBody: vi.fn().mockResolvedValue(undefined),
+      updateTools: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+    };
+    mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello group" } },
+      { type: "message_end" },
+    ]);
+
+    await promptSession(
+      session as any,
+      "hi",
+      "ou_1",
+      "om_group_1",
+      undefined,
+      true,
+      2000,
+      "off",
+      undefined,
+      undefined,
+      groupTarget,
+    );
+
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith(groupTarget, "hello group", "", "");
+    expect(mockStreamingMessage.finish).toHaveBeenCalledWith("hello group", 2000, "", "");
+    expect(mockSendRenderedMessageToTarget).not.toHaveBeenCalled();
   });
 
   it("有语音转录结果时，应单独保留转录区块并在收口时把正文放前面", async () => {

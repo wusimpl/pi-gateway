@@ -256,7 +256,7 @@ describe("createPromptService", () => {
       "ou_1",
       "om_group_1",
       "SMILE",
-      false,
+      true,
       2000,
       "off",
       undefined,
