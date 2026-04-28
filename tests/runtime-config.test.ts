@@ -37,4 +37,31 @@ describe("createRuntimeConfigStore", () => {
     expect(store.enableProcessingReaction()).toBeUndefined();
     expect(store.getProcessingReactionType()).toBeUndefined();
   });
+
+  it("应允许更新群聊开关、模式、白名单和关键词", () => {
+    const store = createRuntimeConfigStore({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: ["oc_1"],
+      FEISHU_GROUP_MESSAGE_MODE: "mention",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: ["Pi"],
+      FEISHU_BOT_OPEN_ID: "ou_bot_1",
+    });
+
+    store.setGroupChatPolicy("allowlist");
+    store.setGroupChatAllowlist(["oc_1", "oc_2", "oc_2"]);
+    store.setGroupMessageMode("keyword");
+    store.setGroupMessageKeywords(["日报", "日报", "小助手"]);
+
+    expect(store.getGroupChatPolicy()).toBe("allowlist");
+    expect(store.getGroupChatAllowlist()).toEqual(["oc_1", "oc_2"]);
+    expect(store.getGroupMessageMode()).toBe("keyword");
+    expect(store.getGroupMessageKeywords()).toEqual(["日报", "小助手"]);
+    expect(store.getGroupRoutingConfig()).toEqual({
+      FEISHU_GROUP_CHAT_POLICY: "allowlist",
+      FEISHU_GROUP_CHAT_ALLOWLIST: ["oc_1", "oc_2"],
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: ["日报", "小助手"],
+      FEISHU_BOT_OPEN_ID: "ou_bot_1",
+    });
+  });
 });

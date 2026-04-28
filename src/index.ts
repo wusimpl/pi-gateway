@@ -202,6 +202,7 @@ async function main() {
     commandService,
     promptService,
     config,
+    runtimeConfig,
   });
   logger.info("消息路由就绪");
 

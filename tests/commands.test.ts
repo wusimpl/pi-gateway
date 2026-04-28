@@ -120,6 +120,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /group with args", () => {
+    expect(parseBridgeCommand("/group mode keyword")).toEqual({
+      name: "group",
+      args: "mode keyword",
+    });
+  });
+
   it("should return null for plain text", () => {
     expect(parseBridgeCommand("hello")).toBeNull();
   });

@@ -26,6 +26,7 @@ const BRIDGE_COMMANDS = [
   "stt",
   "stream",
   "reaction",
+  "group",
   "skillstat",
 ] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];

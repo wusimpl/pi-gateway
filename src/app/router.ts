@@ -44,7 +44,7 @@ import {
   type RunningPromptBehavior,
 } from "./prompt-service.js";
 import { createRestartService } from "./restart.js";
-import { createRuntimeConfigStore } from "./runtime-config.js";
+import { createRuntimeConfigStore, type RuntimeConfigStore } from "./runtime-config.js";
 import {
   acquireLock,
   beginRestartDrain,
@@ -74,6 +74,7 @@ interface MessageRouterDeps {
   >;
   promptService: Pick<PromptService, "handleUserPrompt" | "queueRunningPrompt">;
   config?: Partial<Config>;
+  runtimeConfig?: Pick<RuntimeConfigStore, "getGroupRoutingConfig">;
   parseMessageEvent?: typeof parseMessageEvent;
   isSupportedP2PMessage?: typeof isSupportedP2PMessage;
   isSupportedMessage?: (event: ReturnType<typeof parseMessageEvent> extends infer T ? NonNullable<T> : never) => boolean;
@@ -90,7 +91,11 @@ interface QueuedPrompt {
 export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
   const parseEvent = deps.parseMessageEvent ?? parseMessageEvent;
   const isSupportedMessage = deps.isSupportedMessage
-    ?? createSupportedMessagePredicate(deps.config, deps.isSupportedP2PMessage ?? isSupportedP2PMessage);
+    ?? createSupportedMessagePredicate(
+      deps.config,
+      deps.runtimeConfig,
+      deps.isSupportedP2PMessage ?? isSupportedP2PMessage,
+    );
   const normalizeMessage = deps.normalizeFeishuInboundMessage ?? normalizeFeishuInboundMessage;
   const promptQueues = new Map<string, QueuedPrompt[]>();
   const drainingUsers = new Set<string>();
@@ -265,13 +270,23 @@ function createTextPromptMessage(message: FeishuInboundMessage, text: string): F
 
 function createSupportedMessagePredicate(
   config: Partial<Config> | undefined,
+  runtimeConfig: Pick<RuntimeConfigStore, "getGroupRoutingConfig"> | undefined,
   fallback: typeof isSupportedP2PMessage,
 ): (event: NonNullable<ReturnType<typeof parseMessageEvent>>) => boolean {
-  if (!config?.FEISHU_GROUP_CHAT_POLICY) {
+  if (!runtimeConfig && !config?.FEISHU_GROUP_CHAT_POLICY) {
     return fallback;
   }
 
-  return (event) => isSupportedFeishuMessage(event, config as Config);
+  return (event) => {
+    if (event.message.chatType !== "group") {
+      return fallback(event);
+    }
+
+    if (runtimeConfig) {
+      return isSupportedFeishuMessage(event, runtimeConfig.getGroupRoutingConfig());
+    }
+    return isSupportedFeishuMessage(event, config as Config);
+  };
 }
 
 let defaultRouter: MessageRouter | null = null;
@@ -363,6 +378,7 @@ export function initRouter(cfg: Config): void {
     commandService,
     promptService,
     config: cfg,
+    runtimeConfig,
   });
 }
 

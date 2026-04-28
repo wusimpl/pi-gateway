@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMessageRouter } from "../src/app/router.js";
+import { createRuntimeConfigStore } from "../src/app/runtime-config.js";
 
 const groupEvent = {
   sender: { senderId: { openId: "ou_1", userId: "u_1", unionId: "on_1" }, senderType: "user", tenantKey: "tk" },
@@ -190,5 +191,40 @@ describe("createMessageRouter 群聊入口", () => {
       expect(deps.commandService.handleBridgeCommand).toHaveBeenCalled();
       expect(deps.commandService.handleUnauthorizedBridgeCommand).not.toHaveBeenCalled();
     }
+  });
+
+  it("运行时切换群聊配置后，router 应立刻按新配置生效", async () => {
+    const runtimeConfig = createRuntimeConfigStore({
+      FEISHU_GROUP_CHAT_POLICY: "disabled",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "mention",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: [],
+    });
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "disabled",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "mention",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: [],
+      FEISHU_OWNER_OPEN_IDS: [],
+    });
+    const router = createMessageRouter({
+      ...(deps as any),
+      runtimeConfig,
+    });
+
+    runtimeConfig.setGroupChatPolicy("open");
+    runtimeConfig.setGroupMessageMode("all");
+    await router.handleFeishuMessage({});
+
+    expect(deps.promptService.handleUserPrompt).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      expect.objectContaining({ conversationTarget: groupTarget }),
+    );
+
+    deps.promptService.handleUserPrompt.mockClear();
+    runtimeConfig.setGroupChatPolicy("disabled");
+    await router.handleFeishuMessage({});
+
+    expect(deps.promptService.handleUserPrompt).not.toHaveBeenCalled();
   });
 });

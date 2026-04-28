@@ -99,6 +99,14 @@ interface CommandServiceDeps {
     | "setAudioTranscribeProvider"
     | "getStreamingEnabled"
     | "setStreamingEnabled"
+    | "getGroupChatPolicy"
+    | "setGroupChatPolicy"
+    | "getGroupChatAllowlist"
+    | "setGroupChatAllowlist"
+    | "getGroupMessageMode"
+    | "setGroupMessageMode"
+    | "getGroupMessageKeywords"
+    | "setGroupMessageKeywords"
     | "enableProcessingReaction"
     | "disableProcessingReaction"
   >;
@@ -305,6 +313,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleStreamCommand(identity, command, conversationTarget);
       } else if (command.name === "reaction") {
         await handleReactionCommand(identity, command, conversationTarget);
+      } else if (command.name === "group") {
+        await handleGroupCommand(identity, command, conversationTarget);
       } else if (command.name === "stop") {
         await handleStopCommand(identity, command, conversationKey, conversationTarget);
       } else if (command.name === "next") {
@@ -775,6 +785,151 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await sendCommandReply(identity, conversationTarget, `✅ 已开启处理中 reaction，表情继续使用 .env 里的 ${reactionType}。`);
   }
 
+  async function handleGroupCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
+    if (!deps.runtimeConfig) {
+      await sendTextReply(identity, conversationTarget, "当前环境不支持这个命令。");
+      return;
+    }
+
+    const parsed = parseGroupArgs(command.args);
+    if (parsed.error) {
+      await sendTextReply(identity, conversationTarget, parsed.error);
+      return;
+    }
+
+    const currentChatId = getCurrentGroupChatId(conversationTarget);
+    if (parsed.kind === "show") {
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupSettingsReply(
+          {
+            policy: deps.runtimeConfig.getGroupChatPolicy(),
+            mode: deps.runtimeConfig.getGroupMessageMode(),
+            allowlist: deps.runtimeConfig.getGroupChatAllowlist(),
+            keywords: deps.runtimeConfig.getGroupMessageKeywords(),
+          },
+          currentChatId,
+        ),
+      );
+      return;
+    }
+
+    if (parsed.kind === "set-policy") {
+      deps.runtimeConfig.setGroupChatPolicy(parsed.policy);
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupSettingsReply(
+          {
+            policy: deps.runtimeConfig.getGroupChatPolicy(),
+            mode: deps.runtimeConfig.getGroupMessageMode(),
+            allowlist: deps.runtimeConfig.getGroupChatAllowlist(),
+            keywords: deps.runtimeConfig.getGroupMessageKeywords(),
+          },
+          currentChatId,
+          `✅ 已切换群聊开关：${parsed.policy}`,
+        ),
+      );
+      return;
+    }
+
+    if (parsed.kind === "set-mode") {
+      deps.runtimeConfig.setGroupMessageMode(parsed.mode);
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupSettingsReply(
+          {
+            policy: deps.runtimeConfig.getGroupChatPolicy(),
+            mode: deps.runtimeConfig.getGroupMessageMode(),
+            allowlist: deps.runtimeConfig.getGroupChatAllowlist(),
+            keywords: deps.runtimeConfig.getGroupMessageKeywords(),
+          },
+          currentChatId,
+          `✅ 已切换群消息触发方式：${parsed.mode}`,
+        ),
+      );
+      return;
+    }
+
+    if (parsed.kind === "show-allowlist") {
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupAllowlistReply(deps.runtimeConfig.getGroupChatAllowlist(), currentChatId),
+      );
+      return;
+    }
+
+    if (parsed.kind === "edit-allowlist") {
+      const targetChatIds = resolveGroupAllowlistTargets(parsed.targets, currentChatId);
+      if (!targetChatIds.ok) {
+        await sendTextReply(identity, conversationTarget, targetChatIds.error);
+        return;
+      }
+
+      const chatIds = targetChatIds.chatIds;
+      const currentAllowlist = deps.runtimeConfig.getGroupChatAllowlist();
+      const currentAllowlistSet = new Set(currentAllowlist);
+      const changedChatIds = parsed.action === "add"
+        ? chatIds.filter((chatId) => !currentAllowlistSet.has(chatId))
+        : chatIds.filter((chatId) => currentAllowlistSet.has(chatId));
+
+      if (parsed.action === "add") {
+        deps.runtimeConfig.setGroupChatAllowlist([...currentAllowlist, ...chatIds]);
+      } else {
+        const removedChatIds = new Set(chatIds);
+        deps.runtimeConfig.setGroupChatAllowlist(currentAllowlist.filter((chatId) => !removedChatIds.has(chatId)));
+      }
+
+      const summary = changedChatIds.length > 0
+        ? `✅ 已${parsed.action === "add" ? "加入" : "移出"}群白名单：${changedChatIds.join(", ")}`
+        : parsed.action === "add"
+          ? `这些群本来就在白名单里：${chatIds.join(", ")}`
+          : `这些群本来就不在白名单里：${chatIds.join(", ")}`;
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupAllowlistReply(deps.runtimeConfig.getGroupChatAllowlist(), currentChatId, summary),
+      );
+      return;
+    }
+
+    if (parsed.kind === "show-keywords") {
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupKeywordsReply(deps.runtimeConfig.getGroupMessageKeywords()),
+      );
+      return;
+    }
+
+    if (parsed.kind === "set-keywords") {
+      deps.runtimeConfig.setGroupMessageKeywords(parsed.keywords);
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupKeywordsReply(
+          deps.runtimeConfig.getGroupMessageKeywords(),
+          `✅ 已更新群关键词：${deps.runtimeConfig.getGroupMessageKeywords().join(" ")}`,
+        ),
+      );
+      return;
+    }
+
+    deps.runtimeConfig.setGroupMessageKeywords([]);
+    await sendCommandReply(
+      identity,
+      conversationTarget,
+      formatGroupKeywordsReply([], "✅ 已清空群关键词。"),
+    );
+  }
+
   async function handleToolsCommand(
     identity: UserIdentity,
     command: BridgeCommand,
@@ -1026,6 +1181,233 @@ function formatToolsActionReply(
   }
   lines.push(`当前启用（${activeTools.length}/${allToolNames.length}）：${activeTools.join(", ") || "（无）"}`, "", "查看详情：/tools");
   return lines.join("\n");
+}
+
+type GroupChatPolicy = Config["FEISHU_GROUP_CHAT_POLICY"];
+type GroupMessageMode = Config["FEISHU_GROUP_MESSAGE_MODE"];
+
+type ParsedGroupCommand =
+  | { kind: "show"; error?: undefined }
+  | { kind: "set-policy"; policy: GroupChatPolicy; error?: undefined }
+  | { kind: "set-mode"; mode: GroupMessageMode; error?: undefined }
+  | { kind: "show-allowlist"; error?: undefined }
+  | { kind: "edit-allowlist"; action: "add" | "remove"; targets: string[]; error?: undefined }
+  | { kind: "show-keywords"; error?: undefined }
+  | { kind: "set-keywords"; keywords: string[]; error?: undefined }
+  | { kind: "clear-keywords"; error?: undefined }
+  | { kind?: undefined; error: string };
+
+function parseGroupArgs(args: string): ParsedGroupCommand {
+  const trimmed = args.trim();
+  if (!trimmed) {
+    return { kind: "show" };
+  }
+
+  const policyMatched = trimmed.match(/^policy\s+(disabled|allowlist|open)$/i);
+  if (policyMatched) {
+    return {
+      kind: "set-policy",
+      policy: policyMatched[1]!.toLowerCase() as GroupChatPolicy,
+    };
+  }
+
+  const modeMatched = trimmed.match(/^mode\s+(mention|all|keyword)$/i);
+  if (modeMatched) {
+    return {
+      kind: "set-mode",
+      mode: modeMatched[1]!.toLowerCase() as GroupMessageMode,
+    };
+  }
+
+  if (/^allowlist\s+show$/i.test(trimmed)) {
+    return { kind: "show-allowlist" };
+  }
+
+  const allowlistMatched = trimmed.match(/^allowlist\s+(add|remove)\s+(.+)$/i);
+  if (allowlistMatched) {
+    const targets = allowlistMatched[2]!.trim().split(/\s+/).filter(Boolean);
+    if (targets.length === 0) {
+      return { error: formatGroupUsage() };
+    }
+    return {
+      kind: "edit-allowlist",
+      action: allowlistMatched[1]!.toLowerCase() as "add" | "remove",
+      targets,
+    };
+  }
+
+  if (/^keywords\s+show$/i.test(trimmed)) {
+    return { kind: "show-keywords" };
+  }
+
+  if (/^keywords\s+clear$/i.test(trimmed)) {
+    return { kind: "clear-keywords" };
+  }
+
+  const keywordsMatched = trimmed.match(/^keywords\s+set\s+(.+)$/i);
+  if (keywordsMatched) {
+    const keywords = keywordsMatched[1]!.trim().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) {
+      return { error: "请至少给一个关键词。\n\n用法：/group keywords set <关键词...>" };
+    }
+    return {
+      kind: "set-keywords",
+      keywords,
+    };
+  }
+
+  return { error: formatGroupUsage() };
+}
+
+function formatGroupUsage(): string {
+  return [
+    "用法：/group",
+    "/group policy disabled|allowlist|open",
+    "/group mode mention|all|keyword",
+    "/group allowlist show",
+    "/group allowlist add here|<chat_id...>",
+    "/group allowlist remove here|<chat_id...>",
+    "/group keywords show",
+    "/group keywords set <关键词...>",
+    "/group keywords clear",
+  ].join("\n");
+}
+
+function getCurrentGroupChatId(conversationTarget?: ConversationTarget): string | undefined {
+  if (!conversationTarget) {
+    return undefined;
+  }
+  return conversationTarget.kind === "group" || conversationTarget.kind === "thread"
+    ? conversationTarget.chatId
+    : undefined;
+}
+
+function resolveGroupAllowlistTargets(
+  rawTargets: string[],
+  currentChatId?: string,
+): { ok: true; chatIds: string[] } | { ok: false; error: string } {
+  const normalizedTargets = rawTargets.map((target) => target.trim()).filter(Boolean);
+  if (normalizedTargets.length === 0) {
+    return { ok: false, error: formatGroupUsage() };
+  }
+
+  const chatIds = normalizedTargets.map((target) => {
+    if (target.toLowerCase() !== "here") {
+      return target;
+    }
+    return currentChatId;
+  });
+
+  if (chatIds.some((chatId) => !chatId)) {
+    return {
+      ok: false,
+      error: "这里只有在群里用才知道当前 chat_id；私聊里请改成 /group allowlist add <chat_id> 或 /group allowlist remove <chat_id>。",
+    };
+  }
+
+  return {
+    ok: true,
+    chatIds: dedupeToolNames(chatIds as string[]),
+  };
+}
+
+function formatGroupSettingsReply(
+  settings: {
+    policy: GroupChatPolicy;
+    mode: GroupMessageMode;
+    allowlist: string[];
+    keywords: string[];
+  },
+  currentChatId?: string,
+  summary?: string,
+): string {
+  const lines: string[] = [];
+  if (summary) {
+    lines.push(summary, "");
+  }
+
+  lines.push(
+    "👥 群聊设置",
+    `群聊开关：${settings.policy}`,
+    `触发方式：${settings.mode}`,
+    `白名单：${settings.allowlist.length} 个`,
+    `关键词：${settings.keywords.length > 0 ? settings.keywords.join(" ") : "（无）"}`,
+  );
+  if (currentChatId) {
+    lines.push(
+      `当前群：${currentChatId}${settings.allowlist.includes(currentChatId) ? "（已在白名单）" : "（未在白名单）"}`,
+    );
+  }
+
+  const warning = formatGroupSettingsWarning(settings);
+  if (warning) {
+    lines.push("", warning);
+  }
+
+  lines.push(
+    "",
+    "查看白名单：/group allowlist show",
+    "查看关键词：/group keywords show",
+  );
+  return lines.join("\n");
+}
+
+function formatGroupAllowlistReply(allowlist: string[], currentChatId?: string, summary?: string): string {
+  const lines: string[] = [];
+  if (summary) {
+    lines.push(summary, "");
+  }
+
+  lines.push(`📋 群白名单（${allowlist.length}）`);
+  if (allowlist.length === 0) {
+    lines.push("（空）");
+  } else {
+    lines.push(...allowlist.map((chatId, index) => `${index + 1}. ${chatId}`));
+  }
+
+  if (currentChatId) {
+    lines.push("", `当前群：${currentChatId}${allowlist.includes(currentChatId) ? "（已在白名单）" : "（未在白名单）"}`);
+  }
+
+  lines.push(
+    "",
+    "添加：/group allowlist add here|<chat_id...>",
+    "移除：/group allowlist remove here|<chat_id...>",
+  );
+  return lines.join("\n");
+}
+
+function formatGroupKeywordsReply(keywords: string[], summary?: string): string {
+  const lines: string[] = [];
+  if (summary) {
+    lines.push(summary, "");
+  }
+
+  lines.push(`🏷️ 群关键词（${keywords.length}）`);
+  if (keywords.length === 0) {
+    lines.push("（空）");
+  } else {
+    lines.push(keywords.join(" "));
+  }
+  lines.push("", "设置：/group keywords set <关键词...>", "清空：/group keywords clear");
+  return lines.join("\n");
+}
+
+function formatGroupSettingsWarning(settings: {
+  policy: GroupChatPolicy;
+  mode: GroupMessageMode;
+  allowlist: string[];
+  keywords: string[];
+}): string | undefined {
+  if (settings.policy === "allowlist" && settings.allowlist.length === 0) {
+    return "提醒：当前是 allowlist，但白名单还是空的，群消息会继续被忽略。";
+  }
+
+  if (settings.mode === "keyword" && settings.keywords.length === 0) {
+    return "提醒：当前是 keyword，但还没设关键词，群消息会继续被忽略。";
+  }
+
+  return undefined;
 }
 
 function parseSettingsArgs(
