@@ -153,7 +153,7 @@ describe("command service group", () => {
         "关键词：（无）\n" +
         "当前群：oc_1（已在白名单）\n" +
         "\n" +
-        "提醒：当前是 keyword，但还没设关键词，群消息会继续被忽略。\n" +
+        "提醒：还没设置关键词，普通消息不会触发；@ 机器人仍可使用。\n" +
         "\n" +
         "查看白名单：/group allowlist show\n" +
         "查看关键词：/group keywords show",

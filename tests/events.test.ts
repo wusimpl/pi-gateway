@@ -185,7 +185,7 @@ describe("isSupportedFeishuMessage", () => {
     })).toBe(true);
   });
 
-  it("keyword 模式未配置关键词时应忽略消息", () => {
+  it("keyword 模式未配置关键词时应忽略普通消息", () => {
     expect(isSupportedFeishuMessage({
       ...baseEvent,
       message: {
@@ -197,6 +197,21 @@ describe("isSupportedFeishuMessage", () => {
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: [],
     })).toBe(false);
+  });
+
+  it("keyword 模式未配置关键词时仍应允许 @ 机器人", () => {
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        content: '{"text":"@Pi /group mode mention"}',
+        mentions: [{ key: "@_user_1", id: { openId: "ou_bot_1" }, name: "Pi" }],
+      },
+    }, {
+      ...baseConfig,
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: [],
+    })).toBe(true);
   });
 });
 

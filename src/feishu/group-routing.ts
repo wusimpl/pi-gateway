@@ -55,13 +55,14 @@ export function isSupportedFeishuMessage(
   }
 
   if (config.FEISHU_GROUP_MESSAGE_MODE === "keyword") {
-    const matched = containsConfiguredKeyword(event, config.FEISHU_GROUP_MESSAGE_KEYWORDS);
-    if (!matched) {
-      logger.debug("忽略飞书群消息：keyword 模式下未命中关键词", {
+    const mentioned = isBotMentioned(event, config.FEISHU_BOT_OPEN_ID);
+    const matchedKeyword = containsConfiguredKeyword(event, config.FEISHU_GROUP_MESSAGE_KEYWORDS);
+    if (!mentioned && !matchedKeyword) {
+      logger.debug("忽略飞书群消息：keyword 模式下未 @ 机器人且未命中关键词", {
         chatId: event.message.chatId,
       });
     }
-    return matched;
+    return mentioned || matchedKeyword;
   }
 
   const mentioned = isBotMentioned(event, config.FEISHU_BOT_OPEN_ID);

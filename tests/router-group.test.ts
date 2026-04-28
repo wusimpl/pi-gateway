@@ -105,6 +105,44 @@ describe("createMessageRouter 群聊入口", () => {
     );
   });
 
+  it("keyword 模式未配置关键词时仍允许 @ 机器人执行群命令", async () => {
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: [],
+      FEISHU_BOT_OPEN_ID: "ou_bot_1",
+      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
+    });
+    deps.parseMessageEvent.mockReturnValue({
+      ...groupEvent,
+      message: {
+        ...groupEvent.message,
+        content: '{"text":"@Pi /group mode mention"}',
+        mentions: [{ key: "@_user_1", id: { openId: "ou_bot_1" }, name: "Pi" }],
+      },
+    } as any);
+    deps.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: groupTarget,
+      messageId: "om_group_mention_command",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/group mode mention"}',
+      text: "/group mode mention",
+    });
+    const router = createMessageRouter(deps as any);
+
+    await router.handleFeishuMessage({});
+
+    expect(deps.commandService.handleBridgeCommand).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "group", args: "mode mention" },
+      groupTarget,
+    );
+  });
+
   it("群聊普通成员只能执行公开命令", async () => {
     const deps = createDeps({
       FEISHU_GROUP_CHAT_POLICY: "open",

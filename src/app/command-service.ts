@@ -1517,7 +1517,7 @@ function formatGroupSettingsWarning(settings: {
   }
 
   if (settings.mode === "keyword" && settings.keywords.length === 0) {
-    return "提醒：当前是 keyword，但还没设关键词，群消息会继续被忽略。";
+    return "提醒：还没设置关键词，普通消息不会触发；@ 机器人仍可使用。";
   }
 
   return undefined;
