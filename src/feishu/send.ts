@@ -29,13 +29,15 @@ import type { ConversationReceiveIdType, ConversationTarget } from "../conversat
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
 const MAX_FEISHU_FILE_SIZE_BYTES = 30 * 1024 * 1024;
+const MAX_FEISHU_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const FEISHU_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".tiff", ".tif", ".bmp", ".ico"]);
 // 飞书会把“旧文本是新文本前缀”的更新做成打字机效果；工具区用零宽字符打断前缀关系，保持即时上屏。
 const INSTANT_TOOL_UPDATE_SEED = "\u200D";
 const INSTANT_TOOL_UPDATE_MARKERS = ["\u200B", "\u200C"];
 
 export { chunkText } from "./text.js";
 
-export type FeishuMessageType = "text" | "post" | "interactive" | "file";
+export type FeishuMessageType = "text" | "post" | "interactive" | "file" | "image";
 export type FeishuUploadFileType = "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream";
 
 export interface SendLocalFileInput {
@@ -50,6 +52,12 @@ export interface SentFeishuFile {
   messageId: string | null;
 }
 
+export interface SentFeishuImage {
+  imageKey: string;
+  fileName: string;
+  messageId: string | null;
+}
+
 export interface FeishuApiClient {
   im: {
     file: {
@@ -61,6 +69,14 @@ export interface FeishuApiClient {
           file: Buffer | ReadStream;
         };
       }): Promise<{ file_key?: string | null } | null>;
+    };
+    image: {
+      create(args: {
+        data: {
+          image_type: "message" | "avatar";
+          image: Buffer | ReadStream;
+        };
+      }): Promise<{ image_key?: string | null } | null>;
     };
     message: {
       create(args: {
@@ -146,6 +162,7 @@ export interface FeishuMessenger {
   sendRenderedMessage(openId: string, text: string, textChunkLimit: number): Promise<void>;
   sendRenderedMessageToTarget(target: ConversationTarget, text: string, textChunkLimit: number): Promise<void>;
   sendLocalFileMessage(target: FeishuMessageRecipient, input: SendLocalFileInput): Promise<SentFeishuFile>;
+  sendLocalImageMessage(target: FeishuMessageRecipient, input: SendLocalFileInput): Promise<SentFeishuImage>;
   sendDocPreviewCard(target: FeishuMessageRecipient, input: FeishuDocPreviewCardInput): Promise<string | null>;
   startStreamingMessage(
     target: FeishuMessageRecipient,
@@ -374,6 +391,67 @@ export function createFeishuMessenger(
       fileKey,
       fileName,
       fileType,
+      messageId,
+    };
+  }
+
+  async function sendLocalImageMessage(
+    targetOrOpenId: FeishuMessageRecipient,
+    input: SendLocalFileInput,
+  ): Promise<SentFeishuImage> {
+    const target = resolveMessageTarget(targetOrOpenId);
+    const fileStats = await stat(input.path);
+    if (!fileStats.isFile()) {
+      throw new Error(`要发送的路径不是文件: ${input.path}`);
+    }
+    if (fileStats.size <= 0) {
+      throw new Error(`飞书不允许发送空图片: ${input.path}`);
+    }
+    if (fileStats.size > MAX_FEISHU_IMAGE_SIZE_BYTES) {
+      throw new Error(`图片超过飞书 10MB 限制: ${input.path}`);
+    }
+
+    const fileName = input.fileName?.trim() || basename(input.path);
+    if (!fileName) {
+      throw new Error(`无法确定图片名: ${input.path}`);
+    }
+    if (!isFeishuImageFileName(fileName) && !isFeishuImageFileName(input.path)) {
+      throw new Error(`飞书图片消息不支持该文件类型: ${input.path}`);
+    }
+
+    const uploadResp = await retryRequest("飞书图片上传", {
+      receiveIdType: target.receiveIdType,
+      receiveId: target.receiveId,
+      path: input.path,
+      fileName,
+    }, () =>
+      client.im.image.create({
+        data: {
+          image_type: "message",
+          image: createReadStream(input.path),
+        },
+      }));
+    const imageKey = uploadResp?.image_key?.trim();
+    if (!imageKey) {
+      throw new Error(`飞书图片上传成功但未返回 image_key: ${input.path}`);
+    }
+
+    const messageId = await sendFeishuMessageToTarget(target, "image", { image_key: imageKey });
+    if (!messageId) {
+      throw new Error(`飞书图片消息发送失败: ${fileName}`);
+    }
+
+    logger.debug("飞书图片已发送", {
+      receiveIdType: target.receiveIdType,
+      receiveId: target.receiveId,
+      path: input.path,
+      fileName,
+      imageKey,
+      messageId,
+    });
+    return {
+      imageKey,
+      fileName,
       messageId,
     };
   }
@@ -625,6 +703,7 @@ export function createFeishuMessenger(
     sendRenderedMessage,
     sendRenderedMessageToTarget,
     sendLocalFileMessage,
+    sendLocalImageMessage,
     sendDocPreviewCard,
     startStreamingMessage,
     addProcessingReaction,
@@ -699,6 +778,13 @@ export async function sendLocalFileMessage(
   return getDefaultFeishuMessenger().sendLocalFileMessage(target, input);
 }
 
+export async function sendLocalImageMessage(
+  target: FeishuMessageRecipient,
+  input: SendLocalFileInput,
+): Promise<SentFeishuImage> {
+  return getDefaultFeishuMessenger().sendLocalImageMessage(target, input);
+}
+
 export async function sendDocPreviewCard(
   target: FeishuMessageRecipient,
   input: FeishuDocPreviewCardInput,
@@ -755,6 +841,10 @@ function inferFeishuUploadFileType(fileName: string): FeishuUploadFileType {
     default:
       return "stream";
   }
+}
+
+export function isFeishuImageFileName(fileName: string): boolean {
+  return FEISHU_IMAGE_EXTENSIONS.has(extname(fileName).toLowerCase());
 }
 
 async function cacheQuotedMessage(

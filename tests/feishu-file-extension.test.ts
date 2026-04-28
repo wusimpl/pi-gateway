@@ -15,6 +15,11 @@ function collectTools(
       fileType: "stream",
       messageId: "om_file_1",
     }),
+    sendLocalImageMessage: vi.fn().mockResolvedValue({
+      imageKey: "img_1",
+      fileName: "预览.png",
+      messageId: "om_image_1",
+    }),
     ...messengerOverrides,
   };
 
@@ -38,15 +43,38 @@ function createToolContext(cwd: string) {
 }
 
 describe("feishu files extension", () => {
-  it("会注册发送飞书文件工具", () => {
+  it("会注册发送飞书图片和文件工具", () => {
     const { tools } = collectTools();
 
-    expect(tools.map((tool) => tool.name)).toEqual(["feishu_file_send"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["feishu_image_send", "feishu_file_send"]);
+  });
+
+  it("图片工具会把本地图片发成可直接查看的飞书图片", async () => {
+    const { tools, messenger } = collectTools();
+    const sendTool = tools.find((tool) => tool.name === "feishu_image_send");
+
+    const result = await sendTool.execute(
+      "call-1",
+      { path: "exports/preview.png" },
+      undefined,
+      undefined,
+      createToolContext("/tmp/workspace/ou_1"),
+    );
+
+    expect(messenger.sendLocalImageMessage).toHaveBeenCalledWith("ou_1", {
+      path: "/tmp/workspace/ou_1/exports/preview.png",
+      fileName: undefined,
+    });
+    expect(result.details).toMatchObject({
+      image_key: "img_1",
+      message_id: "om_image_1",
+    });
+    expect(messenger.sendLocalFileMessage).not.toHaveBeenCalled();
   });
 
   it("会把 camelCase 文件名兼容成 snake_case，并按 workspace 解析相对路径", async () => {
     const { tools, messenger } = collectTools();
-    const sendTool = tools[0];
+    const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
 
     const prepared = sendTool.prepareArguments({
       path: "exports/report.txt",
@@ -81,7 +109,7 @@ describe("feishu files extension", () => {
       },
       conversationTarget: target,
     }));
-    const sendTool = tools[0];
+    const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
 
     const result = await sendTool.execute(
       "call-1",
@@ -101,9 +129,32 @@ describe("feishu files extension", () => {
     });
   });
 
+  it("文件工具误传图片时会自动改成图片发送", async () => {
+    const { tools, messenger } = collectTools();
+    const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
+
+    const result = await sendTool.execute(
+      "call-1",
+      { path: "exports/chart.webp" },
+      undefined,
+      undefined,
+      createToolContext("/tmp/workspace/ou_1"),
+    );
+
+    expect(messenger.sendLocalImageMessage).toHaveBeenCalledWith("ou_1", {
+      path: "/tmp/workspace/ou_1/exports/chart.webp",
+      fileName: undefined,
+    });
+    expect(messenger.sendLocalFileMessage).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      image_key: "img_1",
+      sent_as: "image",
+    });
+  });
+
   it("越出 workspace 的路径会被直接拦住", async () => {
     const { tools, messenger } = collectTools();
-    const sendTool = tools[0];
+    const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
 
     await expect(
       sendTool.execute(
@@ -115,11 +166,12 @@ describe("feishu files extension", () => {
       ),
     ).rejects.toThrow("只能发送当前 workspace 里的文件");
     expect(messenger.sendLocalFileMessage).not.toHaveBeenCalled();
+    expect(messenger.sendLocalImageMessage).not.toHaveBeenCalled();
   });
 
   it("当前 workspace 没有关联到用户时会报错", async () => {
     const { tools, messenger } = collectTools(undefined, () => null);
-    const sendTool = tools[0];
+    const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
 
     await expect(
       sendTool.execute(
@@ -131,5 +183,6 @@ describe("feishu files extension", () => {
       ),
     ).rejects.toThrow("当前 workspace 没有关联到飞书用户");
     expect(messenger.sendLocalFileMessage).not.toHaveBeenCalled();
+    expect(messenger.sendLocalImageMessage).not.toHaveBeenCalled();
   });
 });

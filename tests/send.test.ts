@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockFileCreate = vi.fn();
+const mockImageCreate = vi.fn();
 const mockCreate = vi.fn();
 const mockReactionCreate = vi.fn();
 const mockReactionDelete = vi.fn();
@@ -22,6 +23,9 @@ vi.mock("../src/feishu/client.js", () => ({
     im: {
       file: {
         create: mockFileCreate,
+      },
+      image: {
+        create: mockImageCreate,
       },
       message: {
         create: mockCreate,
@@ -52,6 +56,7 @@ describe("send helpers", () => {
   beforeEach(() => {
     vi.resetModules();
     mockFileCreate.mockReset();
+    mockImageCreate.mockReset();
     mockCreate.mockReset();
     mockReactionCreate.mockReset();
     mockReactionDelete.mockReset();
@@ -230,6 +235,71 @@ describe("send helpers", () => {
         receive_id: "oc_1",
         msg_type: "file",
         content: JSON.stringify({ file_key: "file_v2_group_1" }),
+      },
+    });
+  });
+
+  it("sendLocalImageMessage: 应先上传图片，再发送 image 消息", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-gateway-send-image-"));
+    tempDirs.push(dir);
+    const filePath = join(dir, "preview.png");
+    await writeFile(filePath, "image-bytes", "utf-8");
+
+    mockImageCreate.mockResolvedValue({ image_key: "img_1" });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_image_1" } });
+    const { sendLocalImageMessage } = await import("../src/feishu/send.js");
+
+    await expect(sendLocalImageMessage("ou_1", { path: filePath })).resolves.toEqual({
+      imageKey: "img_1",
+      fileName: "preview.png",
+      messageId: "om_image_1",
+    });
+    expect(mockImageCreate).toHaveBeenCalledWith({
+      data: {
+        image_type: "message",
+        image: expect.anything(),
+      },
+    });
+    expect(mockCreate).toHaveBeenCalledWith({
+      params: { receive_id_type: "open_id" },
+      data: {
+        receive_id: "ou_1",
+        msg_type: "image",
+        content: JSON.stringify({ image_key: "img_1" }),
+      },
+    });
+  });
+
+  it("sendLocalImageMessage: 群聊目标应使用 chat_id 发送 image 消息", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-gateway-send-image-group-"));
+    tempDirs.push(dir);
+    const filePath = join(dir, "chart.webp");
+    await writeFile(filePath, "image-bytes", "utf-8");
+
+    mockImageCreate.mockResolvedValue({ image_key: "img_group_1" });
+    mockCreate.mockResolvedValue({ data: { message_id: "om_image_group_1" } });
+    const { sendLocalImageMessage } = await import("../src/feishu/send.js");
+
+    await expect(sendLocalImageMessage(
+      {
+        kind: "group",
+        key: "oc_1",
+        receiveIdType: "chat_id",
+        receiveId: "oc_1",
+        chatId: "oc_1",
+      },
+      { path: filePath },
+    )).resolves.toMatchObject({
+      imageKey: "img_group_1",
+      messageId: "om_image_group_1",
+    });
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      params: { receive_id_type: "chat_id" },
+      data: {
+        receive_id: "oc_1",
+        msg_type: "image",
+        content: JSON.stringify({ image_key: "img_group_1" }),
       },
     });
   });
