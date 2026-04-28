@@ -26,6 +26,7 @@ import {
 } from "../pi/sessions.js";
 import { getConversationWorkspaceDir, getUserWorkspaceDir } from "../pi/workspace.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
+import { createGroupSettingsStore, type GroupSettingsStore } from "../storage/group-settings.js";
 import { readUserState } from "../storage/users.js";
 import { createP2PConversationTarget, getConversationTargetKey } from "../conversation.js";
 import {
@@ -74,10 +75,13 @@ interface MessageRouterDeps {
   >;
   promptService: Pick<PromptService, "handleUserPrompt" | "queueRunningPrompt">;
   config?: Partial<Config>;
+  groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig">;
   runtimeConfig?: Pick<RuntimeConfigStore, "getGroupRoutingConfig">;
   parseMessageEvent?: typeof parseMessageEvent;
   isSupportedP2PMessage?: typeof isSupportedP2PMessage;
-  isSupportedMessage?: (event: ReturnType<typeof parseMessageEvent> extends infer T ? NonNullable<T> : never) => boolean;
+  isSupportedMessage?: (
+    event: ReturnType<typeof parseMessageEvent> extends infer T ? NonNullable<T> : never,
+  ) => boolean | Promise<boolean>;
   normalizeFeishuInboundMessage?: typeof normalizeFeishuInboundMessage;
 }
 
@@ -93,6 +97,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
   const isSupportedMessage = deps.isSupportedMessage
     ?? createSupportedMessagePredicate(
       deps.config,
+      deps.groupSettingsStore,
       deps.runtimeConfig,
       deps.isSupportedP2PMessage ?? isSupportedP2PMessage,
     );
@@ -104,7 +109,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     const event = parseEvent(data);
     if (!event) return;
 
-    if (!isSupportedMessage(event)) return;
+    if (!await isSupportedMessage(event)) return;
 
     const message = normalizeMessage(event);
     if (!message) return;
@@ -270,16 +275,32 @@ function createTextPromptMessage(message: FeishuInboundMessage, text: string): F
 
 function createSupportedMessagePredicate(
   config: Partial<Config> | undefined,
+  groupSettingsStore: Pick<GroupSettingsStore, "readGroupRoutingConfig"> | undefined,
   runtimeConfig: Pick<RuntimeConfigStore, "getGroupRoutingConfig"> | undefined,
   fallback: typeof isSupportedP2PMessage,
-): (event: NonNullable<ReturnType<typeof parseMessageEvent>>) => boolean {
-  if (!runtimeConfig && !config?.FEISHU_GROUP_CHAT_POLICY) {
-    return fallback;
+): (event: NonNullable<ReturnType<typeof parseMessageEvent>>) => Promise<boolean> {
+  if (!groupSettingsStore && !runtimeConfig && !config?.FEISHU_GROUP_CHAT_POLICY) {
+    return async (event) => fallback(event);
   }
 
-  return (event) => {
+  return async (event) => {
     if (event.message.chatType !== "group") {
       return fallback(event);
+    }
+
+    if (groupSettingsStore) {
+      const persisted = await groupSettingsStore.readGroupRoutingConfig(event.message.chatId);
+      const defaultConfig = runtimeConfig?.getGroupRoutingConfig?.() ?? config;
+      if (persisted) {
+        return isSupportedFeishuMessage(event, {
+          ...persisted,
+          FEISHU_BOT_OPEN_ID: defaultConfig?.FEISHU_BOT_OPEN_ID,
+        } as Config);
+      }
+      if (defaultConfig?.FEISHU_GROUP_CHAT_POLICY) {
+        return isSupportedFeishuMessage(event, defaultConfig as Config);
+      }
+      return false;
     }
 
     if (runtimeConfig) {
@@ -293,8 +314,10 @@ let defaultRouter: MessageRouter | null = null;
 
 export function initRouter(cfg: Config): void {
   const runtimeConfig = createRuntimeConfigStore(cfg);
+  const groupSettingsStore = createGroupSettingsStore(cfg.DATA_DIR ?? "./data");
   const commandService = createCommandService({
     config: cfg,
+    groupSettingsStore,
     runtimeConfig,
     messenger: {
       sendRenderedMessage: (...args) => sendRenderedMessage(...args),
@@ -378,6 +401,7 @@ export function initRouter(cfg: Config): void {
     commandService,
     promptService,
     config: cfg,
+    groupSettingsStore,
     runtimeConfig,
   });
 }

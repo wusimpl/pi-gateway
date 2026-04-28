@@ -36,6 +36,7 @@ import { createSkillStatsStore } from "./pi/skill-stats.js";
 import { createPromptRunner } from "./pi/stream.js";
 import { setQuotedMessageDataDir } from "./storage/quoted-messages.js";
 import { createConversationStateStore } from "./storage/conversations.js";
+import { createGroupSettingsStore } from "./storage/group-settings.js";
 import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
 import { createRuntimeConfigStore } from "./app/runtime-config.js";
@@ -67,6 +68,7 @@ async function main() {
   const runtimeConfig = createRuntimeConfigStore(config);
   const userStateStore = createUserStateStore(config.DATA_DIR);
   const conversationStateStore = createConversationStateStore(config.DATA_DIR);
+  const groupSettingsStore = createGroupSettingsStore(config.DATA_DIR);
   const workspaceService = createWorkspaceService(config.PI_WORKSPACE_ROOT);
   const skillStatsStore = createSkillStatsStore(config.DATA_DIR);
 
@@ -178,6 +180,7 @@ async function main() {
     deferredCronRunService,
     runtimeConfig,
     skillStatsStore,
+    groupSettingsStore,
   });
   const promptService = createPromptService({
     config,
@@ -202,6 +205,7 @@ async function main() {
     commandService,
     promptService,
     config,
+    groupSettingsStore,
     runtimeConfig,
   });
   logger.info("消息路由就绪");

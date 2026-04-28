@@ -87,6 +87,7 @@ const mocks = vi.hoisted(() => {
       acquireLock: vi.fn(),
       releaseLock: vi.fn(),
     })),
+    createGroupSettingsStore: vi.fn(() => ({})),
     createUserStateStore: vi.fn(() => ({})),
     createWorkspaceService: vi.fn(() => ({
       getUserWorkspaceDir: vi.fn(),
@@ -205,6 +206,10 @@ vi.mock("../src/storage/users.js", () => ({
   createUserStateStore: mocks.createUserStateStore,
 }));
 
+vi.mock("../src/storage/group-settings.js", () => ({
+  createGroupSettingsStore: mocks.createGroupSettingsStore,
+}));
+
 vi.mock("../src/storage/quoted-messages.js", () => ({
   setQuotedMessageDataDir: mocks.setQuotedMessageDataDir,
 }));
@@ -244,6 +249,7 @@ describe("index wiring", () => {
     mocks.createPromptService.mockClear();
     mocks.createMessageRouter.mockClear();
     mocks.createRuntimeStateStore.mockClear();
+    mocks.createGroupSettingsStore.mockClear();
     mocks.createUserStateStore.mockClear();
     mocks.setQuotedMessageDataDir.mockClear();
     mocks.createWorkspaceService.mockClear();
@@ -273,6 +279,7 @@ describe("index wiring", () => {
       }),
     );
     expect(mocks.createSkillStatsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
+    expect(mocks.createGroupSettingsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
     expect(mocks.createSkillStatsExtension).toHaveBeenCalledWith("skill-stats-store");
     expect(mocks.createCommandService.mock.calls[0]?.[0]?.skillStatsStore).toBe("skill-stats-store");
     expect(mocks.createCronRunner).toHaveBeenCalledTimes(1);

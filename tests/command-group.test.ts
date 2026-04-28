@@ -183,4 +183,50 @@ describe("command service group", () => {
       2000,
     );
   });
+
+  it("`/group keywords set \"pi\"` 不应把引号存进关键词", async () => {
+    const { service, messenger, runtimeConfig } = createDeps();
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "group", args: 'keywords set "pi"' },
+      groupTarget,
+    );
+
+    expect(runtimeConfig.getGroupMessageKeywords()).toEqual(["pi"]);
+    expect(messenger.sendRenderedMessageToTarget).toHaveBeenCalledWith(
+      groupTarget,
+      "✅ 已更新群关键词：pi\n" +
+        "\n" +
+        "🏷️ 群关键词（1）\n" +
+        "pi\n" +
+        "\n" +
+        "设置：/group keywords set <关键词...>\n" +
+        "清空：/group keywords clear",
+      2000,
+    );
+  });
+
+  it("`/group keywords set 日报 \"pi hi\"` 应把整段引号内容当一条关键词", async () => {
+    const { service, messenger, runtimeConfig } = createDeps();
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "group", args: 'keywords set 日报 "pi hi"' },
+      groupTarget,
+    );
+
+    expect(runtimeConfig.getGroupMessageKeywords()).toEqual(["日报", "pi hi"]);
+    expect(messenger.sendRenderedMessageToTarget).toHaveBeenCalledWith(
+      groupTarget,
+      "✅ 已更新群关键词：日报 \"pi hi\"\n" +
+        "\n" +
+        "🏷️ 群关键词（2）\n" +
+        "日报 \"pi hi\"\n" +
+        "\n" +
+        "设置：/group keywords set <关键词...>\n" +
+        "清空：/group keywords clear",
+      2000,
+    );
+  });
 });
