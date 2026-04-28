@@ -2,7 +2,7 @@ import type { ConversationTarget } from "../conversation.js";
 import type { UserIdentity } from "../types.js";
 import type { BridgeCommand } from "./commands.js";
 
-const GROUP_PUBLIC_COMMANDS = new Set(["tools", "skills", "status"]);
+const GROUP_PUBLIC_COMMANDS = new Set(["skills", "status"]);
 
 export function canRunBridgeCommand(
   identity: UserIdentity,
@@ -11,6 +11,10 @@ export function canRunBridgeCommand(
   ownerOpenIds: readonly string[],
 ): boolean {
   if (conversationTarget.kind === "p2p") {
+    return true;
+  }
+
+  if (command.name === "tools" && command.args.trim().length === 0) {
     return true;
   }
 

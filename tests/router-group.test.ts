@@ -193,6 +193,36 @@ describe("createMessageRouter 群聊入口", () => {
     }
   });
 
+  it("群聊普通成员不能修改 /tools", async () => {
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "all",
+      FEISHU_OWNER_OPEN_IDS: [],
+    });
+    const router = createMessageRouter(deps as any);
+
+    for (const command of ["/tools on read", "/tools off read", "/tools set read", "/tools reset"]) {
+      deps.commandService.handleBridgeCommand.mockClear();
+      deps.commandService.handleUnauthorizedBridgeCommand.mockClear();
+      deps.normalizeFeishuInboundMessage.mockReturnValue({
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        conversationTarget: groupTarget,
+        messageId: `om_group_tools_${command.replace(/\W+/g, "_")}`,
+        messageType: "text",
+        createTime: "123",
+        rawContent: JSON.stringify({ text: command }),
+        text: command,
+      });
+
+      await router.handleFeishuMessage({});
+
+      expect(deps.commandService.handleBridgeCommand).not.toHaveBeenCalled();
+      expect(deps.commandService.handleUnauthorizedBridgeCommand).toHaveBeenCalled();
+    }
+  });
+
   it("运行时切换群聊配置后，router 应立刻按新配置生效", async () => {
     const runtimeConfig = createRuntimeConfigStore({
       FEISHU_GROUP_CHAT_POLICY: "disabled",
