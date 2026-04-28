@@ -1,7 +1,7 @@
 import { normalizeFeishuInboundMessage } from "../feishu/inbound/normalize.js";
 import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
 import { parseMessageEvent, isSupportedP2PMessage } from "../feishu/events.js";
-import { isSupportedFeishuMessage } from "../feishu/group-routing.js";
+import { isSupportedFeishuMessage, type FeishuGroupRoutingConfig } from "../feishu/group-routing.js";
 import {
   addProcessingReaction,
   sendRenderedMessage,
@@ -101,6 +101,11 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       deps.runtimeConfig,
       deps.isSupportedP2PMessage ?? isSupportedP2PMessage,
     );
+  const resolveGroupRoutingConfig = createGroupRoutingConfigResolver(
+    deps.config,
+    deps.groupSettingsStore,
+    deps.runtimeConfig,
+  );
   const normalizeMessage = deps.normalizeFeishuInboundMessage ?? normalizeFeishuInboundMessage;
   const promptQueues = new Map<string, QueuedPrompt[]>();
   const drainingUsers = new Set<string>();
@@ -140,8 +145,11 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       ...buildMessageLogPayload(message),
     });
 
-    const hasSlashPrefix = message.kind === "text" && message.text.trim().startsWith("/");
-    const bridgeCommand = message.kind === "text" ? parseBridgeCommand(message.text) : null;
+    const commandText = message.kind === "text"
+      ? await normalizeKeywordPrefixedBridgeCommandText(message.text, event, resolveGroupRoutingConfig)
+      : undefined;
+    const hasSlashPrefix = commandText?.trim().startsWith("/") ?? false;
+    const bridgeCommand = commandText ? parseBridgeCommand(commandText) : null;
     if (bridgeCommand?.name === "next") {
       if (!canRunBridgeCommand(identity, bridgeCommand, conversationTarget, deps.config?.FEISHU_OWNER_OPEN_IDS ?? [])) {
         await deps.commandService.handleUnauthorizedBridgeCommand(identity, bridgeCommand, conversationTarget);
@@ -167,8 +175,8 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       return;
     }
 
-    if (hasSlashPrefix) {
-      await deps.commandService.handleUnsupportedSlashCommand(identity, message.text, conversationTarget);
+    if (hasSlashPrefix && commandText) {
+      await deps.commandService.handleUnsupportedSlashCommand(identity, commandText, conversationTarget);
       return;
     }
 
@@ -273,12 +281,105 @@ function createTextPromptMessage(message: FeishuInboundMessage, text: string): F
   };
 }
 
+type ParsedFeishuMessageEvent = NonNullable<ReturnType<typeof parseMessageEvent>>;
+type GroupRoutingConfigResolver = (event: ParsedFeishuMessageEvent) => Promise<FeishuGroupRoutingConfig | null>;
+
+function createGroupRoutingConfigResolver(
+  config: Partial<Config> | undefined,
+  groupSettingsStore: Pick<GroupSettingsStore, "readGroupRoutingConfig"> | undefined,
+  runtimeConfig: Pick<RuntimeConfigStore, "getGroupRoutingConfig"> | undefined,
+): GroupRoutingConfigResolver {
+  if (!groupSettingsStore && !runtimeConfig && !config?.FEISHU_GROUP_CHAT_POLICY) {
+    return async () => null;
+  }
+
+  return async (event) => {
+    if (event.message.chatType !== "group") {
+      return null;
+    }
+
+    if (groupSettingsStore) {
+      const persisted = await groupSettingsStore.readGroupRoutingConfig(event.message.chatId);
+      const defaultConfig = runtimeConfig?.getGroupRoutingConfig?.() ?? config;
+      if (persisted) {
+        return {
+          ...persisted,
+          FEISHU_BOT_OPEN_ID: defaultConfig?.FEISHU_BOT_OPEN_ID,
+        } as FeishuGroupRoutingConfig;
+      }
+      return defaultConfig?.FEISHU_GROUP_CHAT_POLICY
+        ? defaultConfig as FeishuGroupRoutingConfig
+        : null;
+    }
+
+    if (runtimeConfig) {
+      return runtimeConfig.getGroupRoutingConfig();
+    }
+
+    return config?.FEISHU_GROUP_CHAT_POLICY
+      ? config as FeishuGroupRoutingConfig
+      : null;
+  };
+}
+
+async function normalizeKeywordPrefixedBridgeCommandText(
+  text: string,
+  event: ParsedFeishuMessageEvent,
+  resolveGroupRoutingConfig: GroupRoutingConfigResolver,
+): Promise<string> {
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith("/") || event.message.chatType !== "group") {
+    return text;
+  }
+
+  const config = await resolveGroupRoutingConfig(event);
+  if (config?.FEISHU_GROUP_MESSAGE_MODE !== "keyword") {
+    return text;
+  }
+
+  return stripLeadingKeywordBeforeCommand(trimmed, config.FEISHU_GROUP_MESSAGE_KEYWORDS) ?? text;
+}
+
+function stripLeadingKeywordBeforeCommand(text: string, keywords: readonly string[]): string | null {
+  const normalizedKeywords = keywords
+    .map((keyword) => keyword.trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+
+  for (const keyword of normalizedKeywords) {
+    const remaining = stripKeywordPrefix(text, keyword);
+    if (remaining?.trimStart().startsWith("/")) {
+      return remaining.trimStart();
+    }
+  }
+
+  return null;
+}
+
+function stripKeywordPrefix(text: string, keyword: string): string | null {
+  if (!text.toLowerCase().startsWith(keyword.toLowerCase())) {
+    return null;
+  }
+
+  const remaining = text.slice(keyword.length);
+  if (isAsciiKeyword(keyword) && /^[a-z0-9_-]/i.test(remaining)) {
+    return null;
+  }
+
+  return remaining;
+}
+
+function isAsciiKeyword(keyword: string): boolean {
+  return /^[a-z0-9][a-z0-9_-]*$/i.test(keyword);
+}
+
 function createSupportedMessagePredicate(
   config: Partial<Config> | undefined,
   groupSettingsStore: Pick<GroupSettingsStore, "readGroupRoutingConfig"> | undefined,
   runtimeConfig: Pick<RuntimeConfigStore, "getGroupRoutingConfig"> | undefined,
   fallback: typeof isSupportedP2PMessage,
 ): (event: NonNullable<ReturnType<typeof parseMessageEvent>>) => Promise<boolean> {
+  const resolveGroupRoutingConfig = createGroupRoutingConfigResolver(config, groupSettingsStore, runtimeConfig);
   if (!groupSettingsStore && !runtimeConfig && !config?.FEISHU_GROUP_CHAT_POLICY) {
     return async (event) => fallback(event);
   }
@@ -288,25 +389,10 @@ function createSupportedMessagePredicate(
       return fallback(event);
     }
 
-    if (groupSettingsStore) {
-      const persisted = await groupSettingsStore.readGroupRoutingConfig(event.message.chatId);
-      const defaultConfig = runtimeConfig?.getGroupRoutingConfig?.() ?? config;
-      if (persisted) {
-        return isSupportedFeishuMessage(event, {
-          ...persisted,
-          FEISHU_BOT_OPEN_ID: defaultConfig?.FEISHU_BOT_OPEN_ID,
-        } as Config);
-      }
-      if (defaultConfig?.FEISHU_GROUP_CHAT_POLICY) {
-        return isSupportedFeishuMessage(event, defaultConfig as Config);
-      }
-      return false;
-    }
-
-    if (runtimeConfig) {
-      return isSupportedFeishuMessage(event, runtimeConfig.getGroupRoutingConfig());
-    }
-    return isSupportedFeishuMessage(event, config as Config);
+    const groupRoutingConfig = await resolveGroupRoutingConfig(event);
+    return groupRoutingConfig
+      ? isSupportedFeishuMessage(event, groupRoutingConfig)
+      : false;
   };
 }
 

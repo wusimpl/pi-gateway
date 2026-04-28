@@ -105,6 +105,79 @@ describe("createMessageRouter 群聊入口", () => {
     );
   });
 
+  it("keyword 模式下以关键词开头的命令应按命令处理", async () => {
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: ["pi"],
+      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
+    });
+    deps.parseMessageEvent.mockReturnValue({
+      ...groupEvent,
+      message: {
+        ...groupEvent.message,
+        content: '{"text":"pi /new"}',
+      },
+    } as any);
+    deps.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: groupTarget,
+      messageId: "om_group_keyword_command",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"pi /new"}',
+      text: "pi /new",
+    });
+    const router = createMessageRouter(deps as any);
+
+    await router.handleFeishuMessage({});
+
+    expect(deps.commandService.handleBridgeCommand).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "new", args: "" },
+      groupTarget,
+    );
+    expect(deps.promptService.handleUserPrompt).not.toHaveBeenCalled();
+  });
+
+  it("keyword 模式下关键词不在开头时不应把文本里的命令当命令", async () => {
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: ["pi"],
+      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
+    });
+    deps.parseMessageEvent.mockReturnValue({
+      ...groupEvent,
+      message: {
+        ...groupEvent.message,
+        content: '{"text":"hello pi /new"}',
+      },
+    } as any);
+    deps.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: groupTarget,
+      messageId: "om_group_keyword_prompt",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"hello pi /new"}',
+      text: "hello pi /new",
+    });
+    const router = createMessageRouter(deps as any);
+
+    await router.handleFeishuMessage({});
+
+    expect(deps.commandService.handleBridgeCommand).not.toHaveBeenCalled();
+    expect(deps.promptService.handleUserPrompt).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      expect.objectContaining({ text: "hello pi /new" }),
+    );
+  });
+
   it("keyword 模式未配置关键词时仍允许 @ 机器人执行群命令", async () => {
     const deps = createDeps({
       FEISHU_GROUP_CHAT_POLICY: "open",
