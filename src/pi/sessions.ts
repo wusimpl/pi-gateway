@@ -27,7 +27,11 @@ interface SessionResult {
 }
 
 const TOOLS_CONFIG_ENTRY_TYPE = "tools-config";
+const GROUP_CHAT_CONTEXT_ENTRY_TYPE = "feishu-group-chat-context";
+const GROUP_CHAT_CONTEXT_MESSAGE =
+  "这是一个飞书群聊。不同消息可能来自不同群成员；每条用户消息前会标明发言人。回复会自动发送回当前群聊，直接回应当前发言人即可。";
 const defaultToolNamesBySession = new WeakMap<AgentSession, string[]>();
+const groupChatContextBySession = new WeakSet<AgentSession>();
 
 export interface ListedSession {
   order: number;
@@ -157,6 +161,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 
     const cached = sessionCache.get(scope.cacheKey);
     if (cached) {
+      ensureGroupChatContext(cached, scope);
       const state = await scope.readState();
       return {
         activeSessionId: state?.activeSessionId ?? "unknown",
@@ -171,6 +176,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         const session = await deps.runtime.openPiSession(state.piSessionFile, workspaceDir);
         applySavedToolSelection(session);
         applyUserPreferences(session, state?.thinkingLevel);
+        ensureGroupChatContext(session, scope);
         const activeSessionId = session.sessionId;
         sessionCache.set(scope.cacheKey, session);
         if (state.activeSessionId !== activeSessionId || state.piSessionFile !== session.sessionFile) {
@@ -204,6 +210,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         if (result) {
           applySavedToolSelection(result.session);
           applyUserPreferences(result.session, state?.thinkingLevel);
+          ensureGroupChatContext(result.session, scope);
           const activeSessionId = result.session.sessionId;
           sessionCache.set(scope.cacheKey, result.session);
           state.activeSessionId = activeSessionId;
@@ -256,6 +263,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const existing = await scope.readState();
     applySavedToolSelection(piSession);
     applyUserPreferences(piSession, existing?.thinkingLevel);
+    ensureGroupChatContext(piSession, scope);
     const newSessionId = piSession.sessionId;
     if (existing) {
       existing.activeSessionId = newSessionId;
@@ -352,6 +360,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const state = await scope.readState();
     applySavedToolSelection(piSession);
     applyUserPreferences(piSession, state?.thinkingLevel);
+    ensureGroupChatContext(piSession, scope);
     const activeSessionId = piSession.sessionId;
     sessionCache.set(scope.cacheKey, piSession);
 
@@ -462,6 +471,39 @@ function applyUserPreferences(
   }
 
   session.setThinkingLevel(thinkingLevel);
+}
+
+function ensureGroupChatContext(session: AgentSession, scope: Pick<SessionScope, "kind">): void {
+  if (scope.kind !== "group" && scope.kind !== "thread") {
+    return;
+  }
+  if (groupChatContextBySession.has(session)) {
+    return;
+  }
+
+  const sessionManager = session.sessionManager;
+  if (typeof sessionManager?.appendCustomMessageEntry !== "function") {
+    return;
+  }
+
+  if (
+    typeof sessionManager.getBranch === "function"
+    && sessionManager.getBranch().some((entry) => (
+      entry.type === "custom_message"
+      && entry.customType === GROUP_CHAT_CONTEXT_ENTRY_TYPE
+    ))
+  ) {
+    groupChatContextBySession.add(session);
+    return;
+  }
+
+  sessionManager.appendCustomMessageEntry(
+    GROUP_CHAT_CONTEXT_ENTRY_TYPE,
+    GROUP_CHAT_CONTEXT_MESSAGE,
+    false,
+    { scopeKind: scope.kind },
+  );
+  groupChatContextBySession.add(session);
 }
 
 function resolveTargetSession(sessions: ListedSession[], ref: string): ListedSession | null {

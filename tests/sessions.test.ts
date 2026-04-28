@@ -154,6 +154,55 @@ describe("session service", () => {
     expect(getWorkspaceIdentity("/tmp/workspace/conversations/oc_1")).toEqual(identity);
   });
 
+  it("为群目标创建 session 时写入一次群聊说明", async () => {
+    const deps = createDeps();
+    const conversationStateStore = {
+      readConversationState: vi.fn().mockResolvedValue(null),
+      writeConversationState: vi.fn().mockResolvedValue(undefined),
+      createConversationState: vi.fn().mockImplementation(async (_key: string, sessionId: string) => ({
+        activeSessionId: sessionId,
+        createdAt: "2026-04-15T00:00:00.000Z",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        lastActiveAt: "2026-04-15T00:00:00.000Z",
+      })),
+      touchConversationState: vi.fn().mockResolvedValue(undefined),
+      conversationSessionsDir: vi.fn().mockReturnValue("/tmp/conversations/oc_1/sessions"),
+    };
+    const appendCustomMessageEntry = vi.fn();
+    deps.runtime.createPiSession.mockResolvedValue({
+      sessionId: "pi-session-group",
+      sessionFile: "/tmp/conversations/oc_1/sessions/session.jsonl",
+      sessionManager: {
+        appendCustomMessageEntry,
+        getBranch: vi.fn().mockReturnValue([]),
+      },
+      dispose: vi.fn(),
+    });
+
+    const service = createSessionService({
+      ...deps,
+      conversationStateStore,
+    } as any);
+    const identity = { openId: "ou_1", userId: "u_1" };
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+
+    await service.createNewSessionForTarget(identity, target);
+
+    expect(appendCustomMessageEntry).toHaveBeenCalledTimes(1);
+    expect(appendCustomMessageEntry).toHaveBeenCalledWith(
+      "feishu-group-chat-context",
+      expect.stringContaining("飞书群聊"),
+      false,
+      { scopeKind: "group" },
+    );
+  });
+
   it("应列出用户最近会话并标记当前会话", async () => {
     const deps = createDeps();
     deps.userStateStore.readUserState.mockResolvedValue({

@@ -43,7 +43,6 @@ interface PromptServiceDeps {
     | "FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE"
     | "FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY"
     | "FEISHU_PROCESSING_REACTION_TYPE"
-    | "FEISHU_GROUP_MESSAGE_MODE"
     | "STREAMING_ENABLED"
     | "TEXT_CHUNK_LIMIT"
   > & Partial<Pick<Config, "FEISHU_STEERING_REACTION_TYPE">>;
@@ -71,6 +70,7 @@ interface PromptServiceDeps {
     | "getSteeringReactionType"
   >;
   deferredCronRunService?: Pick<DeferredCronRunService, "flush">;
+  resolveSenderName?: (identity: UserIdentity, conversationTarget: ConversationTarget) => Promise<string | null>;
 }
 
 export function createPromptService(deps: PromptServiceDeps): PromptService {
@@ -190,6 +190,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         return;
       }
 
+      const promptIdentity = await enrichGroupSenderIdentity(identity, conversationTarget);
       const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
       const processingReactionType = deps.runtimeConfig
         ? deps.runtimeConfig.getProcessingReactionType()
@@ -203,9 +204,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
         await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity, conversationTarget), {
           downloadResource: deps.downloadResource,
         }),
-        identity,
+        promptIdentity,
         conversationTarget,
-        deps.config.FEISHU_GROUP_MESSAGE_MODE,
       );
       if (deps.runtimeState.isStopRequested(conversationKey, messageId)) {
         logger.info("prompt 输入准备完成前收到停止请求，已跳过 prompt", { openId, conversationKey, messageId });
@@ -297,14 +297,14 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
     let promptText: string;
     try {
+      const promptIdentity = await enrichGroupSenderIdentity(identity, conversationTarget);
       const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
       const promptInput = addConversationPromptContext(
         await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity, conversationTarget), {
           downloadResource: deps.downloadResource,
         }),
-        identity,
+        promptIdentity,
         conversationTarget,
-        deps.config.FEISHU_GROUP_MESSAGE_MODE,
       );
       promptText = promptInput.text;
       if (behavior === "followUp") {
@@ -356,6 +356,27 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     return "queued";
   }
 
+  async function enrichGroupSenderIdentity(
+    identity: UserIdentity,
+    conversationTarget?: ConversationTarget,
+  ): Promise<UserIdentity> {
+    if (!conversationTarget || conversationTarget.kind === "p2p" || identity.name?.trim()) {
+      return identity;
+    }
+
+    try {
+      const name = await deps.resolveSenderName?.(identity, conversationTarget);
+      return name?.trim() ? { ...identity, name: name.trim() } : identity;
+    } catch (error) {
+      logger.warn("群聊发送者昵称补齐失败，已降级为 open_id", {
+        openId: identity.openId,
+        conversationKey: conversationTarget.key,
+        error: String(error),
+      });
+      return identity;
+    }
+  }
+
   return {
     handleUserPrompt,
     queueRunningPrompt,
@@ -377,24 +398,16 @@ function addConversationPromptContext(
   promptInput: PreparedPromptInput,
   identity: UserIdentity,
   conversationTarget: ConversationTarget | undefined,
-  groupMessageMode: string | undefined,
 ): PreparedPromptInput {
   if (!conversationTarget || conversationTarget.kind === "p2p") {
     return promptInput;
   }
 
-  const context = [
-    "当前对话来自飞书群聊。",
-    `群 chat_id: ${conversationTarget.chatId ?? conversationTarget.key}`,
-    `发送者 open_id: ${identity.openId}`,
-    identity.userId ? `发送者 user_id: ${identity.userId}` : "",
-    `群消息接收模式: ${groupMessageMode ?? "mention"}`,
-    "请回复当前群聊，不要把回复写成私聊。",
-  ].filter(Boolean).join("\n");
+  const sender = identity.name?.trim() || identity.openId;
 
   return {
     ...promptInput,
-    text: `${context}\n\n用户消息：\n${promptInput.text}`,
+    text: `发送者：${sender}\n用户消息：\n${promptInput.text}`,
   };
 }
 

@@ -37,6 +37,7 @@ export interface FeishuMessageMention {
 export interface UserIdentity {
   openId: string;
   userId?: string;
+  name?: string;
 }
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";

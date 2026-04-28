@@ -12,6 +12,10 @@ import { createCronStore } from "./cron/store.js";
 import { ensureDir } from "./storage/files.js";
 import { createFeishuConnection } from "./feishu/client.js";
 import {
+  createFeishuSenderNameResolver,
+  type FeishuUserClient,
+} from "./feishu/user-context.js";
+import {
   createFeishuDocsService,
   type FeishuDocsClient,
 } from "./feishu/doc-service.js";
@@ -82,6 +86,9 @@ async function main() {
   const feishuMessenger = createFeishuMessenger(
     feishuConnection.client as unknown as FeishuApiClient,
     { feishuDomain: config.FEISHU_DOMAIN },
+  );
+  const resolveFeishuSenderName = createFeishuSenderNameResolver(
+    feishuConnection.client as unknown as FeishuUserClient,
   );
   const choiceInteractionStore = createFeishuChoiceInteractionStore();
 
@@ -187,6 +194,7 @@ async function main() {
     },
     downloadResource: feishuResourceDownloader,
     readQuotedMessage: feishuMessageReader,
+    resolveSenderName: async (identity) => resolveFeishuSenderName(identity),
     deferredCronRunService,
   });
   const router = createMessageRouter({

@@ -21,6 +21,7 @@ describe("createPromptService", () => {
   const downloadResource = vi.fn();
   const readQuotedMessage = vi.fn();
   const readCachedQuotedMessage = vi.fn();
+  const resolveSenderName = vi.fn();
 
   beforeEach(() => {
     preparePromptInput.mockReset();
@@ -41,6 +42,7 @@ describe("createPromptService", () => {
     downloadResource.mockReset();
     readQuotedMessage.mockReset();
     readCachedQuotedMessage.mockReset();
+    resolveSenderName.mockReset();
 
     addProcessingReaction.mockResolvedValue("reaction_queued_1");
     acquireLock.mockReturnValue(true);
@@ -75,6 +77,7 @@ describe("createPromptService", () => {
       text: "上一条消息内容",
     });
     readCachedQuotedMessage.mockResolvedValue(null);
+    resolveSenderName.mockResolvedValue("Andy");
   });
 
   it("应把显式资源下载器透传给 prompt 输入预处理", async () => {
@@ -128,6 +131,7 @@ describe("createPromptService", () => {
       downloadResource,
       readQuotedMessage,
       preparePromptInput,
+      resolveSenderName,
     });
 
     await promptService.handleUserPrompt(
@@ -225,6 +229,7 @@ describe("createPromptService", () => {
       downloadResource,
       readQuotedMessage,
       preparePromptInput,
+      resolveSenderName,
     });
 
     await promptService.handleUserPrompt(
@@ -251,7 +256,7 @@ describe("createPromptService", () => {
     expect(promptSession).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        text: expect.stringContaining("当前对话来自飞书群聊。"),
+        text: "发送者：Andy\n用户消息：\n转写后的文本",
       }),
       "ou_1",
       "om_group_1",
@@ -263,6 +268,7 @@ describe("createPromptService", () => {
       expect.any(Function),
       target,
     );
+    expect(resolveSenderName).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target);
     expect(touchSessionForTarget).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target, "om_group_1");
     expect(touchSession).not.toHaveBeenCalled();
     expect(releaseLock).toHaveBeenCalledWith("oc_1");
