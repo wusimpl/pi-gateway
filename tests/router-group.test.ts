@@ -73,6 +73,25 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "all",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: [],
+      FEISHU_OWNER_OPEN_IDS: [],
+    });
+    const router = createMessageRouter(deps as any);
+
+    await router.handleFeishuMessage({});
+
+    expect(deps.promptService.handleUserPrompt).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      expect.objectContaining({ conversationTarget: groupTarget }),
+    );
+  });
+
+  it("keyword 模式命中关键词时应把群消息交给 prompt", async () => {
+    const deps = createDeps({
+      FEISHU_GROUP_CHAT_POLICY: "open",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [],
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: ["hello"],
       FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter(deps as any);

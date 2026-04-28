@@ -102,6 +102,7 @@ describe("isSupportedFeishuMessage", () => {
     FEISHU_GROUP_CHAT_POLICY: "open" as const,
     FEISHU_GROUP_CHAT_ALLOWLIST: [],
     FEISHU_GROUP_MESSAGE_MODE: "mention" as const,
+    FEISHU_GROUP_MESSAGE_KEYWORDS: [],
     FEISHU_BOT_OPEN_ID: "ou_bot_1",
   };
 
@@ -142,6 +143,60 @@ describe("isSupportedFeishuMessage", () => {
       ...baseConfig,
       FEISHU_GROUP_MESSAGE_MODE: "all",
     })).toBe(true);
+  });
+
+  it("keyword 模式应按完整英文词匹配，避免误触发", () => {
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        content: '{"text":"topic 里这个词不该触发"}',
+      },
+    }, {
+      ...baseConfig,
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: ["pi"],
+    })).toBe(false);
+
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        content: '{"text":"Pi，帮我看下这个报错"}',
+      },
+    }, {
+      ...baseConfig,
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: ["pi"],
+    })).toBe(true);
+  });
+
+  it("keyword 模式应支持中文短语匹配", () => {
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        content: '{"text":"请小助手帮我整理这段讨论"}',
+      },
+    }, {
+      ...baseConfig,
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: ["小助手"],
+    })).toBe(true);
+  });
+
+  it("keyword 模式未配置关键词时应忽略消息", () => {
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        content: '{"text":"Pi 帮我看下"}',
+      },
+    }, {
+      ...baseConfig,
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: [],
+    })).toBe(false);
   });
 });
 

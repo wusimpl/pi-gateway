@@ -78,6 +78,7 @@ describe("loadConfig", () => {
     expect(config.FEISHU_GROUP_CHAT_POLICY).toBe("disabled");
     expect(config.FEISHU_GROUP_CHAT_ALLOWLIST).toEqual([]);
     expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("mention");
+    expect(config.FEISHU_GROUP_MESSAGE_KEYWORDS).toEqual([]);
     expect(config.FEISHU_OWNER_OPEN_IDS).toEqual([]);
   });
 
@@ -97,6 +98,18 @@ describe("loadConfig", () => {
     expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("all");
     expect(config.FEISHU_BOT_OPEN_ID).toBe("ou_bot_1");
     expect(config.FEISHU_OWNER_OPEN_IDS).toEqual(["ou_owner_1", "ou_owner_2"]);
+  });
+
+  it("keyword 模式关键词应按空白分隔", async () => {
+    applyBaseEnv({
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: "Pi  小助手\n日报",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("keyword");
+    expect(config.FEISHU_GROUP_MESSAGE_KEYWORDS).toEqual(["Pi", "小助手", "日报"]);
   });
 
   it("PI_DISABLE_GLOBAL_AGENTS=true 时应禁用全局 context 文件", async () => {

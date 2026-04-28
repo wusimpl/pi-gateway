@@ -18,7 +18,8 @@ const envSchema = z.object({
   FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: z.string().default(""),
   FEISHU_GROUP_CHAT_POLICY: z.enum(["disabled", "allowlist", "open"]).default("disabled"),
   FEISHU_GROUP_CHAT_ALLOWLIST: z.string().default("").transform(parseCommaSeparatedList),
-  FEISHU_GROUP_MESSAGE_MODE: z.enum(["mention", "all"]).default("mention"),
+  FEISHU_GROUP_MESSAGE_MODE: z.enum(["mention", "all", "keyword"]).default("mention"),
+  FEISHU_GROUP_MESSAGE_KEYWORDS: z.string().default("").transform(parseWhitespaceSeparatedList),
   FEISHU_BOT_OPEN_ID: z.string().default("").transform((value) => value.trim() || undefined),
   FEISHU_OWNER_OPEN_IDS: z.string().default("").transform(parseCommaSeparatedList),
   DATA_DIR: z.string().default("./data"),
@@ -107,6 +108,13 @@ function expandHomeDir(value: string): string {
 function parseCommaSeparatedList(value: string): string[] {
   return value
     .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseWhitespaceSeparatedList(value: string): string[] {
+  return value
+    .split(/\s+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
