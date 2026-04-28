@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.60.0",
-    "@mariozechner/pi-coding-agent": "latest",
+    "@mariozechner/pi-coding-agent": "0.70.5",
     "codex": "^0.2.3",
     "croner": "^10.0.1",
     "dotenv": "^16.4.0",

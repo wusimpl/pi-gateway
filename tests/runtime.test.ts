@@ -83,7 +83,9 @@ describe("pi runtime", () => {
     expect(mocks.loaderInstances).toHaveLength(1);
     expect(mocks.loaderInstances[0]?.options).toEqual({
       cwd: "/tmp/workspace/ou_1",
+      agentDir: "/Users/test/.pi/agent",
       extensionFactories: [extensionFactory],
+      agentsFilesOverride: undefined,
     });
     expect(mocks.loaderReload).toHaveBeenCalledTimes(1);
     expect(mocks.createAgentSession).toHaveBeenCalledWith({

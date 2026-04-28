@@ -38,6 +38,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
   async function createResourceLoader(cwd: string) {
     const resourceLoader = new DefaultResourceLoader({
       cwd,
+      agentDir: getAgentDir(),
       extensionFactories,
       agentsFilesOverride,
     });
