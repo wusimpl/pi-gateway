@@ -11,6 +11,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { resolve, join } from "node:path";
 import { logger } from "../app/logger.js";
+import { createRuntimeMetadataExtension } from "./extensions/runtime-metadata.js";
 
 export interface PiRuntime {
   getAuthStorage(): AuthStorage;
@@ -32,7 +33,7 @@ export interface CreatePiRuntimeOptions {
 export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
-  const extensionFactories = options.extensionFactories ?? [];
+  const extensionFactories = [...(options.extensionFactories ?? []), createRuntimeMetadataExtension()];
   const agentsFilesOverride = createAgentsFilesOverride(options.disableGlobalAgents === true);
 
   async function createResourceLoader(cwd: string) {

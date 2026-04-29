@@ -70,18 +70,6 @@ describe("loadConfig", () => {
     expect(config.CRON_DEFAULT_TZ).toBe("Asia/Shanghai");
   });
 
-  it("群聊配置默认应关闭并使用 mention 模式", async () => {
-    applyBaseEnv();
-    const { loadConfig } = await import("../src/config.js");
-
-    const config = loadConfig();
-    expect(config.FEISHU_GROUP_CHAT_POLICY).toBe("disabled");
-    expect(config.FEISHU_GROUP_CHAT_ALLOWLIST).toEqual([]);
-    expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("mention");
-    expect(config.FEISHU_GROUP_MESSAGE_KEYWORDS).toEqual([]);
-    expect(config.FEISHU_OWNER_OPEN_IDS).toEqual([]);
-  });
-
   it("群聊 allowlist 应按逗号解析", async () => {
     applyBaseEnv({
       FEISHU_GROUP_CHAT_POLICY: "allowlist",

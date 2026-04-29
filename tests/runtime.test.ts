@@ -81,12 +81,15 @@ describe("pi runtime", () => {
     const session = await runtime.createPiSession("/tmp/workspace/ou_1", "/tmp/sessions/ou_1");
 
     expect(mocks.loaderInstances).toHaveLength(1);
-    expect(mocks.loaderInstances[0]?.options).toEqual({
+    expect(mocks.loaderInstances[0]?.options).toMatchObject({
       cwd: "/tmp/workspace/ou_1",
       agentDir: "/Users/test/.pi/agent",
-      extensionFactories: [extensionFactory],
       agentsFilesOverride: undefined,
     });
+    expect(mocks.loaderInstances[0]?.options.extensionFactories).toEqual(
+      expect.arrayContaining([extensionFactory]),
+    );
+    expect((mocks.loaderInstances[0]?.options.extensionFactories as unknown[]) ?? []).toHaveLength(2);
     expect(mocks.loaderReload).toHaveBeenCalledTimes(1);
     expect(mocks.createAgentSession).toHaveBeenCalledWith({
       cwd: "/tmp/workspace/ou_1",
