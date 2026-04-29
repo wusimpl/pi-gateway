@@ -27,6 +27,7 @@ import { buildFeishuChoiceActionToast, parseFeishuChoiceCardAction } from "./fei
 import { createAskUserChoiceExtension } from "./pi/extensions/ask-user-choice.js";
 import { createFeishuDocsExtension } from "./pi/extensions/feishu-docs.js";
 import { createFeishuFilesExtension } from "./pi/extensions/feishu-files.js";
+import { createFeishuMessageExtension } from "./pi/extensions/feishu-message.js";
 import { createCronTaskExtension } from "./pi/extensions/cron-task.js";
 import { createSkillStatsExtension } from "./pi/extensions/skill-stats.js";
 import { findAvailableModel, listAvailableModels } from "./pi/models.js";
@@ -50,6 +51,7 @@ async function main() {
     dataDir: config.DATA_DIR,
     workspaceRoot: config.PI_WORKSPACE_ROOT,
     disableGlobalAgents: config.PI_DISABLE_GLOBAL_AGENTS,
+    gatewayAgentsFile: config.PI_GATEWAY_AGENTS_FILE,
     logLevel: config.LOG_LEVEL,
     processingReactionEnabled: Boolean(config.FEISHU_PROCESSING_REACTION_TYPE),
     steeringReactionEnabled: Boolean(config.FEISHU_STEERING_REACTION_TYPE),
@@ -104,10 +106,12 @@ async function main() {
   try {
     piRuntime = createPiRuntime({
       disableGlobalAgents: config.PI_DISABLE_GLOBAL_AGENTS,
+      gatewayAgentsFile: config.PI_GATEWAY_AGENTS_FILE,
       extensionFactories: [
         createAskUserChoiceExtension(feishuMessenger, choiceInteractionStore),
         createFeishuDocsExtension(feishuDocsService),
         createFeishuFilesExtension(feishuMessenger),
+        createFeishuMessageExtension(feishuMessenger),
         createSkillStatsExtension(skillStatsStore),
         ...(config.CRON_ENABLED
           ? [

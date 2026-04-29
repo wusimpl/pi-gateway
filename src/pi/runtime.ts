@@ -9,6 +9,8 @@ import {
   type ExtensionFactory,
   type SessionInfo,
 } from "@mariozechner/pi-coding-agent";
+import type { Model } from "@mariozechner/pi-ai";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { logger } from "../app/logger.js";
 import { createRuntimeMetadataExtension } from "./extensions/runtime-metadata.js";
@@ -16,7 +18,7 @@ import { createRuntimeMetadataExtension } from "./extensions/runtime-metadata.js
 export interface PiRuntime {
   getAuthStorage(): AuthStorage;
   getModelRegistry(): ModelRegistry;
-  createPiSession(cwd: string, sessionDir?: string): Promise<AgentSession>;
+  createPiSession(cwd: string, sessionDir?: string, model?: Model<any>): Promise<AgentSession>;
   listPiSessions(cwd: string, sessionDir?: string): Promise<SessionInfo[]>;
   continueRecentPiSession(
     cwd: string,
@@ -28,13 +30,17 @@ export interface PiRuntime {
 export interface CreatePiRuntimeOptions {
   extensionFactories?: ExtensionFactory[];
   disableGlobalAgents?: boolean;
+  gatewayAgentsFile?: string;
 }
 
 export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
   const extensionFactories = [...(options.extensionFactories ?? []), createRuntimeMetadataExtension()];
-  const agentsFilesOverride = createAgentsFilesOverride(options.disableGlobalAgents === true);
+  const agentsFilesOverride = createAgentsFilesOverride({
+    disableGlobalAgents: options.disableGlobalAgents === true,
+    gatewayAgentsFile: options.gatewayAgentsFile,
+  });
 
   async function createResourceLoader(cwd: string) {
     const resourceLoader = new DefaultResourceLoader({
@@ -47,7 +53,11 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
     return resourceLoader;
   }
 
-  async function createPiSession(cwd: string, sessionDir?: string): Promise<AgentSession> {
+  async function createPiSession(
+    cwd: string,
+    sessionDir?: string,
+    model?: Model<any>,
+  ): Promise<AgentSession> {
     const sessionManager = SessionManager.create(cwd, sessionDir);
     const resourceLoader = await createResourceLoader(cwd);
     const { session } = await createAgentSession({
@@ -56,6 +66,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
       authStorage,
       modelRegistry,
       resourceLoader,
+      model,
     });
 
     logger.info("Pi session 已创建", {
@@ -124,8 +135,11 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
   };
 }
 
-function createAgentsFilesOverride(disableGlobalAgents: boolean) {
-  if (!disableGlobalAgents) {
+function createAgentsFilesOverride(options: {
+  disableGlobalAgents: boolean;
+  gatewayAgentsFile?: string;
+}) {
+  if (!options.disableGlobalAgents && !options.gatewayAgentsFile) {
     return undefined;
   }
 
@@ -134,10 +148,42 @@ function createAgentsFilesOverride(disableGlobalAgents: boolean) {
     resolve(join(agentDir, "AGENTS.md")),
     resolve(join(agentDir, "CLAUDE.md")),
   ]);
+  const gatewayAgentsFile = options.gatewayAgentsFile ? resolve(options.gatewayAgentsFile) : undefined;
 
-  return (base: { agentsFiles: Array<{ path: string; content: string }> }) => ({
-    agentsFiles: base.agentsFiles.filter((file) => !globalContextFiles.has(resolve(file.path))),
-  });
+  return (base: { agentsFiles: Array<{ path: string; content: string }> }) => {
+    const agentsFiles = options.disableGlobalAgents
+      ? base.agentsFiles.filter((file) => !globalContextFiles.has(resolve(file.path)))
+      : [...base.agentsFiles];
+
+    if (!gatewayAgentsFile || agentsFiles.some((file) => resolve(file.path) === gatewayAgentsFile)) {
+      return { agentsFiles };
+    }
+
+    const gatewayAgents = readGatewayAgentsFile(gatewayAgentsFile);
+    if (!gatewayAgents) {
+      return { agentsFiles };
+    }
+
+    const firstProjectIndex = agentsFiles.findIndex(
+      (file) => !globalContextFiles.has(resolve(file.path)),
+    );
+    const insertIndex = firstProjectIndex === -1 ? agentsFiles.length : firstProjectIndex;
+    agentsFiles.splice(insertIndex, 0, gatewayAgents);
+    return { agentsFiles };
+  };
+}
+
+function readGatewayAgentsFile(path: string): { path: string; content: string } | null {
+  if (!existsSync(path)) {
+    return null;
+  }
+
+  try {
+    return { path, content: readFileSync(path, "utf-8") };
+  } catch (err) {
+    logger.warn("飞书网关 AGENTS.md 读取失败，已跳过", { path, error: String(err) });
+    return null;
+  }
 }
 
 let defaultPiRuntime: PiRuntime | null = null;
@@ -165,9 +211,10 @@ export function getModelRegistry(): ModelRegistry {
 
 export async function createPiSession(
   cwd: string,
-  sessionDir?: string
+  sessionDir?: string,
+  model?: Model<any>,
 ): Promise<AgentSession> {
-  return getDefaultPiRuntime().createPiSession(cwd, sessionDir);
+  return getDefaultPiRuntime().createPiSession(cwd, sessionDir, model);
 }
 
 export async function continueRecentPiSession(

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listSessions: vi.fn(),
   resumeSession: vi.fn(),
   readUserState: vi.fn(),
+  writeUserState: vi.fn(),
   parseMessageEvent: vi.fn(),
   isSupportedP2PMessage: vi.fn(),
   normalizeFeishuInboundMessage: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("../src/pi/sessions.js", () => ({
 
 vi.mock("../src/storage/users.js", () => ({
   readUserState: mocks.readUserState,
+  writeUserState: mocks.writeUserState,
 }));
 
 vi.mock("../src/feishu/events.js", () => ({
@@ -88,6 +90,7 @@ describe("handleFeishuMessage 模型命令", () => {
     mocks.createNewSession.mockReset();
     mocks.touchSession.mockReset();
     mocks.readUserState.mockReset();
+    mocks.writeUserState.mockReset();
     mocks.parseMessageEvent.mockReset();
     mocks.isSupportedP2PMessage.mockReset();
     mocks.normalizeFeishuInboundMessage.mockReset();
@@ -113,6 +116,7 @@ describe("handleFeishuMessage 模型命令", () => {
     });
     mocks.sendRenderedMessage.mockResolvedValue(undefined);
     mocks.sendTextMessage.mockResolvedValue("om_reply");
+    mocks.writeUserState.mockResolvedValue(undefined);
   });
 
   it("`/models` 只返回当前可用模型", async () => {
@@ -294,6 +298,10 @@ describe("handleFeishuMessage 模型命令", () => {
 
     expect(mocks.findAvailableModel).toHaveBeenCalledWith("rightcodes/gpt-5.4-high");
     expect(piSession.setModel).toHaveBeenCalledWith({ provider: "rightcodes", id: "gpt-5.4-high" });
+    expect(mocks.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({ modelPreference: { provider: "rightcodes", id: "gpt-5.4-high" } }),
+    );
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
   });
 
@@ -359,6 +367,10 @@ describe("handleFeishuMessage 模型命令", () => {
 
     expect(mocks.findAvailableModel).toHaveBeenCalledWith("2");
     expect(piSession.setModel).toHaveBeenCalledWith({ provider: "rightcodes", id: "gpt-5.4-high" });
+    expect(mocks.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({ modelPreference: { provider: "rightcodes", id: "gpt-5.4-high" } }),
+    );
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
   });
 });

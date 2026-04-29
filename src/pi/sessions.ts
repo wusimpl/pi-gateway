@@ -1,6 +1,7 @@
 import type { AgentSession, SessionInfo } from "@mariozechner/pi-coding-agent";
+import type { Model } from "@mariozechner/pi-ai";
 import type { PiRuntime } from "./runtime.js";
-import { createPiSession, continueRecentPiSession, openPiSession, listPiSessions } from "./runtime.js";
+import { createPiSession, continueRecentPiSession, openPiSession, listPiSessions, getModelRegistry } from "./runtime.js";
 import {
   getDataDir,
   readUserState,
@@ -17,21 +18,23 @@ import {
 import { logger } from "../app/logger.js";
 import { ensureConversationWorkspace, ensureUserWorkspace, type WorkspaceService } from "./workspace.js";
 import { bindWorkspaceIdentity, clearWorkspaceIdentities } from "./workspace-identity.js";
-import type { ThinkingLevel, UserIdentity, UserState } from "../types.js";
+import type { ModelPreference, ThinkingLevel, UserIdentity, UserState } from "../types.js";
 import type { ConversationTarget } from "../conversation.js";
 import { getConversationTargetKey } from "../conversation.js";
 
+type SessionLike = AgentSession & { dispose(): void };
+
 interface SessionResult {
   activeSessionId: string;
-  piSession: AgentSession;
+  piSession: SessionLike;
 }
 
 const TOOLS_CONFIG_ENTRY_TYPE = "tools-config";
 const GROUP_CHAT_CONTEXT_ENTRY_TYPE = "feishu-group-chat-context";
 const GROUP_CHAT_CONTEXT_MESSAGE =
   "这是一个飞书群聊。不同消息可能来自不同群成员；每条用户消息前会标明发言人。回复会自动发送回当前群聊，直接回应当前发言人即可。";
-const defaultToolNamesBySession = new WeakMap<AgentSession, string[]>();
-const groupChatContextBySession = new WeakSet<AgentSession>();
+const defaultToolNamesBySession = new WeakMap<object, string[]>();
+const groupChatContextBySession = new WeakSet<object>();
 
 export interface ListedSession {
   order: number;
@@ -63,7 +66,9 @@ export interface SessionService {
 }
 
 interface SessionServiceDeps {
-  runtime: Pick<PiRuntime, "createPiSession" | "listPiSessions" | "continueRecentPiSession" | "openPiSession">;
+  runtime: Pick<PiRuntime, "listPiSessions" | "continueRecentPiSession" | "openPiSession" | "getModelRegistry"> & {
+    createPiSession(cwd: string, sessionDir?: string, model?: Model<any>): Promise<SessionLike>;
+  };
   userStateStore: Pick<
     UserStateStore,
     "readUserState" | "writeUserState" | "createUserState" | "touchUserState" | "userSessionsDir"
@@ -93,7 +98,7 @@ interface SessionScope {
 
 export function createSessionService(deps: SessionServiceDeps): SessionService {
   /** 内存中缓存的 Pi session 实例（conversation key -> session） */
-  const sessionCache = new Map<string, AgentSession>();
+  const sessionCache = new Map<string, SessionLike>();
 
   async function ensureWorkspaceForIdentity(identity: UserIdentity): Promise<string> {
     const workspaceDir = await deps.workspaceService.ensureUserWorkspace(identity);
@@ -236,6 +241,22 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     return doCreateNewSession(identity, scope);
   }
 
+  function resolvePreferredModel(preference?: ModelPreference): Model<any> | undefined {
+    const provider = preference?.provider.trim();
+    const id = preference?.id.trim();
+    if (!provider || !id) {
+      return undefined;
+    }
+
+    const model = deps.runtime.getModelRegistry().find(provider, id);
+    if (!model || !deps.runtime.getModelRegistry().hasConfiguredAuth(model)) {
+      logger.warn("会话默认模型不可用，已退回 Pi 默认模型", { provider, id });
+      return undefined;
+    }
+
+    return model;
+  }
+
   async function createNewSession(identity: UserIdentity): Promise<SessionResult> {
     return createNewSessionForTargetInternal(identity);
   }
@@ -259,8 +280,9 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   async function doCreateNewSession(identity: UserIdentity, scope: SessionScope): Promise<SessionResult> {
     const sessionDir = scope.sessionsDir();
     const workspaceDir = await scope.ensureWorkspace();
-    const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir);
     const existing = await scope.readState();
+    const preferredModel = resolvePreferredModel(existing?.modelPreference);
+    const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir, preferredModel);
     applySavedToolSelection(piSession);
     applyUserPreferences(piSession, existing?.thinkingLevel);
     ensureGroupChatContext(piSession, scope);
@@ -463,7 +485,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 }
 
 function applyUserPreferences(
-  session: AgentSession,
+  session: Pick<AgentSession, "setThinkingLevel">,
   thinkingLevel?: ThinkingLevel,
 ): void {
   if (!thinkingLevel || typeof session.setThinkingLevel !== "function") {
@@ -473,11 +495,14 @@ function applyUserPreferences(
   session.setThinkingLevel(thinkingLevel);
 }
 
-function ensureGroupChatContext(session: AgentSession, scope: Pick<SessionScope, "kind">): void {
+function ensureGroupChatContext(
+  session: Pick<AgentSession, "sessionManager">,
+  scope: Pick<SessionScope, "kind">,
+): void {
   if (scope.kind !== "group" && scope.kind !== "thread") {
     return;
   }
-  if (groupChatContextBySession.has(session)) {
+  if (groupChatContextBySession.has(session as object)) {
     return;
   }
 
@@ -493,7 +518,7 @@ function ensureGroupChatContext(session: AgentSession, scope: Pick<SessionScope,
       && entry.customType === GROUP_CHAT_CONTEXT_ENTRY_TYPE
     ))
   ) {
-    groupChatContextBySession.add(session);
+    groupChatContextBySession.add(session as object);
     return;
   }
 
@@ -503,7 +528,7 @@ function ensureGroupChatContext(session: AgentSession, scope: Pick<SessionScope,
     false,
     { scopeKind: scope.kind },
   );
-  groupChatContextBySession.add(session);
+  groupChatContextBySession.add(session as object);
 }
 
 function resolveTargetSession(sessions: ListedSession[], ref: string): ListedSession | null {
@@ -532,6 +557,7 @@ function getDefaultSessionService(): SessionService {
       listPiSessions: (...args) => listPiSessions(...args),
       continueRecentPiSession: (...args) => continueRecentPiSession(...args),
       openPiSession: (...args) => openPiSession(...args),
+      getModelRegistry: () => getModelRegistry(),
     },
     userStateStore: {
       readUserState: (...args) => readUserState(...args),
@@ -633,14 +659,18 @@ export function disposeAllSessions(): void {
   ensureDefaultSessionService().disposeAllSessions();
 }
 
-export function getSessionDefaultToolNames(session: AgentSession): string[] {
+export function getSessionDefaultToolNames(
+  session: Pick<AgentSession, "getActiveToolNames">,
+): string[] {
   if (typeof session.getActiveToolNames !== "function") {
     return [];
   }
-  return [...(defaultToolNamesBySession.get(session) ?? session.getActiveToolNames())];
+  return [...(defaultToolNamesBySession.get(session as object) ?? session.getActiveToolNames())];
 }
 
-export function persistSessionToolSelection(session: AgentSession): void {
+export function persistSessionToolSelection(
+  session: Pick<AgentSession, "getActiveToolNames" | "sessionManager">,
+): void {
   if (typeof session.getActiveToolNames !== "function" || typeof session.sessionManager?.appendCustomEntry !== "function") {
     return;
   }
@@ -649,7 +679,9 @@ export function persistSessionToolSelection(session: AgentSession): void {
   });
 }
 
-function applySavedToolSelection(session: AgentSession): void {
+function applySavedToolSelection(
+  session: Pick<AgentSession, "getActiveToolNames" | "getAllTools" | "sessionManager" | "setActiveToolsByName">,
+): void {
   if (
     typeof session.getActiveToolNames !== "function"
     || typeof session.getAllTools !== "function"
@@ -659,8 +691,8 @@ function applySavedToolSelection(session: AgentSession): void {
     return;
   }
 
-  if (!defaultToolNamesBySession.has(session)) {
-    defaultToolNamesBySession.set(session, [...session.getActiveToolNames()]);
+  if (!defaultToolNamesBySession.has(session as object)) {
+    defaultToolNamesBySession.set(session as object, [...session.getActiveToolNames()]);
   }
 
   const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));

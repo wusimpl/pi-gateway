@@ -8,6 +8,11 @@ export interface FeishuQuotedMessage {
   text: string;
 }
 
+export interface FeishuInboundImageReference {
+  placeholder: string;
+  imageKey: string;
+}
+
 interface FeishuInboundMessageBase {
   identity: UserIdentity;
   conversationTarget: ConversationTarget;
@@ -26,6 +31,7 @@ export type FeishuInboundMessage =
       } & FeishuInboundMessageBase & {
       messageType: "text" | "post";
       text: string;
+      embeddedImages?: FeishuInboundImageReference[];
     }
   | {
       kind: "image";

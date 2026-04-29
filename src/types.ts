@@ -40,6 +40,11 @@ export interface UserIdentity {
   name?: string;
 }
 
+export interface ModelPreference {
+  provider: string;
+  id: string;
+}
+
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type ToolCallsDisplayMode = "off" | "name" | "full";
 
@@ -54,6 +59,7 @@ export interface UserState {
   thinkingLevel?: ThinkingLevel;
   streamingEnabled?: boolean;
   toolCallsDisplayMode?: ToolCallsDisplayMode;
+  modelPreference?: ModelPreference;
 }
 
 /** 运行时锁信息 */

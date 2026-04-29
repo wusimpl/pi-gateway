@@ -9,6 +9,7 @@ function applyBaseEnv(extraEnv?: Record<string, string | undefined>) {
     FEISHU_APP_SECRET: "test_secret",
     STREAMING_ENABLED: undefined,
     PI_DISABLE_GLOBAL_AGENTS: undefined,
+    PI_GATEWAY_AGENTS_FILE: undefined,
     ...extraEnv,
   };
 }
@@ -105,6 +106,25 @@ describe("loadConfig", () => {
     const { loadConfig } = await import("../src/config.js");
 
     expect(loadConfig().PI_DISABLE_GLOBAL_AGENTS).toBe(true);
+  });
+
+  it("PI_GATEWAY_AGENTS_FILE 默认应指向飞书网关专属规则文件并展开 ~", async () => {
+    applyBaseEnv({ HOME: "/tmp/test-home" });
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().PI_GATEWAY_AGENTS_FILE).toBe(
+      "/tmp/test-home/.pi/feishu-gateway/AGENTS.md",
+    );
+  });
+
+  it("PI_GATEWAY_AGENTS_FILE 应支持自定义路径并展开 ~", async () => {
+    applyBaseEnv({
+      HOME: "/tmp/test-home",
+      PI_GATEWAY_AGENTS_FILE: "~/custom/gateway.md",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().PI_GATEWAY_AGENTS_FILE).toBe("/tmp/test-home/custom/gateway.md");
   });
 
   it("音频转写脚本路径里的 ~ 应展开成 home 目录", async () => {

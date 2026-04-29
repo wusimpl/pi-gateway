@@ -28,6 +28,7 @@ const envSchema = z.object({
     .string()
     .transform((v) => v === "true")
     .default("false"),
+  PI_GATEWAY_AGENTS_FILE: z.string().default("~/.pi/feishu-gateway/AGENTS.md"),
   CRON_ENABLED: z
     .string()
     .transform((v) => v === "true")
@@ -78,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       result.data.FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL,
     ),
     PI_WORKSPACE_ROOT: expandHomeDir(result.data.PI_WORKSPACE_ROOT),
+    PI_GATEWAY_AGENTS_FILE: expandHomeDir(result.data.PI_GATEWAY_AGENTS_FILE),
   };
 }
 

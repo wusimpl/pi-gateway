@@ -67,11 +67,19 @@ export async function prepareFeishuPromptInput(
   const transcribeAudio = deps.transcribeAudio ?? transcribeAudioFile;
 
   switch (message.kind) {
-    case "text":
+    case "text": {
+      const embeddedImageInput = await prepareEmbeddedImageInput(message, session, options, {
+        downloadResource,
+        readBinaryFile,
+        runImageOcr: runOcr,
+      });
       return {
-        text: withQuotedMessageContext(message, message.text),
-        localFiles: [],
+        text: withQuotedMessageContext(message, embeddedImageInput.text),
+        ...(embeddedImageInput.preludeText ? { preludeText: embeddedImageInput.preludeText } : {}),
+        ...(embeddedImageInput.images.length > 0 ? { images: embeddedImageInput.images } : {}),
+        localFiles: embeddedImageInput.localFiles,
       };
+    }
     case "image": {
       const resource = await downloadResource({
         workspaceDir: options.workspaceDir,
@@ -449,6 +457,65 @@ function extractDoubaoTranscript(payload: DoubaoRecognitionResponse | null): str
 
 function formatDoubaoFailure(reason: string, logId?: string): string {
   return `豆包语音转写失败：${reason}${logId ? `（logid: ${logId}）` : ""}`;
+}
+
+async function prepareEmbeddedImageInput(
+  message: Extract<FeishuInboundMessage, { kind: "text" }>,
+  session: AgentSession,
+  options: FeishuMediaProcessingOptions,
+  deps: Required<Pick<TransformDeps, "downloadResource" | "readBinaryFile" | "runImageOcr">>,
+): Promise<{
+  text: string;
+  preludeText?: string;
+  images: NonNullable<PreparedPromptInput["images"]>;
+  localFiles: string[];
+}> {
+  const embeddedImages = message.embeddedImages ?? [];
+  if (embeddedImages.length === 0) {
+    return { text: message.text, images: [], localFiles: [] };
+  }
+
+  let text = message.text;
+  const images: NonNullable<PreparedPromptInput["images"]> = [];
+  const localFiles: string[] = [];
+  const ocrSections: string[] = [];
+  const canUseImageInput = supportsImageInput(session);
+
+  for (const embeddedImage of embeddedImages) {
+    const resource = await deps.downloadResource({
+      workspaceDir: options.workspaceDir,
+      messageId: message.messageId,
+      fileKey: embeddedImage.imageKey,
+      resourceType: "image",
+    });
+    localFiles.push(resource.filePath);
+    text = text.replaceAll(embeddedImage.placeholder, `${embeddedImage.placeholder}：${resource.filePath}`);
+
+    if (canUseImageInput) {
+      const binary = await deps.readBinaryFile(resource.filePath);
+      images.push({
+        type: "image",
+        data: binary.toString("base64"),
+        mimeType: resource.mimeType,
+      });
+      continue;
+    }
+
+    const ocrText = await deps.runImageOcr(resource.filePath, options);
+    ocrSections.push(`${embeddedImage.placeholder}（${resource.filePath}）\n${ocrText}`);
+  }
+
+  if (ocrSections.length === 0) {
+    return { text, images, localFiles };
+  }
+
+  const ocrText = ocrSections.join("\n\n");
+  return {
+    text: `${text}\n\n当前模型不支持直接看图，以下是富文本图片的本地 OCR/视觉结果：\n${ocrText}`,
+    preludeText: formatDisplaySection("OCR 识别结果", ocrText),
+    images,
+    localFiles,
+  };
 }
 
 function formatDisplaySection(title: string, content: string): string {

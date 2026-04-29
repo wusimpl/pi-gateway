@@ -12,11 +12,13 @@ import {
   startStreamingMessage,
   addProcessingReaction,
   removeReaction,
+  sendLocalImageMessage,
   type FeishuDocPreviewCardInput,
   type FeishuStreamingMessage,
   type FeishuMessenger,
 } from "../feishu/send.js";
 import { STOP_MESSAGE } from "../app/stop.js";
+import { dispatchGeneratedImagesFromText } from "./generated-images.js";
 
 export interface PromptResult {
   /** 聚合的 assistant 文本 */
@@ -79,7 +81,7 @@ type PromptMessenger = Pick<
   | "startStreamingMessage"
   | "addProcessingReaction"
   | "removeReaction"
-> & Partial<Pick<FeishuMessenger, "sendRenderedMessageToTarget">>;
+> & Partial<Pick<FeishuMessenger, "sendRenderedMessageToTarget" | "sendLocalImageMessage">>;
 
 export interface PromptRunner {
   promptSession(
@@ -548,18 +550,33 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         (!lastError || hasVisibleAssistantText(fullText) || abortedByUser || Boolean(preludeText)) && hasFinalOutput;
       const suppressFollowupErrorMessage =
         shouldFinalize && Boolean(lastError) && !hasVisibleAssistantText(fullText) && Boolean(preludeText);
+      let displayedFinalText = finalOutputText;
+      let generatedImagesSent = 0;
       if (shouldFinalize) {
-        await finalizeMessage(
-          messenger,
-          openId,
+        const imageDispatch = await dispatchGeneratedImagesFromText(
+          messenger.sendLocalImageMessage ? { sendLocalImageMessage: messenger.sendLocalImageMessage } : undefined,
+          target.kind === "p2p" ? openId : target,
           finalOutputText,
-          textChunkLimit,
-          finalToolsText,
-          preludeText,
-          streamingMessage,
-          streamingBroken,
-          conversationTarget,
         );
+        displayedFinalText = imageDispatch.text;
+        generatedImagesSent = imageDispatch.sentCount;
+        if (!displayedFinalText && generatedImagesSent && streamingMessage) {
+          displayedFinalText = "图片已发送";
+        }
+
+        if (displayedFinalText || finalToolsText || preludeText || !generatedImagesSent) {
+          await finalizeMessage(
+            messenger,
+            openId,
+            displayedFinalText,
+            textChunkLimit,
+            finalToolsText,
+            preludeText,
+            streamingMessage,
+            streamingBroken,
+            conversationTarget,
+          );
+        }
       }
       await sendCollectedDocPreviewCards(messenger, openId, docPreviewMap, conversationTarget);
 
@@ -580,6 +597,7 @@ const defaultPromptRunner = createPromptRunner({
   startStreamingMessage,
   addProcessingReaction,
   removeReaction,
+  sendLocalImageMessage,
 });
 
 export async function promptSession(

@@ -3,11 +3,16 @@ import { createSessionService, getSessionDefaultToolNames } from "../src/pi/sess
 import { clearWorkspaceIdentities, getWorkspaceIdentity } from "../src/pi/workspace-identity.js";
 
 function createDeps() {
+  const modelRegistry = {
+    find: vi.fn((provider: string, id: string) => ({ provider, id })),
+    hasConfiguredAuth: vi.fn(() => true),
+  };
   const runtime = {
     createPiSession: vi.fn(),
     continueRecentPiSession: vi.fn(),
     openPiSession: vi.fn(),
     listPiSessions: vi.fn(),
+    getModelRegistry: vi.fn(() => modelRegistry),
   };
   const userStateStore = {
     readUserState: vi.fn().mockResolvedValue(null),
@@ -21,7 +26,7 @@ function createDeps() {
     ensureConversationWorkspace: vi.fn().mockResolvedValue("/tmp/workspace/conversations/oc_1"),
   };
 
-  return { runtime, userStateStore, workspaceService };
+  return { runtime, modelRegistry, userStateStore, workspaceService };
 }
 
 describe("session service", () => {
@@ -150,6 +155,7 @@ describe("session service", () => {
     expect(deps.runtime.createPiSession).toHaveBeenCalledWith(
       "/tmp/workspace/conversations/oc_1",
       "/tmp/conversations/oc_1/sessions",
+      undefined,
     );
     expect(getWorkspaceIdentity("/tmp/workspace/conversations/oc_1")).toEqual(identity);
   });
@@ -200,6 +206,114 @@ describe("session service", () => {
       expect.stringContaining("飞书群聊"),
       false,
       { scopeKind: "group" },
+    );
+  });
+
+  it("创建新会话时应使用当前私聊保存的模型偏好", async () => {
+    const deps = createDeps();
+    deps.userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "old-session",
+      piSessionFile: "/tmp/sessions/ou_1/old.jsonl",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+      modelPreference: { provider: "cpa", id: "gpt-5.5" },
+    });
+    deps.runtime.createPiSession.mockResolvedValue({
+      sessionId: "pi-session-new",
+      sessionFile: "/tmp/sessions/ou_1/new.jsonl",
+      model: { provider: "cpa", id: "gpt-5.5" },
+      dispose: vi.fn(),
+    });
+
+    const service = createSessionService(deps as any);
+    await service.createNewSession({ openId: "ou_1", userId: "u_1" });
+
+    expect(deps.runtime.createPiSession).toHaveBeenCalledWith(
+      "/tmp/workspace/ou_1",
+      "/tmp/sessions/ou_1",
+      { provider: "cpa", id: "gpt-5.5" },
+    );
+    expect(deps.userStateStore.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({ modelPreference: { provider: "cpa", id: "gpt-5.5" } }),
+    );
+  });
+
+  it("创建新会话时应使用当前群聊保存的模型偏好", async () => {
+    const deps = createDeps();
+    const conversationStateStore = {
+      readConversationState: vi.fn().mockResolvedValue({
+        activeSessionId: "old-group-session",
+        piSessionFile: "/tmp/conversations/oc_1/sessions/old.jsonl",
+        createdAt: "2026-04-15T00:00:00.000Z",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        lastActiveAt: "2026-04-15T00:00:00.000Z",
+        modelPreference: { provider: "rightcodes", id: "gpt-5.4-high" },
+      }),
+      writeConversationState: vi.fn().mockResolvedValue(undefined),
+      createConversationState: vi.fn(),
+      touchConversationState: vi.fn().mockResolvedValue(undefined),
+      conversationSessionsDir: vi.fn().mockReturnValue("/tmp/conversations/oc_1/sessions"),
+    };
+    deps.runtime.createPiSession.mockResolvedValue({
+      sessionId: "pi-session-group-new",
+      sessionFile: "/tmp/conversations/oc_1/sessions/new.jsonl",
+      model: { provider: "rightcodes", id: "gpt-5.4-high" },
+      sessionManager: {
+        appendCustomMessageEntry: vi.fn(),
+        getBranch: vi.fn().mockReturnValue([]),
+      },
+      dispose: vi.fn(),
+    });
+    const service = createSessionService({
+      ...deps,
+      conversationStateStore,
+    } as any);
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+
+    await service.createNewSessionForTarget({ openId: "ou_1", userId: "u_1" }, target);
+
+    expect(deps.runtime.createPiSession).toHaveBeenCalledWith(
+      "/tmp/workspace/conversations/oc_1",
+      "/tmp/conversations/oc_1/sessions",
+      { provider: "rightcodes", id: "gpt-5.4-high" },
+    );
+    expect(conversationStateStore.writeConversationState).toHaveBeenCalledWith(
+      "oc_1",
+      expect.objectContaining({ modelPreference: { provider: "rightcodes", id: "gpt-5.4-high" } }),
+    );
+  });
+
+  it("创建新会话时如果模型偏好不可用，应退回 Pi 默认模型", async () => {
+    const deps = createDeps();
+    deps.modelRegistry.find.mockReturnValue(null);
+    deps.userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "old-session",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+      modelPreference: { provider: "missing", id: "model" },
+    });
+    deps.runtime.createPiSession.mockResolvedValue({
+      sessionId: "pi-session-new",
+      sessionFile: "/tmp/sessions/ou_1/new.jsonl",
+      dispose: vi.fn(),
+    });
+
+    const service = createSessionService(deps as any);
+    await service.createNewSession({ openId: "ou_1", userId: "u_1" });
+
+    expect(deps.runtime.createPiSession).toHaveBeenCalledWith(
+      "/tmp/workspace/ou_1",
+      "/tmp/sessions/ou_1",
+      undefined,
     );
   });
 

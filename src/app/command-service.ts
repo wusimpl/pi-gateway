@@ -17,7 +17,7 @@ import type { SkillStatsStore } from "../pi/skill-stats.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { GroupSettingsStore, PersistedGroupRoutingConfig } from "../storage/group-settings.js";
 import type { UserStateStore } from "../storage/users.js";
-import type { ThinkingLevel, ToolCallsDisplayMode, UserIdentity, UserState } from "../types.js";
+import type { ModelPreference, ThinkingLevel, ToolCallsDisplayMode, UserIdentity, UserState } from "../types.js";
 import { handleBridgeCommand, formatUnsupportedSlashCommand, type BridgeCommand } from "./commands.js";
 import { logger } from "./logger.js";
 import {
@@ -178,6 +178,26 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       return;
     }
     await deps.userStateStore.writeUserState(identity.openId, state);
+  }
+
+  async function ensureTargetState(
+    identity: UserIdentity,
+    conversationTarget: ConversationTarget | undefined,
+    sessionState: { activeSessionId: string; piSession: { sessionFile?: string } },
+  ): Promise<UserState> {
+    const existingState = await readTargetState(identity, conversationTarget);
+    if (existingState) {
+      return existingState;
+    }
+
+    const now = new Date().toISOString();
+    return {
+      activeSessionId: sessionState.activeSessionId,
+      piSessionFile: sessionState.piSession.sessionFile ?? undefined,
+      createdAt: now,
+      updatedAt: now,
+      lastActiveAt: now,
+    };
   }
 
   async function sendTextReply(
@@ -528,8 +548,14 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     const sessionState = await getActiveSession(identity, conversationTarget);
     const previousModel = getCurrentModelLabel(sessionState.piSession);
     await sessionState.piSession.setModel(targetModel.model);
-    const userState = await readTargetState(identity, conversationTarget);
-    if (userState?.thinkingLevel) {
+    const userState = await ensureTargetState(identity, conversationTarget, sessionState);
+    userState.modelPreference = normalizeModelPreference(targetModel.model) ?? {
+      provider: targetModel.provider,
+      id: targetModel.id,
+    };
+    userState.updatedAt = new Date().toISOString();
+    await writeTargetState(identity, conversationTarget, userState);
+    if (userState.thinkingLevel) {
       sessionState.piSession.setThinkingLevel(userState.thinkingLevel);
     }
 
@@ -1602,11 +1628,21 @@ function getCurrentThinkingLevel(session: { thinkingLevel?: ThinkingLevel | unde
   return session.thinkingLevel;
 }
 
-function getCurrentModelLabel(session: { model?: { provider: string; id: string } | undefined }): string | undefined {
-  if (!session.model) {
+function normalizeModelPreference(model: { provider?: string; id?: string } | undefined): ModelPreference | undefined {
+  const provider = model?.provider?.trim();
+  const id = model?.id?.trim();
+  if (!provider || !id) {
     return undefined;
   }
-  return formatModelLabel(session.model.provider, session.model.id);
+  return { provider, id };
+}
+
+function getCurrentModelLabel(session: { model?: { provider: string; id: string } | undefined }): string | undefined {
+  const modelPreference = normalizeModelPreference(session.model);
+  if (!modelPreference) {
+    return undefined;
+  }
+  return formatModelLabel(modelPreference.provider, modelPreference.id);
 }
 
 function appendRecentHistory(

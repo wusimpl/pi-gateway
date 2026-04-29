@@ -40,7 +40,8 @@ export function normalizeFeishuInboundMessage(event: FeishuMessageEvent): Feishu
       };
     }
     case "post": {
-      const text = flattenPostMessage(event.message.content).trim();
+      const post = flattenPostMessage(event.message.content);
+      const text = post.text.trim();
       if (!text) {
         return null;
       }
@@ -49,6 +50,7 @@ export function normalizeFeishuInboundMessage(event: FeishuMessageEvent): Feishu
         kind: "text",
         messageType: "post",
         text,
+        ...(post.embeddedImages.length > 0 ? { embeddedImages: post.embeddedImages } : {}),
       };
     }
     case "image": {
@@ -115,15 +117,22 @@ function normalizeTextMessage(
   return replaceMentionTokens(commandReadyText, mentions);
 }
 
-function flattenPostMessage(rawContent: string): string {
+function flattenPostMessage(rawContent: string): {
+  text: string;
+  embeddedImages: Array<{ placeholder: string; imageKey: string }>;
+} {
   const payload = unwrapLocalizedPostPayload(parseContentObject(rawContent));
   const title = asString(payload.title);
   const paragraphs = Array.isArray(payload.content) ? payload.content : [];
+  const embeddedImages: Array<{ placeholder: string; imageKey: string }> = [];
   const lines = paragraphs
-    .map((paragraph) => flattenPostParagraph(paragraph))
+    .map((paragraph) => flattenPostParagraph(paragraph, embeddedImages))
     .filter((line): line is string => Boolean(line));
 
-  return [title, ...lines].filter(Boolean).join("\n").trim();
+  return {
+    text: [title, ...lines].filter(Boolean).join("\n").trim(),
+    embeddedImages,
+  };
 }
 
 function stripLeadingMentionKeysBeforeCommand(text: string, mentions: FeishuMessageMention[]): string {
@@ -191,7 +200,10 @@ function looksLikePostPayload(payload: Record<string, unknown>): boolean {
   return typeof payload.title === "string" || Array.isArray(payload.content);
 }
 
-function flattenPostParagraph(paragraph: unknown): string {
+function flattenPostParagraph(
+  paragraph: unknown,
+  embeddedImages: Array<{ placeholder: string; imageKey: string }>,
+): string {
   if (!Array.isArray(paragraph)) {
     return "";
   }
@@ -212,8 +224,14 @@ function flattenPostParagraph(paragraph: unknown): string {
         const userId = asString(record?.user_id ?? record?.userId);
         return userId ? `@${userId}` : "@提及";
       }
-      case "img":
-        return "【图片】";
+      case "img": {
+        const imageKey = asString(record?.image_key ?? record?.imageKey);
+        const placeholder = `【图片 ${embeddedImages.length + 1}】`;
+        if (imageKey) {
+          embeddedImages.push({ placeholder, imageKey });
+        }
+        return placeholder;
+      }
       case "media":
         return "【视频】";
       case "emotion":

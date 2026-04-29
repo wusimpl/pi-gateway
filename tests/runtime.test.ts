@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -125,6 +128,66 @@ describe("pi runtime", () => {
         ],
       }).agentsFiles,
     ).toEqual([
+      { path: "/tmp/workspace/AGENTS.md", content: "project agents" },
+    ]);
+  });
+
+  it("会把飞书网关专属 AGENTS.md 插入到全局和项目规则之间", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-gateway-agents-"));
+    const gatewayAgentsFile = join(dir, "AGENTS.md");
+    await writeFile(gatewayAgentsFile, "gateway agents", "utf-8");
+
+    const runtime = createPiRuntime({
+      gatewayAgentsFile,
+    });
+
+    await runtime.createPiSession("/tmp/workspace/ou_1", "/tmp/sessions/ou_1");
+
+    const agentsFilesOverride = mocks.loaderInstances[0]?.options.agentsFilesOverride as
+      | ((base: { agentsFiles: Array<{ path: string; content: string }> }) => { agentsFiles: Array<{ path: string; content: string }> })
+      | undefined;
+
+    expect(agentsFilesOverride).toBeTypeOf("function");
+    expect(
+      agentsFilesOverride?.({
+        agentsFiles: [
+          { path: "/Users/test/.pi/agent/AGENTS.md", content: "global agents" },
+          { path: "/tmp/workspace/AGENTS.md", content: "project agents" },
+        ],
+      }).agentsFiles,
+    ).toEqual([
+      { path: "/Users/test/.pi/agent/AGENTS.md", content: "global agents" },
+      { path: gatewayAgentsFile, content: "gateway agents" },
+      { path: "/tmp/workspace/AGENTS.md", content: "project agents" },
+    ]);
+  });
+
+  it("禁用全局 AGENTS 时仍会加载飞书网关专属 AGENTS.md", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-gateway-agents-"));
+    const gatewayAgentsFile = join(dir, "AGENTS.md");
+    await writeFile(gatewayAgentsFile, "gateway agents", "utf-8");
+
+    const runtime = createPiRuntime({
+      disableGlobalAgents: true,
+      gatewayAgentsFile,
+    });
+
+    await runtime.createPiSession("/tmp/workspace/ou_1", "/tmp/sessions/ou_1");
+
+    const agentsFilesOverride = mocks.loaderInstances[0]?.options.agentsFilesOverride as
+      | ((base: { agentsFiles: Array<{ path: string; content: string }> }) => { agentsFiles: Array<{ path: string; content: string }> })
+      | undefined;
+
+    expect(agentsFilesOverride).toBeTypeOf("function");
+    expect(
+      agentsFilesOverride?.({
+        agentsFiles: [
+          { path: "/Users/test/.pi/agent/AGENTS.md", content: "global agents" },
+          { path: "/tmp/workspace/AGENTS.md", content: "project agents" },
+        ],
+      }).agentsFiles,
+    ).toEqual([
+      { path: gatewayAgentsFile, content: "gateway agents" },
       { path: "/tmp/workspace/AGENTS.md", content: "project agents" },
     ]);
   });

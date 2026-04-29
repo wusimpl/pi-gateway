@@ -6,6 +6,7 @@ const mockSendDocPreviewCard = vi.fn();
 const mockStartStreamingMessage = vi.fn();
 const mockAddProcessingReaction = vi.fn();
 const mockRemoveReaction = vi.fn();
+const mockSendLocalImageMessage = vi.fn();
 
 vi.mock("../src/feishu/send.js", () => ({
   sendRenderedMessage: mockSendRenderedMessage,
@@ -14,6 +15,7 @@ vi.mock("../src/feishu/send.js", () => ({
   startStreamingMessage: mockStartStreamingMessage,
   addProcessingReaction: mockAddProcessingReaction,
   removeReaction: mockRemoveReaction,
+  sendLocalImageMessage: mockSendLocalImageMessage,
   sendTextMessage: vi.fn(),
 }));
 
@@ -77,12 +79,14 @@ describe("promptSession", () => {
     mockStartStreamingMessage.mockReset();
     mockAddProcessingReaction.mockReset();
     mockRemoveReaction.mockReset();
+    mockSendLocalImageMessage.mockReset();
     mockSendRenderedMessage.mockResolvedValue(undefined);
     mockSendRenderedMessageToTarget.mockResolvedValue(undefined);
     mockSendDocPreviewCard.mockResolvedValue("om_doc_1");
     mockStartStreamingMessage.mockResolvedValue(null);
     mockAddProcessingReaction.mockResolvedValue("reaction_1");
     mockRemoveReaction.mockResolvedValue(true);
+    mockSendLocalImageMessage.mockResolvedValue({ imageKey: "img_1", fileName: "generated.png", messageId: "om_img_1" });
   });
 
   it("开始时添加 reaction，结束后删除并发送最终文本", async () => {
@@ -734,6 +738,49 @@ describe("promptSession", () => {
 
     expect(result.text).toBe("before\n\n---queued---\nafter");
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "before\n\n---queued---\nafter", 2000);
+  });
+
+
+  it("CPA 生成图 localhost 链接应上传为飞书图片，并从文本中移除", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () =>
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+    ) as any;
+
+    try {
+      const session = createSession([
+        {
+          type: "message_update",
+          assistantMessageEvent: {
+            type: "text_delta",
+            delta: "已生成：\n\n![generated image](https://localhost:8317/v1/generated-images/39893d02d3c2ca98c8daba26179a959d.png)",
+          },
+        },
+        { type: "message_end" },
+      ]);
+
+      const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined);
+
+      expect(result).toEqual({
+        text: "已生成：\n\n![generated image](https://localhost:8317/v1/generated-images/39893d02d3c2ca98c8daba26179a959d.png)",
+        error: undefined,
+      });
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "https://localhost:8317/v1/generated-images/39893d02d3c2ca98c8daba26179a959d.png",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      expect(mockSendLocalImageMessage).toHaveBeenCalledWith(
+        "ou_1",
+        expect.objectContaining({ fileName: "39893d02d3c2ca98c8daba26179a959d.png" }),
+      );
+      expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "已生成：", 2000);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("长文本应交给渲染发送层处理", async () => {

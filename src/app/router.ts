@@ -27,7 +27,7 @@ import {
 import { getConversationWorkspaceDir, getUserWorkspaceDir } from "../pi/workspace.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
 import { createGroupSettingsStore, type GroupSettingsStore } from "../storage/group-settings.js";
-import { readUserState } from "../storage/users.js";
+import { readUserState, writeUserState } from "../storage/users.js";
 import { createP2PConversationTarget, getConversationTargetKey } from "../conversation.js";
 import {
   findAvailableModel,
@@ -425,9 +425,7 @@ export function initRouter(cfg: Config): void {
     },
     userStateStore: {
       readUserState: (...args) => readUserState(...args),
-      writeUserState: async () => {
-        throw new Error("writeUserState is not available in initRouter mode");
-      },
+      writeUserState: (...args) => writeUserState(...args),
     },
     workspaceService: {
       getUserWorkspaceDir: (...args) => getUserWorkspaceDir(...args),

@@ -183,6 +183,48 @@ describe("normalizeFeishuInboundMessage", () => {
     });
   });
 
+  it("应把富文本里的图片提取成可下载引用并保留占位顺序", () => {
+    const content = JSON.stringify({
+      zh_cn: {
+        content: [
+          [
+            { tag: "text", text: "帮我看这张图" },
+            { tag: "img", image_key: "img_post_1" },
+          ],
+          [
+            { tag: "img", image_key: "img_post_2" },
+            { tag: "text", text: "第二张" },
+          ],
+        ],
+      },
+    });
+    const result = normalizeFeishuInboundMessage({
+      sender: {
+        senderId: { openId: "ou_1", userId: "u_1", unionId: "on_1" },
+        senderType: "user",
+        tenantKey: "tk",
+      },
+      message: {
+        messageId: "om_post_image_1",
+        chatId: "oc_1",
+        chatType: "p2p",
+        messageType: "post",
+        content,
+        createTime: "789",
+      },
+    });
+
+    expect(result).toMatchObject({
+      kind: "text",
+      messageType: "post",
+      text: "帮我看这张图【图片 1】\n【图片 2】第二张",
+      embeddedImages: [
+        { placeholder: "【图片 1】", imageKey: "img_post_1" },
+        { placeholder: "【图片 2】", imageKey: "img_post_2" },
+      ],
+    });
+  });
+
   it("应为群聊消息生成群会话目标", () => {
     const result = normalizeFeishuInboundMessage({
       sender: {
@@ -286,6 +328,89 @@ describe("prepareFeishuPromptInput", () => {
       ],
       localFiles: ["/tmp/pi-workspace/user/.feishu-inbox/om_1/image.png"],
     });
+  });
+
+  it("富文本图片在模型支持图片时应下载成路径并透传图片输入", async () => {
+    const result = await prepareFeishuPromptInput(
+      {
+        kind: "text",
+        identity: { openId: "ou_1" },
+        messageId: "om_post_image_1",
+        messageType: "post",
+        createTime: "123",
+        rawContent: "{}",
+        text: "帮我看这张图【图片 1】",
+        embeddedImages: [{ placeholder: "【图片 1】", imageKey: "img_post_1" }],
+      },
+      { model: { input: ["text", "image"] } } as any,
+      baseOptions,
+      {
+        downloadResource: async (options) => {
+          expect(options).toMatchObject({
+            workspaceDir: "/tmp/pi-workspace/user",
+            messageId: "om_post_image_1",
+            fileKey: "img_post_1",
+            resourceType: "image",
+          });
+          return {
+            resourceType: "image",
+            downloadType: "image",
+            fileKey: "img_post_1",
+            filePath: "/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png",
+            fileName: "image-img_post_1.png",
+            mimeType: "image/png",
+          };
+        },
+        readBinaryFile: async () => Buffer.from("post-image"),
+      },
+    );
+
+    expect(result).toEqual({
+      text: "帮我看这张图【图片 1】：/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png",
+      images: [
+        {
+          type: "image",
+          data: Buffer.from("post-image").toString("base64"),
+          mimeType: "image/png",
+        },
+      ],
+      localFiles: ["/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png"],
+    });
+  });
+
+  it("富文本图片在模型不支持图片时应下载成路径并追加 OCR 结果", async () => {
+    const result = await prepareFeishuPromptInput(
+      {
+        kind: "text",
+        identity: { openId: "ou_1" },
+        messageId: "om_post_image_1",
+        messageType: "post",
+        createTime: "123",
+        rawContent: "{}",
+        text: "帮我看这张图【图片 1】",
+        embeddedImages: [{ placeholder: "【图片 1】", imageKey: "img_post_1" }],
+      },
+      { model: { input: ["text"] } } as any,
+      baseOptions,
+      {
+        downloadResource: async () => ({
+          resourceType: "image",
+          downloadType: "image",
+          fileKey: "img_post_1",
+          filePath: "/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png",
+          fileName: "image-img_post_1.png",
+          mimeType: "image/png",
+        }),
+        runImageOcr: async () => "截图里有一个登录错误",
+      },
+    );
+
+    expect(result.images).toBeUndefined();
+    expect(result.localFiles).toEqual(["/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png"]);
+    expect(result.text).toContain("帮我看这张图【图片 1】：/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png");
+    expect(result.text).toContain("当前模型不支持直接看图");
+    expect(result.text).toContain("截图里有一个登录错误");
+    expect(result.preludeText).toContain("**OCR 识别结果**");
   });
 
   it("引用回复时应把被引用消息一起拼进文本 prompt", async () => {

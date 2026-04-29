@@ -116,6 +116,7 @@ vi.mock("../src/config.js", () => ({
     DATA_DIR: "/tmp/pi-gateway-data",
     PI_WORKSPACE_ROOT: "/tmp/pi-gateway-workspace",
     PI_DISABLE_GLOBAL_AGENTS: true,
+    PI_GATEWAY_AGENTS_FILE: "/tmp/pi-gateway-agents.md",
     CRON_ENABLED: true,
     CRON_DEFAULT_TZ: "Asia/Shanghai",
     CRON_JOB_TIMEOUT_MS: 30000,
@@ -272,6 +273,7 @@ describe("index wiring", () => {
     expect(mocks.createPiRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
         disableGlobalAgents: true,
+        gatewayAgentsFile: "/tmp/pi-gateway-agents.md",
         extensionFactories: expect.arrayContaining([
           "cron-extension-factory",
           "skill-stats-extension-factory",
