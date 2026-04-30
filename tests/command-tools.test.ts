@@ -30,15 +30,23 @@ function createDeps(piSession: ReturnType<typeof createPiSessionMock>["session"]
   const messenger = {
     sendRenderedMessage: vi.fn().mockResolvedValue(undefined),
     sendTextMessage: vi.fn().mockResolvedValue(undefined),
+    sendRenderedMessageToTarget: vi.fn().mockResolvedValue(undefined),
+    sendTextMessageToTarget: vi.fn().mockResolvedValue(undefined),
   };
   const sessionService = {
     getOrCreateActiveSession: vi.fn().mockResolvedValue({
       activeSessionId: "session_1",
       piSession,
     }),
+    getOrCreateActiveSessionForTarget: vi.fn().mockResolvedValue({
+      activeSessionId: "group_session_1",
+      piSession,
+    }),
     createNewSession: vi.fn(),
     listSessions: vi.fn(),
     resumeSession: vi.fn(),
+    readSessionState: vi.fn(),
+    writeSessionState: vi.fn().mockResolvedValue(undefined),
   };
   const userStateStore = {
     readUserState: vi.fn(),
@@ -56,6 +64,7 @@ function createDeps(piSession: ReturnType<typeof createPiSessionMock>["session"]
     userStateStore,
     workspaceService: {
       getUserWorkspaceDir: vi.fn(),
+      getConversationWorkspaceDir: vi.fn(),
     },
     runtimeState: {
       isLocked: vi.fn().mockReturnValue(false),
@@ -107,9 +116,15 @@ describe("command service tools", () => {
     );
   });
 
-  it("`/tools on` 会更新 active tools 并写入 session", async () => {
+  it("`/tools on` 会更新 active tools 并按私聊状态持久化", async () => {
     const piSession = createPiSessionMock({ activeTools: ["read", "bash"] });
-    const { service, messenger } = createDeps(piSession.session);
+    const { service, messenger, userStateStore } = createDeps(piSession.session);
+    userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "session_1",
+      createdAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:00:00.000Z",
+      lastActiveAt: "2026-04-27T00:00:00.000Z",
+    });
 
     await service.handleBridgeCommand(
       { openId: "ou_1", userId: "u_1" },
@@ -117,13 +132,40 @@ describe("command service tools", () => {
     );
 
     expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["read", "bash", "grep"]);
-    expect(piSession.spies.appendCustomEntry).toHaveBeenCalledWith("tools-config", {
-      enabledTools: ["read", "bash", "grep"],
-    });
+    expect(piSession.spies.appendCustomEntry).not.toHaveBeenCalled();
+    expect(userStateStore.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({ enabledTools: ["read", "bash", "grep"] }),
+    );
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
       "✅ 已启用 tools。\n变更：grep\n当前启用（3/5）：read, bash, grep\n\n查看详情：/tools",
       2000,
+    );
+  });
+
+  it("群聊 `/tools off` 会写入对应 conversation 状态", async () => {
+    const piSession = createPiSessionMock({ activeTools: ["read", "bash", "grep"] });
+    const { service, sessionService } = createDeps(piSession.session);
+    const target = { kind: "group" as const, key: "chat_1", chatId: "chat_1" };
+    sessionService.readSessionState.mockResolvedValue({
+      activeSessionId: "group_session_1",
+      createdAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:00:00.000Z",
+      lastActiveAt: "2026-04-27T00:00:00.000Z",
+    });
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "tools", args: "off grep" },
+      target,
+    );
+
+    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["read", "bash"]);
+    expect(sessionService.writeSessionState).toHaveBeenCalledWith(
+      { openId: "ou_1", userId: "u_1" },
+      target,
+      expect.objectContaining({ enabledTools: ["read", "bash"] }),
     );
   });
 

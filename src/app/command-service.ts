@@ -16,7 +16,6 @@ import {
 } from "../pi/model-routing.js";
 import {
   getSessionDefaultToolNames,
-  persistSessionToolSelection,
   type SessionService,
 } from "../pi/sessions.js";
 import type { SkillStatsStore } from "../pi/skill-stats.js";
@@ -1138,7 +1137,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         getSessionDefaultToolNames(sessionState.piSession).filter((name) => allToolNameSet.has(name)),
       );
       toolSession.setActiveToolsByName(defaultTools);
-      persistSessionToolSelection(sessionState.piSession);
+      await persistTargetToolSelection(identity, conversationTarget, sessionState, defaultTools);
       await sendCommandReply(identity, conversationTarget, formatToolsActionReply("reset", [], defaultTools, allToolNames));
       return;
     }
@@ -1171,8 +1170,20 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
 
     toolSession.setActiveToolsByName(nextActiveTools);
-    persistSessionToolSelection(sessionState.piSession);
+    await persistTargetToolSelection(identity, conversationTarget, sessionState, nextActiveTools);
     await sendCommandReply(identity, conversationTarget, formatToolsActionReply(action, requestedTools, nextActiveTools, allToolNames));
+  }
+
+  async function persistTargetToolSelection(
+    identity: UserIdentity,
+    conversationTarget: ConversationTarget | undefined,
+    sessionState: { activeSessionId: string; piSession: { sessionFile?: string } },
+    enabledTools: string[],
+  ): Promise<void> {
+    const userState = await ensureTargetState(identity, conversationTarget, sessionState);
+    userState.enabledTools = [...enabledTools];
+    userState.updatedAt = new Date().toISOString();
+    await writeTargetState(identity, conversationTarget, userState);
   }
 
   async function handleToolCallsCommand(

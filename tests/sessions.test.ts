@@ -458,7 +458,46 @@ describe("session service", () => {
     expect(deps.runtime.openPiSession).toHaveBeenCalledTimes(1);
   });
 
-  it("恢复 session 时应重新应用上次保存的 tools 选择", async () => {
+  it("恢复 session 时应应用状态里按目标保存的 tools 选择", async () => {
+    const deps = createDeps();
+    const setActiveToolsByName = vi.fn();
+    const session = {
+      sessionId: "pi-session-789",
+      sessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      getActiveToolNames: vi.fn().mockReturnValue(["read", "bash", "edit"]),
+      getAllTools: vi.fn().mockReturnValue([
+        { name: "read" },
+        { name: "bash" },
+        { name: "edit" },
+        { name: "grep" },
+      ]),
+      setActiveToolsByName,
+      sessionManager: {
+        getBranch: vi.fn().mockReturnValue([]),
+      },
+      dispose: vi.fn(),
+    };
+    deps.userStateStore.readUserState.mockResolvedValue({
+      openId: "ou_1",
+      activeSessionId: "legacy-session-id",
+      piSessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+      lastMessageId: undefined,
+      enabledTools: ["read", "bash"],
+    });
+    deps.runtime.openPiSession.mockResolvedValue(session);
+
+    const service = createSessionService(deps as any);
+    const result = await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
+
+    expect(result.activeSessionId).toBe("pi-session-789");
+    expect(setActiveToolsByName).toHaveBeenCalledWith(["read", "bash"]);
+    expect(getSessionDefaultToolNames(session as any)).toEqual(["read", "bash", "edit"]);
+  });
+
+  it("恢复 session 时不读取 session 文件里的旧 tools-config", async () => {
     const deps = createDeps();
     const setActiveToolsByName = vi.fn();
     const session = {
@@ -491,11 +530,9 @@ describe("session service", () => {
     deps.runtime.openPiSession.mockResolvedValue(session);
 
     const service = createSessionService(deps as any);
-    const result = await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
+    await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
 
-    expect(result.activeSessionId).toBe("pi-session-789");
-    expect(setActiveToolsByName).toHaveBeenCalledWith(["read", "grep"]);
-    expect(getSessionDefaultToolNames(session as any)).toEqual(["read", "bash", "edit"]);
+    expect(setActiveToolsByName).not.toHaveBeenCalled();
   });
 
   it("从指定文件恢复时应把旧 activeSessionId 对齐到真实 sessionId", async () => {

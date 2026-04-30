@@ -29,7 +29,6 @@ interface SessionResult {
   piSession: SessionLike;
 }
 
-const TOOLS_CONFIG_ENTRY_TYPE = "tools-config";
 const GROUP_CHAT_CONTEXT_ENTRY_TYPE = "feishu-group-chat-context";
 const GROUP_CHAT_CONTEXT_MESSAGE =
   "这是一个飞书群聊。不同消息可能来自不同群成员；每条用户消息前会标明发言人。回复会自动发送回当前群聊，直接回应当前发言人即可。";
@@ -179,7 +178,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       try {
         const workspaceDir = await scope.ensureWorkspace();
         const session = await deps.runtime.openPiSession(state.piSessionFile, workspaceDir);
-        applySavedToolSelection(session);
+        applySavedToolSelection(session, state);
         applyUserPreferences(session, state?.thinkingLevel);
         ensureGroupChatContext(session, scope);
         const activeSessionId = session.sessionId;
@@ -213,7 +212,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         const workspaceDir = await scope.ensureWorkspace();
         const result = await deps.runtime.continueRecentPiSession(workspaceDir, sessionDir);
         if (result) {
-          applySavedToolSelection(result.session);
+          applySavedToolSelection(result.session, state);
           applyUserPreferences(result.session, state?.thinkingLevel);
           ensureGroupChatContext(result.session, scope);
           const activeSessionId = result.session.sessionId;
@@ -283,7 +282,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const existing = await scope.readState();
     const preferredModel = resolvePreferredModel(existing?.modelRouting?.heavyModel ?? existing?.modelPreference);
     const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir, preferredModel);
-    applySavedToolSelection(piSession);
+    applySavedToolSelection(piSession, existing);
     applyUserPreferences(piSession, existing?.thinkingLevel);
     ensureGroupChatContext(piSession, scope);
     const newSessionId = piSession.sessionId;
@@ -380,7 +379,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 
     const piSession = await deps.runtime.openPiSession(targetSession.sessionFile, workspaceDir);
     const state = await scope.readState();
-    applySavedToolSelection(piSession);
+    applySavedToolSelection(piSession, state);
     applyUserPreferences(piSession, state?.thinkingLevel);
     ensureGroupChatContext(piSession, scope);
     const activeSessionId = piSession.sessionId;
@@ -668,24 +667,13 @@ export function getSessionDefaultToolNames(
   return [...(defaultToolNamesBySession.get(session as object) ?? session.getActiveToolNames())];
 }
 
-export function persistSessionToolSelection(
-  session: Pick<AgentSession, "getActiveToolNames" | "sessionManager">,
-): void {
-  if (typeof session.getActiveToolNames !== "function" || typeof session.sessionManager?.appendCustomEntry !== "function") {
-    return;
-  }
-  session.sessionManager.appendCustomEntry(TOOLS_CONFIG_ENTRY_TYPE, {
-    enabledTools: session.getActiveToolNames(),
-  });
-}
-
 function applySavedToolSelection(
-  session: Pick<AgentSession, "getActiveToolNames" | "getAllTools" | "sessionManager" | "setActiveToolsByName">,
+  session: Pick<AgentSession, "getActiveToolNames" | "getAllTools" | "setActiveToolsByName">,
+  state?: Pick<UserState, "enabledTools"> | null,
 ): void {
   if (
     typeof session.getActiveToolNames !== "function"
     || typeof session.getAllTools !== "function"
-    || typeof session.sessionManager?.getBranch !== "function"
     || typeof session.setActiveToolsByName !== "function"
   ) {
     return;
@@ -695,23 +683,11 @@ function applySavedToolSelection(
     defaultToolNamesBySession.set(session as object, [...session.getActiveToolNames()]);
   }
 
-  const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
-  let savedTools: string[] | undefined;
-
-  for (const entry of session.sessionManager.getBranch()) {
-    if (entry.type !== "custom" || entry.customType !== TOOLS_CONFIG_ENTRY_TYPE) {
-      continue;
-    }
-
-    const enabledTools = entry.data && typeof entry.data === "object" ? (entry.data as { enabledTools?: unknown }).enabledTools : undefined;
-    if (Array.isArray(enabledTools)) {
-      savedTools = enabledTools.filter((tool): tool is string => typeof tool === "string");
-    }
-  }
-
-  if (!savedTools) {
+  if (!Array.isArray(state?.enabledTools)) {
     return;
   }
 
+  const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
+  const savedTools = state.enabledTools.filter((tool): tool is string => typeof tool === "string");
   session.setActiveToolsByName(savedTools.filter((tool) => allToolNames.has(tool)));
 }

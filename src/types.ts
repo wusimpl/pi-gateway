@@ -69,6 +69,7 @@ export interface UserState {
   thinkingLevel?: ThinkingLevel;
   streamingEnabled?: boolean;
   toolCallsDisplayMode?: ToolCallsDisplayMode;
+  enabledTools?: string[];
   modelPreference?: ModelPreference;
   modelRouting?: ModelRoutingConfig;
 }
