@@ -83,6 +83,102 @@ describe("createPromptService", () => {
     modelRouterRoute.mockResolvedValue(null);
   });
 
+  function basePromptConfig() {
+    return {
+      FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+      FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+      FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+      FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+      FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+      FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+      FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+      FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+      FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
+      FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      STREAMING_ENABLED: true,
+      TEXT_CHUNK_LIMIT: 2000,
+    };
+  }
+
+  function routingState() {
+    return {
+      activeSessionId: "session_1",
+      createdAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:00:00.000Z",
+      lastActiveAt: "2026-04-27T00:00:00.000Z",
+      modelRouting: {
+        enabled: true,
+        routerModel: { provider: "cpa", id: "router" },
+        lightModel: { provider: "zen", id: "light" },
+        heavyModel: { provider: "cpa", id: "heavy" },
+      },
+    };
+  }
+
+  function textMessage(overrides: Record<string, unknown> = {}) {
+    return {
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_route_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"hello"}',
+      text: "hello",
+      ...overrides,
+    } as any;
+  }
+
+  function createRoutingPromptService(input: {
+    userState?: Record<string, unknown> | null;
+    groupState?: Record<string, unknown> | null;
+    readUserState?: ReturnType<typeof vi.fn>;
+    readSessionState?: ReturnType<typeof vi.fn>;
+  } = {}) {
+    const readUserState = input.readUserState ?? vi.fn().mockResolvedValue(input.userState ?? null);
+    const readSessionState = input.readSessionState ?? vi.fn().mockResolvedValue(input.groupState ?? null);
+    const promptService = createPromptService({
+      config: basePromptConfig(),
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        getOrCreateActiveSessionForTarget,
+        touchSession,
+        touchSessionForTarget,
+        readSessionState,
+      },
+      userStateStore: {
+        readUserState,
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace/user",
+        getConversationWorkspaceDir: () => "/tmp/workspace/conversations/oc_1",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+        sendTextMessageToTarget,
+        addProcessingReaction,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+      resolveSenderName,
+      modelRouter: { route: modelRouterRoute },
+    });
+    return { promptService, readUserState, readSessionState };
+  }
+
   it("应把显式资源下载器透传给 prompt 输入预处理", async () => {
     const promptService = createPromptService({
       config: {
@@ -1054,5 +1150,199 @@ describe("createPromptService", () => {
       expect.anything(),
     );
     expect(piSession.setThinkingLevel).toHaveBeenCalledWith("low");
+  });
+
+  it("私聊没有模型配置时不触发模型路由", async () => {
+    const piSession = {
+      model: { provider: "old", id: "model", input: ["text"] },
+      setModel: vi.fn(),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    const { promptService, readUserState } = createRoutingPromptService({
+      userState: {
+        activeSessionId: "session_1",
+        createdAt: "2026-04-27T00:00:00.000Z",
+        updatedAt: "2026-04-27T00:00:00.000Z",
+        lastActiveAt: "2026-04-27T00:00:00.000Z",
+      },
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      textMessage({ messageId: "om_p2p_no_route" }),
+    );
+
+    expect(readUserState).toHaveBeenCalledWith("ou_1");
+    expect(modelRouterRoute).not.toHaveBeenCalled();
+    expect(piSession.setModel).not.toHaveBeenCalled();
+    expect(promptSession).toHaveBeenCalled();
+    expect(touchSession).toHaveBeenCalledWith("ou_1", "om_p2p_no_route");
+  });
+
+  it("私聊路由没有可用决策时继续使用当前模型", async () => {
+    const piSession = {
+      model: { provider: "old", id: "model", input: ["text"] },
+      setModel: vi.fn(),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    modelRouterRoute.mockResolvedValue(null);
+    const { promptService } = createRoutingPromptService({
+      userState: routingState(),
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      textMessage({ messageId: "om_p2p_route_null" }),
+    );
+
+    expect(modelRouterRoute).toHaveBeenCalledWith({
+      message: expect.objectContaining({ text: "hello" }),
+      userState: expect.objectContaining({ modelRouting: expect.any(Object) }),
+    });
+    expect(piSession.setModel).not.toHaveBeenCalled();
+    expect(preparePromptInput).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ model: { provider: "old", id: "model", input: ["text"] } }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("群聊应使用群会话状态执行模型路由并切换模型", async () => {
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const piSession = {
+      model: { provider: "old", id: "model", input: ["text"] },
+      setModel: vi.fn(async (model: { provider: string; id: string; input: string[] }) => {
+        piSession.model = model;
+      }),
+      setThinkingLevel: vi.fn(),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    getOrCreateActiveSessionForTarget.mockResolvedValue({
+      activeSessionId: "session_group_1",
+      piSession,
+    });
+    const routedModel = { provider: "cpa", id: "heavy", input: ["text"] };
+    modelRouterRoute.mockResolvedValue({
+      difficulty: "hard",
+      reasonCode: "complex_task",
+      reason: "复杂任务",
+      slot: "heavy",
+      modelPreference: { provider: "cpa", id: "heavy" },
+      model: routedModel,
+    });
+    const readUserState = vi.fn().mockResolvedValue(routingState());
+    const { promptService, readSessionState } = createRoutingPromptService({
+      readUserState,
+      groupState: {
+        ...routingState(),
+        activeSessionId: "session_group_1",
+        thinkingLevel: "medium",
+      },
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      textMessage({
+        conversationTarget: target,
+        messageId: "om_group_route",
+      }),
+    );
+
+    expect(getOrCreateActiveSessionForTarget).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target);
+    expect(getOrCreateActiveSession).not.toHaveBeenCalled();
+    expect(readSessionState).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target);
+    expect(readUserState).not.toHaveBeenCalled();
+    expect(modelRouterRoute).toHaveBeenCalledWith({
+      message: expect.objectContaining({ text: "hello", conversationTarget: target }),
+      userState: expect.objectContaining({ modelRouting: expect.any(Object) }),
+    });
+    expect(piSession.setModel).toHaveBeenCalledWith(routedModel);
+    expect(piSession.setThinkingLevel).toHaveBeenCalledWith("medium");
+    expect(promptSession).toHaveBeenCalledWith(
+      expect.objectContaining({ model: routedModel }),
+      expect.anything(),
+      "ou_1",
+      "om_group_route",
+      "SMILE",
+      true,
+      2000,
+      "off",
+      undefined,
+      expect.any(Function),
+      target,
+    );
+    expect(touchSessionForTarget).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target, "om_group_route");
+    expect(touchSession).not.toHaveBeenCalled();
+  });
+
+  it("群聊没有模型配置时不读取私聊状态，也不触发模型路由", async () => {
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const piSession = {
+      model: { provider: "old", id: "model", input: ["text"] },
+      setModel: vi.fn(),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    getOrCreateActiveSessionForTarget.mockResolvedValue({
+      activeSessionId: "session_group_1",
+      piSession,
+    });
+    const readUserState = vi.fn().mockResolvedValue(routingState());
+    const { promptService, readSessionState } = createRoutingPromptService({
+      readUserState,
+      groupState: {
+        activeSessionId: "session_group_1",
+        createdAt: "2026-04-27T00:00:00.000Z",
+        updatedAt: "2026-04-27T00:00:00.000Z",
+        lastActiveAt: "2026-04-27T00:00:00.000Z",
+      },
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      textMessage({
+        conversationTarget: target,
+        messageId: "om_group_no_route",
+      }),
+    );
+
+    expect(readSessionState).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target);
+    expect(readUserState).not.toHaveBeenCalled();
+    expect(modelRouterRoute).not.toHaveBeenCalled();
+    expect(piSession.setModel).not.toHaveBeenCalled();
+    expect(promptSession).toHaveBeenCalledWith(
+      expect.objectContaining({ model: { provider: "old", id: "model", input: ["text"] } }),
+      expect.anything(),
+      "ou_1",
+      "om_group_no_route",
+      "SMILE",
+      true,
+      2000,
+      "off",
+      undefined,
+      expect.any(Function),
+      target,
+    );
+    expect(touchSessionForTarget).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target, "om_group_no_route");
   });
 });

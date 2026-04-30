@@ -3,9 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const client = { tag: "feishu-client" };
   const startMessageConnection = vi.fn().mockResolvedValue(undefined);
+  const modelRegistry = {
+    getAvailable: vi.fn(() => [{ provider: "pi", id: "model-1" }]),
+  };
+  const modelRouter = { route: vi.fn() };
 
   return {
     client,
+    modelRegistry,
+    modelRouter,
     startMessageConnection,
     ensureDir: vi.fn().mockResolvedValue(undefined),
     setLogLevel: vi.fn(),
@@ -16,9 +22,7 @@ const mocks = vi.hoisted(() => {
       debug: vi.fn(),
     },
     createPiRuntime: vi.fn(() => ({
-      getModelRegistry: () => ({
-        getAvailable: () => [{ provider: "pi", id: "model-1" }],
-      }),
+      getModelRegistry: () => modelRegistry,
     })),
     createFeishuConnection: vi.fn(() => ({
       client,
@@ -77,6 +81,7 @@ const mocks = vi.hoisted(() => {
     createPromptService: vi.fn(() => ({
       handleUserPrompt: vi.fn(),
     })),
+    createModelRouter: vi.fn(() => modelRouter),
     createMessageRouter: vi.fn(() => ({
       handleFeishuMessage: vi.fn(),
     })),
@@ -195,6 +200,10 @@ vi.mock("../src/app/prompt-service.js", () => ({
   createPromptService: mocks.createPromptService,
 }));
 
+vi.mock("../src/pi/model-routing.js", () => ({
+  createModelRouter: mocks.createModelRouter,
+}));
+
 vi.mock("../src/app/router.js", () => ({
   createMessageRouter: mocks.createMessageRouter,
 }));
@@ -248,6 +257,9 @@ describe("index wiring", () => {
     mocks.signalRestartReadyIfNeeded.mockClear();
     mocks.notifyRestartReadyIfNeeded.mockClear();
     mocks.createPromptService.mockClear();
+    mocks.createModelRouter.mockClear();
+    mocks.modelRouter.route.mockClear();
+    mocks.modelRegistry.getAvailable.mockClear();
     mocks.createMessageRouter.mockClear();
     mocks.createRuntimeStateStore.mockClear();
     mocks.createGroupSettingsStore.mockClear();
@@ -290,6 +302,8 @@ describe("index wiring", () => {
     expect(mocks.setQuotedMessageDataDir).toHaveBeenCalledWith("/tmp/pi-gateway-data");
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.downloadResource).toBe(downloadResource);
     expect(mocks.createPromptService.mock.calls[0]?.[0]?.readQuotedMessage).toBe(readQuotedMessage);
+    expect(mocks.createModelRouter).toHaveBeenCalledWith({ registry: mocks.modelRegistry });
+    expect(mocks.createPromptService.mock.calls[0]?.[0]?.modelRouter).toBe(mocks.modelRouter);
     expect(mocks.startMessageConnection).toHaveBeenCalledTimes(1);
     expect(mocks.signalRestartReadyIfNeeded).toHaveBeenCalledTimes(1);
     expect(mocks.notifyRestartReadyIfNeeded).toHaveBeenCalledTimes(1);
