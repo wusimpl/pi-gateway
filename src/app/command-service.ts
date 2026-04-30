@@ -9,6 +9,12 @@ import {
   formatModelLabel,
 } from "../pi/models.js";
 import {
+  getModelRoutingConfig,
+  hasCompleteModelRoutingConfig,
+  parseModelRouteSlot,
+  setModelRouteSlot,
+} from "../pi/model-routing.js";
+import {
   getSessionDefaultToolNames,
   persistSessionToolSelection,
   type SessionService,
@@ -17,7 +23,7 @@ import type { SkillStatsStore } from "../pi/skill-stats.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { GroupSettingsStore, PersistedGroupRoutingConfig } from "../storage/group-settings.js";
 import type { UserStateStore } from "../storage/users.js";
-import type { ModelPreference, ThinkingLevel, ToolCallsDisplayMode, UserIdentity, UserState } from "../types.js";
+import type { ModelPreference, ModelRouteSlot, ThinkingLevel, ToolCallsDisplayMode, UserIdentity, UserState } from "../types.js";
 import { handleBridgeCommand, formatUnsupportedSlashCommand, type BridgeCommand } from "./commands.js";
 import { logger } from "./logger.js";
 import {
@@ -379,6 +385,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleResumeCommand(identity, command, conversationTarget);
       } else if (command.name === "model") {
         await handleModelCommand(identity, command, conversationTarget);
+      } else if (command.name === "route") {
+        await handleRouteCommand(identity, command, conversationTarget);
       } else if (command.name === "settings") {
         await handleSettingsCommand(identity, command, conversationTarget);
       } else if (command.name === "tools") {
@@ -520,11 +528,13 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
 
     if (!argText || argText.toLowerCase() === "status") {
       const sessionState = await getActiveSession(identity, conversationTarget);
+      const userState = await readTargetState(identity, conversationTarget);
       const availableModels = await deps.listAvailableModels();
       const reply = handleBridgeCommand(command, {
         openId,
         currentModel: getCurrentModelLabel(sessionState.piSession),
         availableModelCount: availableModels.length,
+        modelRouting: getModelRoutingConfig(userState),
       });
       await sendCommandReply(identity, conversationTarget, reply);
       return;
@@ -535,35 +545,91 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       return;
     }
 
-    const targetModel = await deps.findAvailableModel(argText);
+    const parsed = parseModelCommandArgs(argText);
+    if (parsed.error) {
+      await sendTextReply(identity, conversationTarget, parsed.error);
+      return;
+    }
+
+    if (!parsed.modelRef || !parsed.slot) {
+      await sendTextReply(identity, conversationTarget, "用法：/model router|light|heavy <序号或provider/model>。");
+      return;
+    }
+
+    const targetModel = await deps.findAvailableModel(parsed.modelRef);
     if (!targetModel) {
       await sendTextReply(
         identity,
         conversationTarget,
-        "没找到这个模型，或者它现在还不能用。\n\n先用 /models 看编号，再用 /model <序号> 或 /model <provider/model> 切。",
+        "没找到这个模型，或者它现在还不能用。\n\n先用 /models 看编号，再用 /model router|light|heavy <序号或provider/model> 设置。",
       );
       return;
     }
 
     const sessionState = await getActiveSession(identity, conversationTarget);
     const previousModel = getCurrentModelLabel(sessionState.piSession);
-    await sessionState.piSession.setModel(targetModel.model);
     const userState = await ensureTargetState(identity, conversationTarget, sessionState);
-    userState.modelPreference = normalizeModelPreference(targetModel.model) ?? {
+    const modelPreference = normalizeModelPreference(targetModel.model) ?? {
       provider: targetModel.provider,
       id: targetModel.id,
     };
+    setModelRouteSlot(userState, parsed.slot, modelPreference);
     userState.updatedAt = new Date().toISOString();
-    await writeTargetState(identity, conversationTarget, userState);
-    if (userState.thinkingLevel) {
-      sessionState.piSession.setThinkingLevel(userState.thinkingLevel);
+
+    if (parsed.slot === "heavy") {
+      await sessionState.piSession.setModel(targetModel.model);
+      if (userState.thinkingLevel) {
+        sessionState.piSession.setThinkingLevel(userState.thinkingLevel);
+      }
     }
+
+    await writeTargetState(identity, conversationTarget, userState);
 
     const reply = handleBridgeCommand(command, {
       openId,
       currentModel: getCurrentModelLabel(sessionState.piSession) ?? formatModelLabel(targetModel.provider, targetModel.id),
       currentThinkingLevel: getCurrentThinkingLevel(sessionState.piSession),
       previousModel,
+      modelRouting: getModelRoutingConfig(userState),
+      modelRouteSlot: parsed.slot,
+    });
+    await sendCommandReply(identity, conversationTarget, reply);
+  }
+
+  async function handleRouteCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
+    const openId = identity.openId;
+    const parsed = parseOnOffArgs(command.args, "route");
+    if (parsed.error) {
+      await sendTextReply(identity, conversationTarget, parsed.error);
+      return;
+    }
+
+    const sessionState = await getActiveSession(identity, conversationTarget);
+    const userState = await ensureTargetState(identity, conversationTarget, sessionState);
+    userState.modelRouting = getModelRoutingConfig(userState);
+
+    if (parsed.enabled && !hasCompleteModelRoutingConfig(userState)) {
+      await sendTextReply(
+        identity,
+        conversationTarget,
+        "请先设置 router/light/heavy 三类模型。\n\n用法：/model router <模型>、/model light <模型>、/model heavy <模型>。",
+      );
+      return;
+    }
+
+    userState.modelRouting.enabled = parsed.enabled;
+    userState.updatedAt = new Date().toISOString();
+    await writeTargetState(identity, conversationTarget, userState);
+
+    const reply = handleBridgeCommand(command, {
+      openId,
+      currentModel: getCurrentModelLabel(sessionState.piSession),
+      modelRouting: getModelRoutingConfig(userState),
+      routeEnabled: parsed.enabled,
     });
     await sendCommandReply(identity, conversationTarget, reply);
   }
@@ -1610,7 +1676,7 @@ function parseSttProviderArgs(
 
 function parseOnOffArgs(
   args: string,
-  commandName: "stream" | "reaction",
+  commandName: "stream" | "reaction" | "route",
 ): { enabled: boolean; error?: undefined } | { enabled?: undefined; error: string } {
   const normalized = args.trim().toLowerCase();
   if (normalized === "on") {
@@ -1622,6 +1688,26 @@ function parseOnOffArgs(
   }
 
   return { error: `用法：/${commandName} on 或 /${commandName} off。` };
+}
+
+function parseModelCommandArgs(
+  args: string,
+): { slot: ModelRouteSlot; modelRef: string; error?: undefined } | { slot?: undefined; modelRef?: undefined; error: string } {
+  const parts = args.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { error: "用法：/model router|light|heavy <序号或provider/model>。" };
+  }
+
+  const slot = parseModelRouteSlot(parts[0] ?? "");
+  if (slot) {
+    const modelRef = parts.slice(1).join(" ").trim();
+    if (!modelRef) {
+      return { error: `用法：/model ${slot} <序号或provider/model>。` };
+    }
+    return { slot, modelRef };
+  }
+
+  return { slot: "heavy", modelRef: args.trim() };
 }
 
 function getCurrentThinkingLevel(session: { thinkingLevel?: ThinkingLevel | undefined }): ThinkingLevel | undefined {

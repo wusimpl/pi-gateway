@@ -281,7 +281,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const sessionDir = scope.sessionsDir();
     const workspaceDir = await scope.ensureWorkspace();
     const existing = await scope.readState();
-    const preferredModel = resolvePreferredModel(existing?.modelPreference);
+    const preferredModel = resolvePreferredModel(existing?.modelRouting?.heavyModel ?? existing?.modelPreference);
     const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir, preferredModel);
     applySavedToolSelection(piSession);
     applyUserPreferences(piSession, existing?.thinkingLevel);

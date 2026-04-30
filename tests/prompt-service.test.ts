@@ -22,6 +22,7 @@ describe("createPromptService", () => {
   const readQuotedMessage = vi.fn();
   const readCachedQuotedMessage = vi.fn();
   const resolveSenderName = vi.fn();
+  const modelRouterRoute = vi.fn();
 
   beforeEach(() => {
     preparePromptInput.mockReset();
@@ -43,6 +44,7 @@ describe("createPromptService", () => {
     readQuotedMessage.mockReset();
     readCachedQuotedMessage.mockReset();
     resolveSenderName.mockReset();
+    modelRouterRoute.mockReset();
 
     addProcessingReaction.mockResolvedValue("reaction_queued_1");
     acquireLock.mockReturnValue(true);
@@ -78,6 +80,7 @@ describe("createPromptService", () => {
     });
     readCachedQuotedMessage.mockResolvedValue(null);
     resolveSenderName.mockResolvedValue("Andy");
+    modelRouterRoute.mockResolvedValue(null);
   });
 
   it("应把显式资源下载器透传给 prompt 输入预处理", async () => {
@@ -941,5 +944,115 @@ describe("createPromptService", () => {
     expect(promptSession).not.toHaveBeenCalled();
     expect(sendTextMessage).toHaveBeenCalledWith("ou_1", "网关正在重启，暂时不接新任务，请稍后再试。");
     expect(releaseLock).not.toHaveBeenCalled();
+  });
+
+  it("有重模型配置时应在 prompt 预处理前先执行模型路由并切换模型", async () => {
+    const piSession = {
+      model: { provider: "old", id: "model", input: ["text"] },
+      setModel: vi.fn(async (model: { provider: string; id: string; input: string[] }) => {
+        piSession.model = model;
+      }),
+      setThinkingLevel: vi.fn(),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    const routedModel = { provider: "zen", id: "light", input: ["text"] };
+    modelRouterRoute.mockResolvedValue({
+      difficulty: "simple",
+      reasonCode: "casual_qa",
+      reason: "普通问答",
+      slot: "light",
+      modelPreference: { provider: "zen", id: "light" },
+      model: routedModel,
+    });
+
+    const promptService = createPromptService({
+      config: {
+        FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+        FEISHU_MEDIA_OCR_MODEL: "glm-ocr:latest",
+        FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "sensevoice",
+        FEISHU_AUDIO_TRANSCRIBE_SCRIPT: "/tmp/transcribe.sh",
+        FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: "zh",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON: "/tmp/.venv-sensevoice/bin/python",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
+        FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
+        FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+        STREAMING_ENABLED: true,
+        TEXT_CHUNK_LIMIT: 2000,
+      },
+      runtimeState: {
+        acquireLock,
+        releaseLock,
+        setAbortHandler,
+        isStopRequested,
+        isDraining,
+      },
+      sessionService: {
+        getOrCreateActiveSession,
+        touchSession,
+      },
+      userStateStore: {
+        readUserState: vi.fn().mockResolvedValue({
+          activeSessionId: "session_1",
+          createdAt: "2026-04-27T00:00:00.000Z",
+          updatedAt: "2026-04-27T00:00:00.000Z",
+          lastActiveAt: "2026-04-27T00:00:00.000Z",
+          modelRouting: {
+            enabled: true,
+            routerModel: { provider: "cpa", id: "router" },
+            lightModel: { provider: "zen", id: "light" },
+            heavyModel: { provider: "cpa", id: "heavy" },
+          },
+          thinkingLevel: "low",
+        }),
+      },
+      workspaceService: {
+        getUserWorkspaceDir: () => "/tmp/workspace",
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage,
+        addProcessingReaction,
+      },
+      quotedMessageStore: {
+        readQuotedMessage: readCachedQuotedMessage,
+      },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+      modelRouter: { route: modelRouterRoute },
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "text",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_route_1",
+        messageType: "text",
+        createTime: "123",
+        rawContent: '{"text":"hello"}',
+        text: "hello",
+      },
+    );
+
+    expect(modelRouterRoute).toHaveBeenCalledWith({
+      message: expect.objectContaining({ text: "hello" }),
+      userState: expect.objectContaining({ modelRouting: expect.any(Object) }),
+    });
+    expect(piSession.setModel).toHaveBeenCalledWith(routedModel);
+    expect(piSession.setModel.mock.invocationCallOrder[0]).toBeLessThan(preparePromptInput.mock.invocationCallOrder[0]);
+    expect(preparePromptInput).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ model: routedModel }),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(piSession.setThinkingLevel).toHaveBeenCalledWith("low");
   });
 });

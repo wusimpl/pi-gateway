@@ -36,6 +36,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /route with args", () => {
+    expect(parseBridgeCommand("/route on")).toEqual({
+      name: "route",
+      args: "on",
+    });
+  });
+
   it("should parse /sessions", () => {
     expect(parseBridgeCommand("/sessions")).toEqual({
       name: "sessions",
@@ -191,6 +198,36 @@ describe("handleBridgeCommand", () => {
 
   it("`/restart` 应返回重启提示", () => {
     expect(handleBridgeCommand("restart", {})).toBe("🔄 正在重启网关...");
+  });
+
+  it("`/model` 应显示三类模型配置", () => {
+    expect(
+      handleBridgeCommand("model", {
+        currentModel: "cpa/heavy",
+        availableModelCount: 3,
+        modelRouting: {
+          enabled: true,
+          routerModel: { provider: "cpa", id: "router" },
+          lightModel: { provider: "zen", id: "light" },
+          heavyModel: { provider: "cpa", id: "heavy" },
+        },
+      }),
+    ).toContain("router: cpa/router");
+  });
+
+  it("`/route on` 应返回路由开关状态", () => {
+    expect(
+      handleBridgeCommand({ name: "route", args: "on" }, {
+        routeEnabled: true,
+        currentModel: "cpa/heavy",
+        modelRouting: {
+          enabled: true,
+          routerModel: { provider: "cpa", id: "router" },
+          lightModel: { provider: "zen", id: "light" },
+          heavyModel: { provider: "cpa", id: "heavy" },
+        },
+      }),
+    ).toContain("✅ 模型路由已开启");
   });
 
   it("`/next` 没有正文时应返回用法", () => {

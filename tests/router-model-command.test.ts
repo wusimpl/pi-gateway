@@ -265,7 +265,7 @@ describe("handleFeishuMessage 模型命令", () => {
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
   });
 
-  it("`/model provider/model` 会切到指定的可用模型", async () => {
+  it("`/model provider/model` 会切到指定的可用重模型", async () => {
     const piSession = {
       model: { provider: "zen2api", id: "minimax-m2.5-free" },
       setModel: vi.fn(async (model: { provider: string; id: string }) => {
@@ -334,7 +334,7 @@ describe("handleFeishuMessage 模型命令", () => {
     expect(mocks.getOrCreateActiveSession).not.toHaveBeenCalled();
   });
 
-  it("`/model 2` 会按 `/models` 序号切模型", async () => {
+  it("`/model 2` 会按 `/models` 序号设置重模型", async () => {
     const piSession = {
       model: { provider: "zen2api", id: "minimax-m2.5-free" },
       setModel: vi.fn(async (model: { provider: string; id: string }) => {
@@ -372,5 +372,114 @@ describe("handleFeishuMessage 模型命令", () => {
       expect.objectContaining({ modelPreference: { provider: "rightcodes", id: "gpt-5.4-high" } }),
     );
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("`/model router provider/model` 只保存路由模型，不切当前 session 模型", async () => {
+    const piSession = {
+      model: { provider: "cpa", id: "heavy" },
+      setModel: vi.fn(),
+    };
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/model router cpa/router"}',
+      text: "/model router cpa/router",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    mocks.findAvailableModel.mockResolvedValue({
+      order: 1,
+      provider: "cpa",
+      id: "router",
+      label: "cpa/router",
+      model: { provider: "cpa", id: "router" },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.findAvailableModel).toHaveBeenCalledWith("cpa/router");
+    expect(piSession.setModel).not.toHaveBeenCalled();
+    expect(mocks.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({
+        modelRouting: expect.objectContaining({ routerModel: { provider: "cpa", id: "router" } }),
+      }),
+    );
+  });
+
+  it("`/route on` 配置完整时开启路由", async () => {
+    const piSession = {
+      model: { provider: "cpa", id: "heavy" },
+    };
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/route on"}',
+      text: "/route on",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    mocks.readUserState.mockResolvedValue({
+      activeSessionId: "session_1",
+      createdAt: "2026-04-30T00:00:00.000Z",
+      updatedAt: "2026-04-30T00:00:00.000Z",
+      lastActiveAt: "2026-04-30T00:00:00.000Z",
+      modelRouting: {
+        routerModel: { provider: "cpa", id: "router" },
+        lightModel: { provider: "zen", id: "light" },
+        heavyModel: { provider: "cpa", id: "heavy" },
+      },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({
+        modelRouting: expect.objectContaining({ enabled: true }),
+      }),
+    );
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("`/route on` 配置不完整时拒绝开启", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/route on"}',
+      text: "/route on",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession: { model: { provider: "cpa", id: "heavy" } },
+    });
+    mocks.readUserState.mockResolvedValue({
+      activeSessionId: "session_1",
+      createdAt: "2026-04-30T00:00:00.000Z",
+      updatedAt: "2026-04-30T00:00:00.000Z",
+      lastActiveAt: "2026-04-30T00:00:00.000Z",
+      modelRouting: { heavyModel: { provider: "cpa", id: "heavy" } },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.writeUserState).not.toHaveBeenCalled();
+    expect(mocks.sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      expect.stringContaining("请先设置 router/light/heavy 三类模型"),
+    );
   });
 });

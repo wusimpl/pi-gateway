@@ -6,6 +6,7 @@ import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
 import type { FeishuInboundMessage, FeishuMediaProcessingOptions, PreparedPromptInput } from "../feishu/inbound/types.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import { registerSessionReaction, type PromptRunner } from "../pi/stream.js";
+import { createModelRouter, type ModelRouter } from "../pi/model-routing.js";
 import type { SessionService } from "../pi/sessions.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { QuotedMessageStore } from "../storage/quoted-messages.js";
@@ -74,6 +75,7 @@ interface PromptServiceDeps {
   >;
   deferredCronRunService?: Pick<DeferredCronRunService, "flush">;
   resolveSenderName?: (identity: UserIdentity, conversationTarget: ConversationTarget) => Promise<string | null>;
+  modelRouter?: ModelRouter;
 }
 
 export function createPromptService(deps: PromptServiceDeps): PromptService {
@@ -82,6 +84,19 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
   const quotedMessageStore = deps.quotedMessageStore ?? {
     readQuotedMessage: readCachedQuotedMessage,
   };
+  let defaultModelRouter: ModelRouter | null = null;
+
+  function shouldRouteModel(userState?: Pick<UserState, "modelRouting" | "modelPreference"> | null): boolean {
+    return Boolean(userState?.modelRouting?.heavyModel || userState?.modelPreference);
+  }
+
+  function getPromptModelRouter(): ModelRouter {
+    if (deps.modelRouter) {
+      return deps.modelRouter;
+    }
+    defaultModelRouter ??= createModelRouter();
+    return defaultModelRouter;
+  }
 
   function buildPromptPreparationOptions(
     identity: UserIdentity,
@@ -209,6 +224,25 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
       const promptIdentity = await enrichGroupSenderIdentity(identity, conversationTarget);
       const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
+      const routingDecision = shouldRouteModel(userState)
+        ? await getPromptModelRouter().route({
+            message: enrichedMessage,
+            userState,
+          })
+        : null;
+      if (routingDecision) {
+        await piSession.setModel?.(routingDecision.model);
+        applyUserPromptPreferences(piSession, userState);
+        logger.info("模型路由完成", {
+          openId,
+          conversationKey,
+          messageId,
+          difficulty: routingDecision.difficulty,
+          slot: routingDecision.slot,
+          targetModel: `${routingDecision.modelPreference.provider}/${routingDecision.modelPreference.id}`,
+          reasonCode: routingDecision.reasonCode,
+        });
+      }
       const processingReactionType = deps.runtimeConfig
         ? deps.runtimeConfig.getProcessingReactionType()
         : deps.config.FEISHU_PROCESSING_REACTION_TYPE;

@@ -45,6 +45,16 @@ export interface ModelPreference {
   id: string;
 }
 
+export type ModelRouteSlot = "router" | "light" | "heavy";
+export type ModelRoutingDifficulty = "simple" | "medium" | "hard";
+
+export interface ModelRoutingConfig {
+  enabled?: boolean;
+  routerModel?: ModelPreference;
+  lightModel?: ModelPreference;
+  heavyModel?: ModelPreference;
+}
+
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type ToolCallsDisplayMode = "off" | "name" | "full";
 
@@ -60,6 +70,7 @@ export interface UserState {
   streamingEnabled?: boolean;
   toolCallsDisplayMode?: ToolCallsDisplayMode;
   modelPreference?: ModelPreference;
+  modelRouting?: ModelRoutingConfig;
 }
 
 /** 运行时锁信息 */

@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import type { AvailableModelInfo } from "../pi/models.js";
-import type { ThinkingLevel, ToolCallsDisplayMode } from "../types.js";
+import type { ModelRouteSlot, ModelRoutingConfig, ThinkingLevel, ToolCallsDisplayMode } from "../types.js";
 import { logger } from "./logger.js";
 import { RESTART_MESSAGE } from "./restart.js";
 import { STOP_MESSAGE } from "./stop.js";
@@ -14,6 +14,7 @@ const BRIDGE_COMMANDS = [
   "skills",
   "model",
   "models",
+  "route",
   "sessions",
   "resume",
   "settings",
@@ -76,6 +77,9 @@ interface BridgeCommandContext {
   currentThinkingLevel?: ThinkingLevel;
   previousModel?: string;
   availableModelCount?: number;
+  modelRouting?: ModelRoutingConfig;
+  modelRouteSlot?: ModelRouteSlot;
+  routeEnabled?: boolean;
   streamingEnabled?: boolean;
   requestedThinkingLevel?: ThinkingLevel;
   effectiveThinkingLevel?: ThinkingLevel;
@@ -161,20 +165,33 @@ export function handleBridgeCommand(
     case "model": {
       const argText = normalized.args.trim().toLowerCase();
       if (!argText || argText === "status") {
-        const lines = [`🤖 当前模型: ${context.currentModel ?? "未知"}`];
-        if (typeof context.availableModelCount === "number") {
-          lines.push(`✅ 当前可用模型: ${context.availableModelCount} 个`);
-        }
-        lines.push("", "切换：/model <序号> 或 /model <provider/model>", "查看可用模型：/models");
-        return lines.join("\n");
+        return formatModelConfigReply(context);
       }
 
-      const lines = [`✅ 已切到模型: ${context.currentModel ?? normalized.args.trim()}`];
-      if (context.previousModel && context.previousModel !== context.currentModel) {
+      const slot = context.modelRouteSlot ?? "heavy";
+      const lines = [`✅ 已设置${formatModelRouteSlotLabel(slot)}模型: ${formatModelPreference(context.modelRouting?.[`${slot}Model`] ?? undefined)}`];
+      if (slot === "heavy" && context.previousModel && context.previousModel !== context.currentModel) {
         lines.push(`上一个模型: ${context.previousModel}`);
       }
-      lines.push("", "查看当前模型：/model", "查看可用模型：/models");
+      lines.push("", "查看模型配置：/model", "查看可用模型：/models");
       return lines.join("\n");
+    }
+    case "route": {
+      const argText = normalized.args.trim().toLowerCase();
+      if (argText === "on" || argText === "off") {
+        const lines = [
+          `✅ 模型路由已${context.routeEnabled ? "开启" : "关闭"}`,
+          ...formatModelRoutingLines(context.modelRouting, context.currentModel),
+        ];
+        return lines.join("\n");
+      }
+      return [
+        `🧭 模型路由: ${context.modelRouting?.enabled ? "on" : "off"}`,
+        ...formatModelRoutingLines(context.modelRouting, context.currentModel),
+        "",
+        "开启：/route on",
+        "关闭：/route off",
+      ].join("\n");
     }
     case "context":
       return formatContextReply(context.contextFiles ?? []);
@@ -307,6 +324,52 @@ export function formatUnsupportedSlashCommand(rawText: string): string {
 function formatAvailableModelLine(model: Pick<AvailableModelInfo, "order" | "id" | "label" | "name">): string {
   const suffix = model.name && model.name !== model.id ? ` · ${model.name}` : "";
   return `${model.order}. ${model.label}${suffix}`;
+}
+
+function formatModelConfigReply(context: BridgeCommandContext): string {
+  const lines = [
+    "🤖 模型配置",
+    ...formatModelRoutingLines(context.modelRouting, context.currentModel),
+  ];
+  if (typeof context.availableModelCount === "number") {
+    lines.push(`✅ 当前可用模型: ${context.availableModelCount} 个`);
+  }
+  lines.push(
+    "",
+    "设置：/model router|light|heavy <序号或provider/model>",
+    "兼容：/model <序号或provider/model> 等价于 /model heavy <...>",
+    "路由：/route on 或 /route off",
+    "查看可用模型：/models",
+  );
+  return lines.join("\n");
+}
+
+function formatModelRoutingLines(modelRouting?: ModelRoutingConfig, currentModel?: string): string[] {
+  return [
+    `route: ${modelRouting?.enabled ? "on" : "off"}`,
+    `router: ${formatModelPreference(modelRouting?.routerModel)}`,
+    `light: ${formatModelPreference(modelRouting?.lightModel)}`,
+    `heavy: ${formatModelPreference(modelRouting?.heavyModel)}`,
+    `current: ${currentModel ?? "未知"}`,
+  ];
+}
+
+function formatModelRouteSlotLabel(slot: ModelRouteSlot): string {
+  switch (slot) {
+    case "router":
+      return "路由";
+    case "light":
+      return "轻量";
+    case "heavy":
+      return "重型";
+  }
+}
+
+function formatModelPreference(preference?: { provider: string; id: string }): string {
+  if (!preference?.provider || !preference.id) {
+    return "未设置";
+  }
+  return `${preference.provider}/${preference.id}`;
 }
 
 function formatSessionCommandReply(message: string, currentModel?: string): string {
