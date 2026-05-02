@@ -72,4 +72,72 @@ describe("admin sessions page", () => {
     });
     expect(data.contextFiles).toEqual(["README.md"]);
   });
+
+  it("返回模型配置和可用模型", async () => {
+    const targets: AdminTargetService = {
+      listTargets: vi.fn(),
+      resolveTarget: vi.fn().mockResolvedValue({
+        target: {
+          key: "ou_1",
+          kind: "p2p",
+          label: "私聊 · ou_1",
+          detail: "ou_1",
+          sources: ["历史私聊"],
+        },
+        identity: { openId: "ou_1" },
+        conversationTarget: {
+          kind: "p2p",
+          key: "ou_1",
+          receiveIdType: "open_id",
+          receiveId: "ou_1",
+        },
+      }),
+    };
+    const service = createAdminPageDataService({
+      targets,
+      runtimeState: { isLocked: vi.fn(() => false) },
+      listAvailableModels: vi.fn().mockResolvedValue([
+        {
+          order: 1,
+          provider: "openai",
+          id: "gpt-5.5",
+          label: "openai/gpt-5.5",
+          model: {},
+        },
+      ]),
+      sessionService: {
+        getOrCreateActiveSession: vi.fn().mockResolvedValue({
+          activeSessionId: "sess_1",
+          piSession: { model: { provider: "openai", id: "gpt-5.5" } },
+        }),
+        getOrCreateActiveSessionForTarget: vi.fn(),
+        listSessions: vi.fn(),
+        listSessionsForTarget: vi.fn(),
+        readSessionState: vi.fn().mockResolvedValue({
+          activeSessionId: "sess_1",
+          createdAt: "2026-05-02T08:00:00.000Z",
+          updatedAt: "2026-05-02T08:00:00.000Z",
+          lastActiveAt: "2026-05-02T08:00:00.000Z",
+          modelRouting: {
+            enabled: true,
+            routerModel: { provider: "openai", id: "gpt-5.5" },
+            lightModel: { provider: "openai", id: "gpt-5.5" },
+            heavyModel: { provider: "openai", id: "gpt-5.5" },
+          },
+        }),
+      },
+    });
+
+    const data = await service.getModelsPage("ou_1");
+
+    expect(data.routeEnabled).toBe(true);
+    expect(data.routeModels).toEqual({
+      router: "openai/gpt-5.5",
+      light: "openai/gpt-5.5",
+      heavy: "openai/gpt-5.5",
+    });
+    expect(data.availableModels).toEqual([
+      expect.objectContaining({ order: 1, label: "openai/gpt-5.5" }),
+    ]);
+  });
 });

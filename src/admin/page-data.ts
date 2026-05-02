@@ -1,13 +1,14 @@
 import type { RuntimeStateStore } from "../app/state.js";
 import { getConversationTargetKey } from "../conversation.js";
 import { getModelRoutingConfig } from "../pi/model-routing.js";
-import { formatModelLabel } from "../pi/models.js";
+import { formatModelLabel, type AvailableModelInfo } from "../pi/models.js";
 import type { ListedSession, SessionService } from "../pi/sessions.js";
 import type { UserState } from "../types.js";
 import type { AdminTargetService } from "./targets.js";
 
 export interface AdminPageDataService {
   getSessionsPage(targetKey: string): Promise<AdminSessionsPageData>;
+  getModelsPage(targetKey: string): Promise<AdminModelsPageData>;
 }
 
 export interface AdminSessionsPageData {
@@ -30,6 +31,24 @@ export interface AdminSessionsPageData {
   rawResult: string;
 }
 
+export interface AdminModelsPageData {
+  targetKey: string;
+  currentModel: string;
+  routeEnabled: boolean;
+  routeModels: {
+    router?: string;
+    light?: string;
+    heavy?: string;
+  };
+  availableModels: Array<{
+    order: number;
+    label: string;
+    name?: string;
+    provider: string;
+    id: string;
+  }>;
+}
+
 export function createAdminPageDataService(deps: {
   targets: AdminTargetService;
   sessionService: Pick<
@@ -37,6 +56,7 @@ export function createAdminPageDataService(deps: {
     "getOrCreateActiveSession" | "getOrCreateActiveSessionForTarget" | "listSessions" | "listSessionsForTarget" | "readSessionState"
   >;
   runtimeState: Pick<RuntimeStateStore, "isLocked">;
+  listAvailableModels?: () => Promise<AvailableModelInfo[]>;
 }): AdminPageDataService {
   async function getSessionsPage(targetKey: string): Promise<AdminSessionsPageData> {
     const resolved = await deps.targets.resolveTarget(targetKey);
@@ -70,6 +90,38 @@ export function createAdminPageDataService(deps: {
     };
   }
 
+  async function getModelsPage(targetKey: string): Promise<AdminModelsPageData> {
+    const resolved = await deps.targets.resolveTarget(targetKey);
+    if (!resolved) {
+      throw new Error("ADMIN_TARGET_NOT_FOUND");
+    }
+
+    const sessionState = resolved.target.kind === "group" && deps.sessionService.getOrCreateActiveSessionForTarget
+      ? await deps.sessionService.getOrCreateActiveSessionForTarget(resolved.identity, resolved.conversationTarget)
+      : await deps.sessionService.getOrCreateActiveSession(resolved.identity);
+    const userState = await readTargetState(resolved);
+    const modelRouting = getModelRoutingConfig(userState ?? undefined);
+    const models = await deps.listAvailableModels?.() ?? [];
+
+    return {
+      targetKey: resolved.target.key,
+      currentModel: getCurrentModelLabel(sessionState.piSession) ?? formatConfiguredHeavyModel(userState) ?? "未知",
+      routeEnabled: modelRouting.enabled === true,
+      routeModels: {
+        router: formatModelPreference(modelRouting.routerModel),
+        light: formatModelPreference(modelRouting.lightModel),
+        heavy: formatModelPreference(modelRouting.heavyModel),
+      },
+      availableModels: models.map((model) => ({
+        order: model.order,
+        label: model.label,
+        name: model.name,
+        provider: model.provider,
+        id: model.id,
+      })),
+    };
+  }
+
   async function readTargetState(resolved: Awaited<ReturnType<AdminTargetService["resolveTarget"]>>): Promise<UserState | null> {
     if (!resolved) {
       return null;
@@ -79,6 +131,7 @@ export function createAdminPageDataService(deps: {
 
   return {
     getSessionsPage,
+    getModelsPage,
   };
 }
 
@@ -99,6 +152,13 @@ function formatConfiguredHeavyModel(state: UserState | null): string | undefined
     return undefined;
   }
   return formatModelLabel(heavy.provider, heavy.id);
+}
+
+function formatModelPreference(preference?: { provider: string; id: string }): string | undefined {
+  if (!preference?.provider || !preference.id) {
+    return undefined;
+  }
+  return formatModelLabel(preference.provider, preference.id);
 }
 
 function getCurrentModelLabel(session: { model?: { provider: string; id: string } | undefined }): string | undefined {

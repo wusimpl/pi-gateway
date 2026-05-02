@@ -13,9 +13,22 @@ const rawCommandForm = document.querySelector("#raw-command-form");
 const rawCommandInput = document.querySelector("#raw-command");
 const commandResult = document.querySelector("#command-result");
 const refreshButton = document.querySelector("#refresh-button");
+const navItems = document.querySelectorAll("[data-page]");
+const pageViews = document.querySelectorAll("[data-page-view]");
+const routeEnabled = document.querySelector("#route-enabled");
+const modelSummary = document.querySelector("#model-summary");
+const modelRouter = document.querySelector("#model-router");
+const modelLight = document.querySelector("#model-light");
+const modelHeavy = document.querySelector("#model-heavy");
+const availableModels = document.querySelector("#available-models");
+const modelCommandForm = document.querySelector("#model-command-form");
+const modelCommandInput = document.querySelector("#model-command");
+const modelCommandResult = document.querySelector("#model-command-result");
 
 let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
+let currentPage = "sessions";
+let lastModelsData = null;
 
 loginForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -38,7 +51,7 @@ targetSelect?.addEventListener("change", async () => {
   currentTargetKey = targetSelect.value;
   localStorage.setItem("pi-gateway-admin-target", currentTargetKey);
   renderCurrentTarget();
-  await loadSessions();
+  await loadCurrentPage();
 });
 
 refreshButton?.addEventListener("click", () => {
@@ -47,8 +60,41 @@ refreshButton?.addEventListener("click", () => {
 
 rawCommandForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await runRawCommand(rawCommandInput.value);
+  await runRawCommand(rawCommandInput.value, commandResult);
 });
+
+modelCommandForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runRawCommand(modelCommandInput.value, modelCommandResult);
+});
+
+routeEnabled?.addEventListener("change", async () => {
+  await runRawCommand(routeEnabled.checked ? "/route on" : "/route off", modelCommandResult);
+});
+
+for (const item of navItems) {
+  item.addEventListener("click", async () => {
+    if (item.disabled) {
+      return;
+    }
+    currentPage = item.dataset.page ?? "sessions";
+    renderPageVisibility();
+    await loadCurrentPage();
+  });
+}
+
+for (const [slot, select] of [
+  ["router", modelRouter],
+  ["light", modelLight],
+  ["heavy", modelHeavy],
+]) {
+  select?.addEventListener("change", async () => {
+    if (!select.value) {
+      return;
+    }
+    await runRawCommand(`/model ${slot} ${select.value}`, modelCommandResult);
+  });
+}
 
 void boot();
 
@@ -63,7 +109,8 @@ async function showAdmin() {
   loginScreen.classList.add("is-hidden");
   adminShell.classList.remove("is-hidden");
   await loadBootstrap();
-  await loadSessions();
+  renderPageVisibility();
+  await loadCurrentPage();
 }
 
 async function loadBootstrap() {
@@ -99,9 +146,34 @@ async function loadSessions() {
   renderContextFiles(data.contextFiles ?? []);
 }
 
-async function runRawCommand(command) {
+async function loadModels() {
   if (!currentTargetKey) {
-    commandResult.textContent = "请先选择私聊或群聊。";
+    modelCommandResult.textContent = "请先选择私聊或群聊。";
+    return;
+  }
+
+  const response = await apiFetch(`./api/pages/models?targetKey=${encodeURIComponent(currentTargetKey)}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    modelCommandResult.textContent = data.message ?? "读取失败。";
+    return;
+  }
+
+  lastModelsData = await response.json();
+  renderModels(lastModelsData);
+}
+
+async function loadCurrentPage() {
+  if (currentPage === "models") {
+    await loadModels();
+    return;
+  }
+  await loadSessions();
+}
+
+async function runRawCommand(command, resultElement) {
+  if (!currentTargetKey) {
+    resultElement.textContent = "请先选择私聊或群聊。";
     return;
   }
   const response = await apiFetch("./api/command", {
@@ -113,8 +185,8 @@ async function runRawCommand(command) {
     }),
   });
   const data = await response.json().catch(() => ({}));
-  commandResult.textContent = data.output ?? data.message ?? "执行失败。";
-  await loadSessions();
+  resultElement.textContent = data.output ?? data.message ?? "执行失败。";
+  await loadCurrentPage();
 }
 
 function renderTargetOptions() {
@@ -131,6 +203,15 @@ function renderTargetOptions() {
 function renderCurrentTarget() {
   const target = targets.find((item) => item.key === currentTargetKey);
   currentTarget.textContent = target ? target.label : "未选择";
+}
+
+function renderPageVisibility() {
+  for (const item of navItems) {
+    item.classList.toggle("is-active", item.dataset.page === currentPage);
+  }
+  for (const view of pageViews) {
+    view.classList.toggle("is-hidden", view.dataset.pageView !== currentPage);
+  }
 }
 
 function renderSessionStatus(status) {
@@ -194,6 +275,66 @@ function renderContextFiles(files) {
     chip.className = "chip";
     chip.textContent = file;
     contextFiles.append(chip);
+  }
+}
+
+function renderModels(data) {
+  routeEnabled.checked = data.routeEnabled === true;
+  renderModelSummary(data);
+  renderModelSelect(modelRouter, data.availableModels ?? [], data.routeModels?.router);
+  renderModelSelect(modelLight, data.availableModels ?? [], data.routeModels?.light);
+  renderModelSelect(modelHeavy, data.availableModels ?? [], data.routeModels?.heavy);
+  renderAvailableModels(data.availableModels ?? []);
+}
+
+function renderModelSummary(data) {
+  const cards = [
+    ["Router", data.routeModels?.router ?? "未设置"],
+    ["Light", data.routeModels?.light ?? "未设置"],
+    ["Heavy", data.routeModels?.heavy ?? "未设置"],
+  ];
+  modelSummary.innerHTML = "";
+  for (const [title, value] of cards) {
+    const card = document.createElement("div");
+    card.className = "model-card";
+    card.innerHTML = `<strong></strong><span></span>`;
+    card.querySelector("strong").textContent = title;
+    card.querySelector("span").textContent = value;
+    modelSummary.append(card);
+  }
+}
+
+function renderModelSelect(select, models, selectedLabel) {
+  select.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "请选择模型";
+  select.append(empty);
+  for (const model of models) {
+    const option = document.createElement("option");
+    option.value = `${model.provider}/${model.id}`;
+    option.textContent = model.label;
+    select.append(option);
+  }
+  select.value = selectedLabel ?? "";
+}
+
+function renderAvailableModels(models) {
+  availableModels.innerHTML = "";
+  if (models.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "data-item";
+    empty.textContent = "当前没有可用模型。";
+    availableModels.append(empty);
+    return;
+  }
+  for (const model of models) {
+    const item = document.createElement("div");
+    item.className = "data-item";
+    item.innerHTML = `<div><strong></strong><span></span></div><span class="badge green">可用</span>`;
+    item.querySelector("strong").textContent = model.label;
+    item.querySelector("span").textContent = model.name && model.name !== model.id ? model.name : `序号 ${model.order}`;
+    availableModels.append(item);
   }
 }
 
