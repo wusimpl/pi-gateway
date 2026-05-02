@@ -31,7 +31,7 @@
           <button class="nav-item" type="button" data-page="models">模型</button>
           <button class="nav-item" type="button" data-page="settings">设置</button>
           <button class="nav-item" type="button" data-page="cron">定时任务</button>
-          <button class="nav-item" type="button" data-page="group" disabled>群聊设置</button>
+          <button class="nav-item" type="button" data-page="group">群聊设置</button>
           <button class="nav-item" type="button" data-page="tools" disabled>工具</button>
           <button class="nav-item" type="button" data-page="control" disabled>控制</button>
           <button class="nav-item" type="button" data-page="skills" disabled>技能</button>
@@ -288,6 +288,80 @@
                   <button class="button primary" type="submit">执行</button>
                 </form>
                 <pre class="result-box" id="cron-command-result">执行结果会显示在这里。</pre>
+              </section>
+            </div>
+          </section>
+
+          <section class="page-view is-hidden" id="page-group" data-page-view="group">
+            <div class="page-title">
+              <div>
+                <h1>群聊设置</h1>
+                <p>管理当前群的响应范围、触发方式、关键词和白名单。</p>
+              </div>
+            </div>
+
+            <div class="layout-two">
+              <section class="panel">
+                <div class="panel-head">
+                  <div>
+                    <h2>触发规则</h2>
+                    <p>修改后立即作用于当前群。</p>
+                  </div>
+                  <span class="badge" id="group-policy-badge">未读取</span>
+                </div>
+                <div class="setting-list">
+                  <label class="setting-item">
+                    <span>
+                      <strong>群聊策略</strong>
+                      <small>控制哪些群可以响应消息</small>
+                    </span>
+                    <select id="group-policy">
+                      <option value="disabled">关闭群聊响应</option>
+                      <option value="allowlist">只允许白名单群</option>
+                      <option value="open">允许所有群</option>
+                    </select>
+                  </label>
+                  <label class="setting-item">
+                    <span>
+                      <strong>触发方式</strong>
+                      <small>控制当前群里哪些消息会触发回复</small>
+                    </span>
+                    <select id="group-mode">
+                      <option value="mention">提到机器人时响应</option>
+                      <option value="all">每条消息都响应</option>
+                      <option value="keyword">包含关键词时响应</option>
+                    </select>
+                  </label>
+                </div>
+
+                <form class="keyword-form" id="group-keyword-form">
+                  <label for="group-keywords">关键词</label>
+                  <div class="keyword-input-row">
+                    <input id="group-keywords" type="text" autocomplete="off" placeholder="例如：日报 总结 助手" />
+                    <button class="button primary" type="submit">保存关键词</button>
+                  </div>
+                </form>
+                <div class="chips" id="group-keyword-chips"></div>
+                <button class="button" type="button" id="group-keywords-clear">清空关键词</button>
+              </section>
+
+              <section class="panel">
+                <div>
+                  <h2>白名单</h2>
+                  <p>控制当前群是否在允许列表中。</p>
+                </div>
+                <div class="data-list" id="group-allowlist"></div>
+                <div class="button-row">
+                  <button class="button primary" type="button" id="group-allowlist-add">加入白名单</button>
+                  <button class="button" type="button" id="group-allowlist-remove">移出白名单</button>
+                </div>
+                <form class="raw-command" id="group-command-form">
+                  <label for="group-command">原始命令</label>
+                  <textarea id="group-command" rows="4">/group
+/group keywords show</textarea>
+                  <button class="button primary" type="submit">执行</button>
+                </form>
+                <pre class="result-box" id="group-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>

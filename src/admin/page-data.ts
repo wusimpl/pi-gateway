@@ -6,6 +6,7 @@ import { createCronScopeSelector } from "../cron/scope.js";
 import { getModelRoutingConfig } from "../pi/model-routing.js";
 import { formatModelLabel, type AvailableModelInfo } from "../pi/models.js";
 import type { ListedSession, SessionService } from "../pi/sessions.js";
+import type { GroupSettingsStore, PersistedGroupRoutingConfig } from "../storage/group-settings.js";
 import type { UserState } from "../types.js";
 import type { AdminTargetService } from "./targets.js";
 
@@ -14,6 +15,7 @@ export interface AdminPageDataService {
   getModelsPage(targetKey: string): Promise<AdminModelsPageData>;
   getSettingsPage(targetKey: string): Promise<AdminSettingsPageData>;
   getCronPage(targetKey: string): Promise<AdminCronPageData>;
+  getGroupPage(targetKey: string): Promise<AdminGroupPageData>;
 }
 
 export interface AdminSessionsPageData {
@@ -78,6 +80,16 @@ export interface AdminCronPageData {
   }>;
 }
 
+export interface AdminGroupPageData {
+  targetKey: string;
+  chatId: string;
+  policy: PersistedGroupRoutingConfig["FEISHU_GROUP_CHAT_POLICY"];
+  mode: PersistedGroupRoutingConfig["FEISHU_GROUP_MESSAGE_MODE"];
+  allowlist: string[];
+  keywords: string[];
+  currentInAllowlist: boolean;
+}
+
 export function createAdminPageDataService(deps: {
   targets: AdminTargetService;
   sessionService: Pick<
@@ -89,8 +101,9 @@ export function createAdminPageDataService(deps: {
   runtimeConfig?: Pick<
     RuntimeConfigStore,
     "getStreamingEnabled" | "getAudioTranscribeProvider" | "getProcessingReactionType"
-  >;
+  > & Partial<Pick<RuntimeConfigStore, "getGroupRoutingConfig">>;
   cronService?: Pick<CronService, "isEnabled" | "listJobs">;
+  groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig">;
 }): AdminPageDataService {
   async function getSessionsPage(targetKey: string): Promise<AdminSessionsPageData> {
     const resolved = await deps.targets.resolveTarget(targetKey);
@@ -204,6 +217,45 @@ export function createAdminPageDataService(deps: {
     };
   }
 
+  async function getGroupPage(targetKey: string): Promise<AdminGroupPageData> {
+    const resolved = await deps.targets.resolveTarget(targetKey);
+    if (!resolved) {
+      throw new Error("ADMIN_TARGET_NOT_FOUND");
+    }
+    if (resolved.target.kind !== "group" || resolved.conversationTarget.kind !== "group") {
+      throw new Error("ADMIN_GROUP_TARGET_REQUIRED");
+    }
+
+    const chatId = resolved.conversationTarget.chatId;
+    if (!chatId) {
+      throw new Error("ADMIN_GROUP_TARGET_REQUIRED");
+    }
+    const settings = await readGroupRoutingConfig(chatId);
+    return {
+      targetKey: resolved.target.key,
+      chatId,
+      policy: settings.FEISHU_GROUP_CHAT_POLICY,
+      mode: settings.FEISHU_GROUP_MESSAGE_MODE,
+      allowlist: [...settings.FEISHU_GROUP_CHAT_ALLOWLIST],
+      keywords: [...settings.FEISHU_GROUP_MESSAGE_KEYWORDS],
+      currentInAllowlist: settings.FEISHU_GROUP_CHAT_ALLOWLIST.includes(chatId),
+    };
+  }
+
+  async function readGroupRoutingConfig(chatId: string): Promise<PersistedGroupRoutingConfig> {
+    return (await deps.groupSettingsStore?.readGroupRoutingConfig(chatId)) ?? getDefaultGroupRoutingConfig();
+  }
+
+  function getDefaultGroupRoutingConfig(): PersistedGroupRoutingConfig {
+    const config = deps.runtimeConfig?.getGroupRoutingConfig?.();
+    return {
+      FEISHU_GROUP_CHAT_POLICY: config?.FEISHU_GROUP_CHAT_POLICY ?? "disabled",
+      FEISHU_GROUP_CHAT_ALLOWLIST: [...(config?.FEISHU_GROUP_CHAT_ALLOWLIST ?? [])],
+      FEISHU_GROUP_MESSAGE_MODE: config?.FEISHU_GROUP_MESSAGE_MODE ?? "mention",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: [...(config?.FEISHU_GROUP_MESSAGE_KEYWORDS ?? [])],
+    };
+  }
+
   async function readTargetState(resolved: Awaited<ReturnType<AdminTargetService["resolveTarget"]>>): Promise<UserState | null> {
     if (!resolved) {
       return null;
@@ -216,6 +268,7 @@ export function createAdminPageDataService(deps: {
     getModelsPage,
     getSettingsPage,
     getCronPage,
+    getGroupPage,
   };
 }
 

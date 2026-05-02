@@ -95,6 +95,7 @@ label,
 
 .login-card input,
 .target-select select,
+.keyword-form input,
 .raw-command textarea {
   min-height: 44px;
   border: 1px solid var(--line-strong);
@@ -555,6 +556,12 @@ tr:last-child td {
   color: var(--ink);
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
 .setting-list {
   display: grid;
   gap: var(--space-xs);
@@ -590,6 +597,22 @@ tr:last-child td {
   background: var(--surface);
   color: var(--ink);
   padding: 0 var(--space-sm);
+}
+
+.keyword-form {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.keyword-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.keyword-form input {
+  width: 100%;
 }
 
 @media (max-width: 1120px) {
@@ -637,7 +660,8 @@ tr:last-child td {
   .model-summary,
   .model-row,
   .panel-head,
-  .setting-item {
+  .setting-item,
+  .keyword-input-row {
     grid-template-columns: 1fr;
   }
 

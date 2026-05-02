@@ -38,6 +38,19 @@ const cronTable = document.querySelector("#cron-table");
 const cronCommandForm = document.querySelector("#cron-command-form");
 const cronCommandInput = document.querySelector("#cron-command");
 const cronCommandResult = document.querySelector("#cron-command-result");
+const groupPolicy = document.querySelector("#group-policy");
+const groupMode = document.querySelector("#group-mode");
+const groupPolicyBadge = document.querySelector("#group-policy-badge");
+const groupKeywordForm = document.querySelector("#group-keyword-form");
+const groupKeywords = document.querySelector("#group-keywords");
+const groupKeywordChips = document.querySelector("#group-keyword-chips");
+const groupKeywordsClear = document.querySelector("#group-keywords-clear");
+const groupAllowlist = document.querySelector("#group-allowlist");
+const groupAllowlistAdd = document.querySelector("#group-allowlist-add");
+const groupAllowlistRemove = document.querySelector("#group-allowlist-remove");
+const groupCommandForm = document.querySelector("#group-command-form");
+const groupCommandInput = document.querySelector("#group-command");
+const groupCommandResult = document.querySelector("#group-command-result");
 
 let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
@@ -115,6 +128,47 @@ cronTable?.addEventListener("click", async (event) => {
       ? `/cron stop ${jobId}`
       : `/cron remove ${jobId}`;
   await runRawCommand(command, cronCommandResult);
+});
+
+groupCommandForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runRawCommand(groupCommandInput.value, groupCommandResult);
+});
+
+groupPolicy?.addEventListener("change", async () => {
+  await runRawCommand(`/group policy ${groupPolicy.value}`, groupCommandResult);
+});
+
+groupMode?.addEventListener("change", async () => {
+  await runRawCommand(`/group mode ${groupMode.value}`, groupCommandResult);
+});
+
+groupKeywordForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const keywords = splitKeywords(groupKeywords.value);
+  if (keywords.length === 0) {
+    groupCommandResult.textContent = "请输入关键词，或使用清空关键词。";
+    return;
+  }
+  await runRawCommand(`/group keywords set ${keywords.join(" ")}`, groupCommandResult);
+});
+
+groupKeywordsClear?.addEventListener("click", async () => {
+  if (!confirm("清空后当前群不会再用关键词触发。")) {
+    return;
+  }
+  await runRawCommand("/group keywords clear", groupCommandResult);
+});
+
+groupAllowlistAdd?.addEventListener("click", async () => {
+  await runRawCommand("/group allowlist add here", groupCommandResult);
+});
+
+groupAllowlistRemove?.addEventListener("click", async () => {
+  if (!confirm("移出后当前群在白名单策略下不会响应。")) {
+    return;
+  }
+  await runRawCommand("/group allowlist remove here", groupCommandResult);
 });
 
 routeEnabled?.addEventListener("change", async () => {
@@ -245,6 +299,10 @@ async function loadCurrentPage() {
     await loadCron();
     return;
   }
+  if (currentPage === "group") {
+    await loadGroup();
+    return;
+  }
   await loadSessions();
 }
 
@@ -278,8 +336,28 @@ function renderTargetOptions() {
 }
 
 function renderCurrentTarget() {
-  const target = targets.find((item) => item.key === currentTargetKey);
+  const target = getCurrentTarget();
   currentTarget.textContent = target ? target.label : "未选择";
+  renderNavigationAvailability(target);
+}
+
+function getCurrentTarget() {
+  return targets.find((item) => item.key === currentTargetKey);
+}
+
+function renderNavigationAvailability(target) {
+  for (const item of navItems) {
+    if (item.dataset.page !== "group") {
+      continue;
+    }
+    const enabled = target?.kind === "group";
+    item.hidden = !enabled;
+    item.disabled = !enabled;
+    if (!enabled && currentPage === "group") {
+      currentPage = "sessions";
+    }
+  }
+  renderPageVisibility();
 }
 
 function renderPageVisibility() {
@@ -476,6 +554,81 @@ function resolveCronStatus(job) {
   return { label: "等待运行", className: "green" };
 }
 
+async function loadGroup() {
+  if (!currentTargetKey) {
+    groupCommandResult.textContent = "请先选择私聊或群聊。";
+    return;
+  }
+
+  const response = await apiFetch(`./api/pages/group?targetKey=${encodeURIComponent(currentTargetKey)}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    groupCommandResult.textContent = data.message ?? "读取失败。";
+    return;
+  }
+
+  renderGroup(await response.json());
+}
+
+function renderGroup(data) {
+  const keywords = data.keywords ?? [];
+  groupPolicy.value = data.policy ?? "disabled";
+  groupMode.value = data.mode ?? "mention";
+  groupKeywords.value = keywords.join(" ");
+  renderGroupPolicyBadge(data.policy);
+  renderGroupKeywords(keywords);
+  renderGroupAllowlist(data);
+}
+
+function renderGroupPolicyBadge(policy) {
+  const status = policy === "open"
+    ? { label: "所有群可用", className: "green" }
+    : policy === "allowlist"
+      ? { label: "白名单可用", className: "amber" }
+      : { label: "已关闭", className: "red" };
+  groupPolicyBadge.className = "badge";
+  groupPolicyBadge.textContent = status.label;
+  groupPolicyBadge.classList.add(status.className);
+}
+
+function renderGroupKeywords(keywords) {
+  groupKeywordChips.innerHTML = "";
+  if (keywords.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "chip";
+    empty.textContent = "无关键词";
+    groupKeywordChips.append(empty);
+    return;
+  }
+  for (const keyword of keywords) {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = keyword;
+    groupKeywordChips.append(chip);
+  }
+}
+
+function renderGroupAllowlist(data) {
+  groupAllowlist.innerHTML = "";
+  const current = document.createElement("div");
+  current.className = "data-item";
+  current.innerHTML = `<div><strong>当前群</strong><span></span></div><span class="badge"></span>`;
+  current.querySelector("span").textContent = data.chatId ?? "--";
+  const currentBadge = current.querySelector(".badge");
+  currentBadge.textContent = data.currentInAllowlist ? "已加入" : "未加入";
+  currentBadge.classList.add(data.currentInAllowlist ? "green" : "red");
+  groupAllowlist.append(current);
+
+  const otherChatIds = (data.allowlist ?? []).filter((chatId) => chatId !== data.chatId);
+  for (const chatId of otherChatIds) {
+    const item = document.createElement("div");
+    item.className = "data-item";
+    item.innerHTML = `<div><strong>已加入的群</strong><span></span></div><span class="badge green">已加入</span>`;
+    item.querySelector("span").textContent = chatId;
+    groupAllowlist.append(item);
+  }
+}
+
 function renderModelSummary(data) {
   const cards = [
     ["Router", data.routeModels?.router ?? "未设置"],
@@ -553,6 +706,20 @@ function formatTimestamp(value) {
     return "--";
   }
   return formatDateTime(new Date(value).toISOString());
+}
+
+function splitKeywords(value) {
+  const seen = new Set();
+  const result = [];
+  for (const item of value.split(/[,\s]+/)) {
+    const keyword = item.trim();
+    if (!keyword || seen.has(keyword)) {
+      continue;
+    }
+    seen.add(keyword);
+    result.push(keyword);
+  }
+  return result;
 }
 
 function apiFetch(url, options = {}) {

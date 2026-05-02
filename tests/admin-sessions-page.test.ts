@@ -260,4 +260,56 @@ describe("admin sessions page", () => {
       ],
     });
   });
+
+  it("返回当前群聊设置", async () => {
+    const targets: AdminTargetService = {
+      listTargets: vi.fn(),
+      resolveTarget: vi.fn().mockResolvedValue({
+        target: {
+          key: "oc_1",
+          kind: "group",
+          label: "群聊 · oc_1",
+          detail: "oc_1",
+          sources: ["历史群聊"],
+        },
+        identity: { openId: "ou_1" },
+        conversationTarget: {
+          kind: "group",
+          key: "oc_1",
+          receiveIdType: "chat_id",
+          receiveId: "oc_1",
+          chatId: "oc_1",
+        },
+      }),
+    };
+    const service = createAdminPageDataService({
+      targets,
+      runtimeState: { isLocked: vi.fn(() => false) },
+      groupSettingsStore: {
+        readGroupRoutingConfig: vi.fn().mockResolvedValue({
+          FEISHU_GROUP_CHAT_POLICY: "allowlist",
+          FEISHU_GROUP_CHAT_ALLOWLIST: ["oc_1", "oc_2"],
+          FEISHU_GROUP_MESSAGE_MODE: "keyword",
+          FEISHU_GROUP_MESSAGE_KEYWORDS: ["日报", "总结"],
+        }),
+      },
+      sessionService: {
+        getOrCreateActiveSession: vi.fn(),
+        getOrCreateActiveSessionForTarget: vi.fn(),
+        listSessions: vi.fn(),
+        listSessionsForTarget: vi.fn(),
+        readSessionState: vi.fn(),
+      },
+    });
+
+    await expect(service.getGroupPage("oc_1")).resolves.toEqual({
+      targetKey: "oc_1",
+      chatId: "oc_1",
+      policy: "allowlist",
+      mode: "keyword",
+      allowlist: ["oc_1", "oc_2"],
+      keywords: ["日报", "总结"],
+      currentInAllowlist: true,
+    });
+  });
 });
