@@ -6,6 +6,7 @@ import { createCronScopeSelector } from "../cron/scope.js";
 import { getModelRoutingConfig } from "../pi/model-routing.js";
 import { formatModelLabel, type AvailableModelInfo } from "../pi/models.js";
 import type { ListedSession, SessionService } from "../pi/sessions.js";
+import type { SkillStatsStore } from "../pi/skill-stats.js";
 import type { GroupSettingsStore, PersistedGroupRoutingConfig } from "../storage/group-settings.js";
 import type { UserState } from "../types.js";
 import type { AdminTargetService } from "./targets.js";
@@ -18,6 +19,7 @@ export interface AdminPageDataService {
   getGroupPage(targetKey: string): Promise<AdminGroupPageData>;
   getToolsPage(targetKey: string): Promise<AdminToolsPageData>;
   getControlPage(targetKey: string): Promise<AdminControlPageData>;
+  getSkillsPage(targetKey: string): Promise<AdminSkillsPageData>;
 }
 
 export interface AdminSessionsPageData {
@@ -108,6 +110,23 @@ export interface AdminControlPageData {
   draining: boolean;
 }
 
+export interface AdminSkillsPageData {
+  targetKey: string;
+  skills: Array<{
+    name: string;
+    path: string;
+    scope?: string;
+  }>;
+  statsEnabled: boolean;
+  usage: Array<{
+    name: string;
+    count: number;
+    lastUsedAt: string;
+    path?: string;
+    scope?: string;
+  }>;
+}
+
 export function createAdminPageDataService(deps: {
   targets: AdminTargetService;
   sessionService: Pick<
@@ -122,6 +141,7 @@ export function createAdminPageDataService(deps: {
   > & Partial<Pick<RuntimeConfigStore, "getGroupRoutingConfig">>;
   cronService?: Pick<CronService, "isEnabled" | "listJobs">;
   groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig">;
+  skillStatsStore?: Pick<SkillStatsStore, "listSkillUsage">;
 }): AdminPageDataService {
   async function getSessionsPage(targetKey: string): Promise<AdminSessionsPageData> {
     const resolved = await deps.targets.resolveTarget(targetKey);
@@ -305,6 +325,34 @@ export function createAdminPageDataService(deps: {
     };
   }
 
+  async function getSkillsPage(targetKey: string): Promise<AdminSkillsPageData> {
+    const resolved = await deps.targets.resolveTarget(targetKey);
+    if (!resolved) {
+      throw new Error("ADMIN_TARGET_NOT_FOUND");
+    }
+    const sessionState = resolved.target.kind === "group" && deps.sessionService.getOrCreateActiveSessionForTarget
+      ? await deps.sessionService.getOrCreateActiveSessionForTarget(resolved.identity, resolved.conversationTarget)
+      : await deps.sessionService.getOrCreateActiveSession(resolved.identity);
+    const skills = getLoadedSkills(sessionState.piSession);
+    const usage = await deps.skillStatsStore?.listSkillUsage();
+    return {
+      targetKey: resolved.target.key,
+      skills: skills.map((skill) => ({
+        name: getSkillName(skill.filePath),
+        path: skill.filePath,
+        scope: skill.scope,
+      })),
+      statsEnabled: Boolean(deps.skillStatsStore),
+      usage: (usage ?? []).map((record) => ({
+        name: record.name,
+        count: record.count,
+        lastUsedAt: record.lastUsedAt,
+        path: record.path,
+        scope: record.scope,
+      })),
+    };
+  }
+
   async function readGroupRoutingConfig(chatId: string): Promise<PersistedGroupRoutingConfig> {
     return (await deps.groupSettingsStore?.readGroupRoutingConfig(chatId)) ?? getDefaultGroupRoutingConfig();
   }
@@ -334,6 +382,7 @@ export function createAdminPageDataService(deps: {
     getGroupPage,
     getToolsPage,
     getControlPage,
+    getSkillsPage,
   };
 }
 
@@ -398,4 +447,26 @@ function getLoadedContextFiles(session: {
   };
 }): Array<{ path: string }> {
   return session.resourceLoader?.getAgentsFiles?.().agentsFiles ?? [];
+}
+
+function getLoadedSkills(session: {
+  resourceLoader?: {
+    getSkills?: () => {
+      skills?: Array<{ filePath: string; sourceInfo?: { scope?: string } }>;
+    };
+  };
+}): Array<{ filePath: string; scope?: string }> {
+  const skills = session.resourceLoader?.getSkills?.().skills ?? [];
+  return skills.map((skill) => ({
+    filePath: skill.filePath,
+    scope: skill.sourceInfo?.scope,
+  }));
+}
+
+function getSkillName(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const skillDir = normalized.endsWith("/SKILL.md")
+    ? normalized.slice(0, -"/SKILL.md".length)
+    : normalized;
+  return skillDir.split("/").filter(Boolean).at(-1) ?? skillDir;
 }

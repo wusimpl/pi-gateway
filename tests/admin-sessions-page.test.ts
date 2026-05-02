@@ -405,4 +405,83 @@ describe("admin sessions page", () => {
       draining: true,
     });
   });
+
+  it("返回当前目标的技能和使用统计", async () => {
+    const targets: AdminTargetService = {
+      listTargets: vi.fn(),
+      resolveTarget: vi.fn().mockResolvedValue({
+        target: {
+          key: "ou_1",
+          kind: "p2p",
+          label: "私聊 · ou_1",
+          detail: "ou_1",
+          sources: ["历史私聊"],
+        },
+        identity: { openId: "ou_1" },
+        conversationTarget: {
+          kind: "p2p",
+          key: "ou_1",
+          receiveIdType: "open_id",
+          receiveId: "ou_1",
+        },
+      }),
+    };
+    const service = createAdminPageDataService({
+      targets,
+      runtimeState: { isLocked: vi.fn(() => false) },
+      skillStatsStore: {
+        listSkillUsage: vi.fn().mockResolvedValue([
+          {
+            name: "feishu-docs",
+            count: 3,
+            firstUsedAt: "2026-05-02T08:00:00.000Z",
+            lastUsedAt: "2026-05-02T09:00:00.000Z",
+            path: "/Users/williamsandy/.pi/agent/skills/feishu-docs/SKILL.md",
+            scope: "user",
+          },
+        ]),
+      },
+      sessionService: {
+        getOrCreateActiveSession: vi.fn().mockResolvedValue({
+          activeSessionId: "sess_1",
+          piSession: {
+            resourceLoader: {
+              getSkills: () => ({
+                skills: [
+                  {
+                    filePath: "/Users/williamsandy/.pi/agent/skills/feishu-docs/SKILL.md",
+                    sourceInfo: { scope: "user" },
+                  },
+                  {
+                    filePath: "/Users/williamsandy/code/pi-gateway/.agents/skills/local/SKILL.md",
+                    sourceInfo: { scope: "project" },
+                  },
+                ],
+              }),
+            },
+          },
+        }),
+        getOrCreateActiveSessionForTarget: vi.fn(),
+        listSessions: vi.fn(),
+        listSessionsForTarget: vi.fn(),
+        readSessionState: vi.fn(),
+      },
+    });
+
+    await expect(service.getSkillsPage("ou_1")).resolves.toMatchObject({
+      targetKey: "ou_1",
+      statsEnabled: true,
+      skills: [
+        { name: "feishu-docs", scope: "user" },
+        { name: "local", scope: "project" },
+      ],
+      usage: [
+        {
+          name: "feishu-docs",
+          count: 3,
+          lastUsedAt: "2026-05-02T09:00:00.000Z",
+        },
+      ],
+    });
+  });
 });

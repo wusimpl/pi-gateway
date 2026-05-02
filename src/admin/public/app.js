@@ -65,6 +65,13 @@ const controlRestart = document.querySelector("#control-restart");
 const controlCommandForm = document.querySelector("#control-command-form");
 const controlCommandInput = document.querySelector("#control-command");
 const controlCommandResult = document.querySelector("#control-command-result");
+const skillsRefreshButton = document.querySelector("#skills-refresh-button");
+const skillsCount = document.querySelector("#skills-count");
+const skillsList = document.querySelector("#skills-list");
+const skillsUsageList = document.querySelector("#skills-usage-list");
+const skillsCommandForm = document.querySelector("#skills-command-form");
+const skillsCommandInput = document.querySelector("#skills-command");
+const skillsCommandResult = document.querySelector("#skills-command-result");
 
 let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
@@ -222,6 +229,15 @@ controlRestart?.addEventListener("click", async () => {
   await runRawCommand("/restart", controlCommandResult);
 });
 
+skillsCommandForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runRawCommand(skillsCommandInput.value, skillsCommandResult);
+});
+
+skillsRefreshButton?.addEventListener("click", () => {
+  void loadSkills();
+});
+
 routeEnabled?.addEventListener("change", async () => {
   await runRawCommand(routeEnabled.checked ? "/route on" : "/route off", modelCommandResult);
 });
@@ -360,6 +376,10 @@ async function loadCurrentPage() {
   }
   if (currentPage === "control") {
     await loadControl();
+    return;
+  }
+  if (currentPage === "skills") {
+    await loadSkills();
     return;
   }
   await loadSessions();
@@ -775,6 +795,86 @@ function renderControl(data) {
   }
   controlRunning.textContent = running ? "运行中" : "空闲";
   controlDraining.textContent = draining ? "正在重启" : "正常";
+}
+
+async function loadSkills() {
+  if (!currentTargetKey) {
+    skillsCommandResult.textContent = "请先选择私聊或群聊。";
+    return;
+  }
+
+  const response = await apiFetch(`./api/pages/skills?targetKey=${encodeURIComponent(currentTargetKey)}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    skillsCommandResult.textContent = data.message ?? "读取失败。";
+    return;
+  }
+
+  renderSkills(await response.json());
+}
+
+function renderSkills(data) {
+  const skills = data.skills ?? [];
+  skillsCount.textContent = `${skills.length} 个可用`;
+  skillsList.innerHTML = "";
+  skillsUsageList.innerHTML = "";
+
+  if (skills.length === 0) {
+    appendDataMessage(skillsList, "当前会话没有加载技能。");
+  } else {
+    for (const skill of skills) {
+      const item = document.createElement("div");
+      item.className = "data-item";
+      item.innerHTML = `<div><strong></strong><span></span></div><span class="badge green">可用</span>`;
+      item.querySelector("strong").textContent = skill.name;
+      item.querySelector("span").textContent = formatSkillPath(skill.path, skill.scope);
+      skillsList.append(item);
+    }
+  }
+
+  const usage = data.usage ?? [];
+  if (data.statsEnabled === false) {
+    appendDataMessage(skillsUsageList, "当前没有启用技能使用统计。");
+    return;
+  }
+  if (usage.length === 0) {
+    appendDataMessage(skillsUsageList, "当前没有技能使用记录。");
+    return;
+  }
+  for (const record of usage) {
+    const item = document.createElement("div");
+    item.className = "data-item";
+    item.innerHTML = `<div><strong></strong><span></span></div><span class="badge"></span>`;
+    item.querySelector("strong").textContent = record.name;
+    item.querySelector("span").textContent = `最近使用：${formatDateTime(record.lastUsedAt)}`;
+    item.querySelector(".badge").textContent = `${record.count} 次`;
+    skillsUsageList.append(item);
+  }
+}
+
+function formatSkillPath(path, scope) {
+  const label = scope ? `${formatScope(scope)} · ` : "";
+  return `${label}${path}`;
+}
+
+function formatScope(scope) {
+  if (scope === "user") {
+    return "用户";
+  }
+  if (scope === "project") {
+    return "项目";
+  }
+  if (scope === "temporary") {
+    return "临时";
+  }
+  return scope;
+}
+
+function appendDataMessage(container, text) {
+  const item = document.createElement("div");
+  item.className = "data-item";
+  item.textContent = text;
+  container.append(item);
 }
 
 function renderModelSummary(data) {

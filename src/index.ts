@@ -236,6 +236,7 @@ async function main() {
     runtimeConfig,
     cronService: cronService ?? undefined,
     groupSettingsStore,
+    skillStatsStore,
   });
   const adminServer = createAdminServer(config, {
     targets: adminTargets,

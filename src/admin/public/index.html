@@ -34,7 +34,7 @@
           <button class="nav-item" type="button" data-page="group">群聊设置</button>
           <button class="nav-item" type="button" data-page="tools">工具</button>
           <button class="nav-item" type="button" data-page="control">控制</button>
-          <button class="nav-item" type="button" data-page="skills" disabled>技能</button>
+          <button class="nav-item" type="button" data-page="skills">技能</button>
         </nav>
       </aside>
 
@@ -448,6 +448,44 @@
                   <button class="button primary" type="submit">执行</button>
                 </form>
                 <pre class="result-box" id="control-command-result">执行结果会显示在这里。</pre>
+              </section>
+            </div>
+          </section>
+
+          <section class="page-view is-hidden" id="page-skills" data-page-view="skills">
+            <div class="page-title">
+              <div>
+                <h1>技能</h1>
+                <p>查看当前可用技能和使用状态。</p>
+              </div>
+              <button class="button" type="button" id="skills-refresh-button">刷新列表</button>
+            </div>
+
+            <div class="layout-two">
+              <section class="panel">
+                <div class="panel-head">
+                  <div>
+                    <h2>技能列表</h2>
+                    <p>来自当前目标会话。</p>
+                  </div>
+                  <span class="badge" id="skills-count">0 个可用</span>
+                </div>
+                <div class="data-list" id="skills-list"></div>
+              </section>
+
+              <section class="panel">
+                <div>
+                  <h2>使用统计</h2>
+                  <p>按使用次数和最近时间排序。</p>
+                </div>
+                <div class="data-list" id="skills-usage-list"></div>
+                <form class="raw-command" id="skills-command-form">
+                  <label for="skills-command">原始命令</label>
+                  <textarea id="skills-command" rows="4">/skills
+/skillstat</textarea>
+                  <button class="button primary" type="submit">执行</button>
+                </form>
+                <pre class="result-box" id="skills-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>
