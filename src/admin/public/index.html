@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pi Gateway 后台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="login-screen">
+      <form class="login-card" id="login-form">
+        <h1>登录后台</h1>
+        <label for="password">管理密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
+        <button type="submit">登录</button>
+        <p class="message" id="message" role="status"></p>
+      </form>
+    </main>
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

@@ -71,6 +71,16 @@ describe("loadConfig", () => {
     expect(config.CRON_DEFAULT_TZ).toBe("Asia/Shanghai");
   });
 
+  it("后台管理默认只监听本机", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.ADMIN_HOST).toBe("127.0.0.1");
+    expect(config.ADMIN_PORT).toBe(8787);
+    expect(config.ADMIN_PASSWORD).toBe("admin");
+  });
+
   it("群聊 allowlist 应按逗号解析", async () => {
     applyBaseEnv({
       FEISHU_GROUP_CHAT_POLICY: "allowlist",

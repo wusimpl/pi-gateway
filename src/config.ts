@@ -43,6 +43,10 @@ const envSchema = z.object({
   TEXT_CHUNK_LIMIT: z.coerce.number().int().positive().default(2000),
   FEISHU_PROCESSING_REACTION_TYPE: z.string().optional(),
   FEISHU_STEERING_REACTION_TYPE: z.string().default("OnIt"),
+  ADMIN_HOST: z.string().default("127.0.0.1"),
+  ADMIN_PORT: z.coerce.number().int().positive().default(8787),
+  ADMIN_PASSWORD: z.string().default("admin"),
+  ADMIN_SESSION_TTL_MS: z.coerce.number().int().positive().default(24 * 60 * 60 * 1000),
 });
 
 type ParsedConfig = z.infer<typeof envSchema>;

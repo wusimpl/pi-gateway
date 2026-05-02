@@ -42,6 +42,7 @@ import { createGroupSettingsStore } from "./storage/group-settings.js";
 import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
 import { createRuntimeConfigStore } from "./app/runtime-config.js";
+import { createAdminServer, type AdminServer } from "./admin/server.js";
 
 async function main() {
   const config = loadConfig();
@@ -216,7 +217,10 @@ async function main() {
   });
   logger.info("消息路由就绪");
 
-  registerShutdown(sessionService, runtimeState, cronService);
+  const adminServer = createAdminServer(config);
+  await adminServer.start();
+
+  registerShutdown(sessionService, runtimeState, cronService, adminServer);
 
   try {
     await feishuConnection.startMessageConnection(router.handleFeishuMessage, async (data) => {
@@ -247,6 +251,7 @@ function registerShutdown(
   sessionService: Pick<SessionService, "disposeAllSessions">,
   runtimeState: Pick<RuntimeStateStore, "clearAllState">,
   cronService?: Pick<CronService, "stop"> | null,
+  adminServer?: Pick<AdminServer, "stop"> | null,
 ) {
   let shuttingDown = false;
 
@@ -256,6 +261,7 @@ function registerShutdown(
     logger.info(`收到 ${signal}，开始优雅关停...`);
 
     try {
+      await adminServer?.stop?.();
       await cronService?.stop?.();
       sessionService.disposeAllSessions();
       runtimeState.clearAllState();

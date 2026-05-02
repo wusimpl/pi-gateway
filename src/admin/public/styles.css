@@ -1,0 +1,82 @@
+:root {
+  color-scheme: light;
+  --paper: oklch(0.97 0.01 86);
+  --surface: oklch(0.985 0.006 86);
+  --ink: oklch(0.19 0.025 246);
+  --muted: oklch(0.55 0.022 246);
+  --line: oklch(0.86 0.015 86);
+  --blue: oklch(0.47 0.12 246);
+  --radius: 8px;
+  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+button,
+input {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.login-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 48px;
+}
+
+.login-card {
+  display: grid;
+  gap: 16px;
+  width: min(420px, 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 32px;
+}
+
+.login-card h1 {
+  margin: 0 0 8px;
+  font-size: 1.45rem;
+}
+
+.login-card label {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.login-card input {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 12px;
+}
+
+.login-card button {
+  min-height: 42px;
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  background: var(--blue);
+  color: var(--paper);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.message {
+  min-height: 24px;
+  margin: 0;
+  color: var(--muted);
+}
