@@ -695,7 +695,7 @@ function renderTools(data) {
       <input class="switch-input" type="checkbox" />
     `;
     item.querySelector("strong").textContent = tool.name;
-    item.querySelector("small").textContent = tool.enabled ? "已启用" : "已停用";
+    item.querySelector("small").textContent = tool.description || "暂无说明";
     const checkbox = item.querySelector("input");
     checkbox.checked = tool.enabled === true;
     checkbox.dataset.toolName = tool.name;

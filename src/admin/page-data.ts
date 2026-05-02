@@ -100,6 +100,7 @@ export interface AdminToolsPageData {
   enabledCount: number;
   tools: Array<{
     name: string;
+    description?: string;
     enabled: boolean;
   }>;
 }
@@ -298,16 +299,18 @@ export function createAdminPageDataService(deps: {
       };
     }
 
-    const allToolNames = toolSession.getAllTools().map((tool) => tool.name);
+    const allTools = toolSession.getAllTools();
+    const allToolNames = allTools.map((tool) => tool.name);
     const allToolNameSet = new Set(allToolNames);
     const activeToolNames = new Set(toolSession.getActiveToolNames().filter((name) => allToolNameSet.has(name)));
     return {
       targetKey: resolved.target.key,
       supported: true,
       enabledCount: activeToolNames.size,
-      tools: allToolNames.map((name) => ({
-        name,
-        enabled: activeToolNames.has(name),
+      tools: allTools.map((tool) => ({
+        name: tool.name,
+        description: tool.description?.trim() || undefined,
+        enabled: activeToolNames.has(tool.name),
       })),
     };
   }
@@ -387,7 +390,7 @@ export function createAdminPageDataService(deps: {
 }
 
 interface ToolConfigSession {
-  getAllTools(): Array<{ name: string }>;
+  getAllTools(): Array<{ name: string; description?: string }>;
   getActiveToolNames(): string[];
   setActiveToolsByName(toolNames: string[]): void;
 }

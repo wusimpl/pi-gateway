@@ -340,7 +340,11 @@ describe("admin sessions page", () => {
         getOrCreateActiveSession: vi.fn().mockResolvedValue({
           activeSessionId: "sess_1",
           piSession: {
-            getAllTools: vi.fn(() => [{ name: "read" }, { name: "bash" }, { name: "edit" }]),
+            getAllTools: vi.fn(() => [
+              { name: "read", description: "读取文件" },
+              { name: "bash" },
+              { name: "edit", description: "修改文件" },
+            ]),
             getActiveToolNames: vi.fn(() => ["read", "edit", "missing"]),
             setActiveToolsByName: vi.fn(),
           },
@@ -357,9 +361,9 @@ describe("admin sessions page", () => {
       supported: true,
       enabledCount: 2,
       tools: [
-        { name: "read", enabled: true },
+        { name: "read", description: "读取文件", enabled: true },
         { name: "bash", enabled: false },
-        { name: "edit", enabled: true },
+        { name: "edit", description: "修改文件", enabled: true },
       ],
     });
   });
