@@ -91,6 +91,7 @@ describe("model routing", () => {
     const registry = createRegistry();
     const complete = vi.fn(async () => ({ content: [{ type: "text", text: "not json" }] }));
     const router = createModelRouter({ registry: registry as any, complete: complete as any });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     const decision = await router.route({
       userState: baseState,
@@ -102,11 +103,17 @@ describe("model routing", () => {
         messageType: "text",
         createTime: "123",
         rawContent: "{}",
-        text: "写个方案",
+        text: "写个包含 secret 的方案",
       },
     });
 
     expect(decision).toMatchObject({ difficulty: "hard", slot: "heavy", reasonCode: "router_failed" });
+    const logLines = warnSpy.mock.calls.map(([line]) => String(line)).join("\n");
+    expect(logLines).toContain("模型路由模型调用失败，使用重模型");
+    expect(logLines).toContain("INVALID_ROUTER_RESPONSE_JSON");
+    expect(logLines).not.toContain("secret");
+    expect(logLines).not.toContain("not json");
+    warnSpy.mockRestore();
   });
 
   it("route off 时使用重模型且不调用 router", async () => {

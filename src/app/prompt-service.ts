@@ -224,7 +224,17 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
       const promptIdentity = await enrichGroupSenderIdentity(identity, conversationTarget);
       const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
-      const routingDecision = shouldRouteModel(userState)
+      const routingLogContext = {
+        openId,
+        conversationKey,
+        messageId,
+        ...summarizeRoutingMessage(enrichedMessage),
+      };
+      const routingAllowed = shouldRouteModel(userState);
+      if (!routingAllowed) {
+        logger.debug("模型路由跳过：未配置重模型", routingLogContext);
+      }
+      const routingDecision = routingAllowed
         ? await getPromptModelRouter().route({
             message: enrichedMessage,
             userState,
@@ -241,6 +251,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
           slot: routingDecision.slot,
           targetModel: `${routingDecision.modelPreference.provider}/${routingDecision.modelPreference.id}`,
           reasonCode: routingDecision.reasonCode,
+          reason: routingDecision.reason,
         });
       }
       const processingReactionType = deps.runtimeConfig
@@ -464,6 +475,17 @@ function addConversationPromptContext(
   return {
     ...promptInput,
     text: `发送者：${sender}\n用户消息：\n${promptInput.text}`,
+  };
+}
+
+function summarizeRoutingMessage(message: FeishuInboundMessage): Record<string, unknown> {
+  return {
+    messageKind: message.kind,
+    hasImage: message.kind === "image",
+    hasEmbeddedImage: message.kind === "text" && Boolean(message.embeddedImages?.length),
+    hasFile: message.kind === "file",
+    hasAudio: message.kind === "audio",
+    hasQuotedMessage: Boolean(message.quotedMessage),
   };
 }
 

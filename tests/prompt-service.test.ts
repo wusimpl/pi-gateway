@@ -1123,6 +1123,7 @@ describe("createPromptService", () => {
       preparePromptInput,
       modelRouter: { route: modelRouterRoute },
     });
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
     await promptService.handleUserPrompt(
       { openId: "ou_1", userId: "u_1" },
@@ -1141,6 +1142,10 @@ describe("createPromptService", () => {
       message: expect.objectContaining({ text: "hello" }),
       userState: expect.objectContaining({ modelRouting: expect.any(Object) }),
     });
+    const logLines = infoSpy.mock.calls.map(([line]) => String(line)).join("\n");
+    expect(logLines).toContain("模型路由完成");
+    expect(logLines).toContain("\"reason\":\"普通问答\"");
+    infoSpy.mockRestore();
     expect(piSession.setModel).toHaveBeenCalledWith(routedModel);
     expect(piSession.setModel.mock.invocationCallOrder[0]).toBeLessThan(preparePromptInput.mock.invocationCallOrder[0]);
     expect(preparePromptInput).toHaveBeenCalledWith(

@@ -1,6 +1,7 @@
 import { completeSimple, type AssistantMessage, type Context, type Model } from "@mariozechner/pi-ai";
 import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
 import { z } from "zod";
+import { logger } from "../app/logger.js";
 import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
 import type {
   ModelPreference,
@@ -90,13 +91,20 @@ export function createModelRouter(options: CreateModelRouterOptions = {}): Model
   const complete = options.complete ?? completeSimple;
 
   async function route(input: ModelRoutingInput): Promise<ModelRoutingDecision | null> {
+    const logContext = buildRoutingLogContext(input.message);
     const routing = input.userState?.modelRouting;
     const heavyModelPreference = resolveHeavyModelPreference(input.userState);
     if (!heavyModelPreference) {
+      logger.debug("模型路由跳过：未配置重模型", logContext);
       return null;
     }
+    const heavyModelLabel = formatModelPreference(heavyModelPreference);
     const heavyModel = resolveConfiguredModel(registry, heavyModelPreference);
     if (!heavyModel) {
+      logger.warn("模型路由跳过：重模型不可用", {
+        ...logContext,
+        heavyModel: heavyModelLabel,
+      });
       return null;
     }
 
@@ -111,11 +119,27 @@ export function createModelRouter(options: CreateModelRouterOptions = {}): Model
     const routerModelPreference = routing.routerModel;
     const lightModelPreference = routing.lightModel;
     if (!routerModelPreference || !lightModelPreference) {
+      logger.warn("模型路由配置不完整，使用重模型", {
+        ...logContext,
+        routerModel: formatModelPreference(routerModelPreference),
+        lightModel: formatModelPreference(lightModelPreference),
+        heavyModel: heavyModelLabel,
+      });
       return createStaticDecision("hard", "router_config_incomplete", "路由配置不完整，使用重模型", "heavy", heavyModelPreference, heavyModel);
     }
+    const routerModelLabel = formatModelPreference(routerModelPreference);
+    const lightModelLabel = formatModelPreference(lightModelPreference);
     const routerModel = resolveConfiguredModel(registry, routerModelPreference);
     const lightModel = resolveConfiguredModel(registry, lightModelPreference);
     if (!routerModel || !lightModel) {
+      logger.warn("模型路由配置模型不可用，使用重模型", {
+        ...logContext,
+        routerModel: routerModelLabel,
+        routerModelAvailable: Boolean(routerModel),
+        lightModel: lightModelLabel,
+        lightModelAvailable: Boolean(lightModel),
+        heavyModel: heavyModelLabel,
+      });
       return createStaticDecision("hard", "router_config_incomplete", "路由配置不完整，使用重模型", "heavy", heavyModelPreference, heavyModel);
     }
 
@@ -125,7 +149,12 @@ export function createModelRouter(options: CreateModelRouterOptions = {}): Model
         return createStaticDecision("hard", parsed.reason_code, parsed.reason, "heavy", heavyModelPreference, heavyModel);
       }
       return createStaticDecision(parsed.difficulty, parsed.reason_code, parsed.reason, "light", lightModelPreference, lightModel);
-    } catch {
+    } catch (err) {
+      logger.warn("模型路由模型调用失败，使用重模型", {
+        ...logContext,
+        routerModel: routerModelLabel,
+        error: formatRoutingError(err),
+      });
       return createStaticDecision("hard", "router_failed", "路由失败，使用重模型", "heavy", heavyModelPreference, heavyModel);
     }
   }
@@ -263,6 +292,32 @@ function buildRouterInput(message: FeishuInboundMessage): Record<string, unknown
 
 function messageHasImage(message: FeishuInboundMessage): boolean {
   return message.kind === "image" || (message.kind === "text" && Boolean(message.embeddedImages?.length));
+}
+
+function buildRoutingLogContext(message: FeishuInboundMessage): Record<string, unknown> {
+  return {
+    messageKind: message.kind,
+    hasImage: message.kind === "image",
+    hasEmbeddedImage: message.kind === "text" && Boolean(message.embeddedImages?.length),
+    hasFile: message.kind === "file",
+    hasAudio: message.kind === "audio",
+    hasQuotedMessage: Boolean(message.quotedMessage),
+  };
+}
+
+function formatRoutingError(error: unknown): string {
+  if (error instanceof z.ZodError) {
+    return "INVALID_ROUTER_RESPONSE_SCHEMA";
+  }
+  if (error instanceof SyntaxError) {
+    return "INVALID_ROUTER_RESPONSE_JSON";
+  }
+  if (error instanceof Error && error.message === "EMPTY_ROUTER_RESPONSE") {
+    return "EMPTY_ROUTER_RESPONSE";
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/\s+/g, " ").slice(0, 200);
 }
 
 function parseRouterResponse(response: AssistantMessage): ParsedRouterDecision {
