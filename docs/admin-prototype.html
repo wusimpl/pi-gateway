@@ -72,33 +72,6 @@
         cursor: pointer;
       }
 
-      .prototype-bar {
-        position: sticky;
-        top: 0;
-        z-index: 30;
-        background: color-mix(in oklch, var(--paper) 88%, transparent);
-        border-bottom: 1px solid var(--line);
-        backdrop-filter: blur(16px);
-      }
-
-      .prototype-inner {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        max-width: 1480px;
-        margin: 0 auto;
-        padding: var(--space-sm) var(--space-xl);
-      }
-
-      .prototype-title {
-        display: inline-flex;
-        gap: var(--space-xs);
-        align-items: center;
-        font-weight: 750;
-        white-space: nowrap;
-      }
-
-      .prototype-title svg,
       .button svg,
       .icon-button svg,
       .nav-item svg,
@@ -118,7 +91,7 @@
       }
 
       .login-screen {
-        min-height: calc(100vh - 58px);
+        min-height: 100vh;
         display: grid;
         place-items: center;
         padding: var(--space-2xl);
@@ -269,17 +242,17 @@
       .admin-shell {
         display: grid;
         grid-template-columns: 248px minmax(0, 1fr);
-        min-height: calc(100vh - 58px);
+        min-height: 100vh;
       }
 
       .sidebar {
         position: sticky;
-        top: 58px;
+        top: 0;
         align-self: start;
         display: grid;
-        grid-template-rows: auto 1fr auto;
+        grid-template-rows: auto 1fr;
         gap: var(--space-xl);
-        height: calc(100vh - 58px);
+        height: 100vh;
         padding: var(--space-lg);
         border-right: 1px solid var(--line);
         background: color-mix(in oklch, var(--surface) 68%, var(--paper));
@@ -334,14 +307,6 @@
         justify-self: end;
       }
 
-      .sidebar-foot {
-        display: grid;
-        gap: var(--space-xs);
-        color: var(--muted);
-        font-size: 0.86rem;
-        line-height: 1.6;
-      }
-
       .workspace {
         display: grid;
         grid-template-rows: auto 1fr;
@@ -350,7 +315,7 @@
 
       .target-bar {
         position: sticky;
-        top: 58px;
+        top: 0;
         z-index: 20;
         display: grid;
         grid-template-columns: minmax(260px, auto) minmax(280px, 1fr) auto;
@@ -381,35 +346,9 @@
 
       .target-controls {
         display: grid;
-        grid-template-columns: auto minmax(180px, 1fr) auto;
+        grid-template-columns: minmax(220px, 1fr);
         gap: var(--space-xs);
         align-items: center;
-      }
-
-      .segmented {
-        display: inline-grid;
-        grid-auto-flow: column;
-        gap: 2px;
-        width: max-content;
-        border: 1px solid var(--line-strong);
-        border-radius: var(--radius);
-        background: var(--surface-muted);
-        padding: 3px;
-      }
-
-      .segmented button {
-        min-height: 30px;
-        border: 0;
-        border-radius: var(--radius-sm);
-        background: transparent;
-        color: var(--ink-soft);
-        padding: 0 var(--space-sm);
-      }
-
-      .segmented button.is-active {
-        background: var(--surface);
-        color: var(--ink);
-        box-shadow: 0 1px 0 color-mix(in oklch, var(--ink) 8%, transparent);
       }
 
       .sync-toggle {
@@ -472,6 +411,10 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: var(--space-lg);
         align-items: start;
+      }
+
+      .tools-layout {
+        grid-template-columns: minmax(0, 1fr);
       }
 
       .panel {
@@ -608,59 +551,6 @@
         color: var(--ink);
         padding: var(--space-sm);
         line-height: 1.5;
-      }
-
-      .command-grid {
-        display: grid;
-        grid-template-columns: 220px 1fr;
-        gap: var(--space-md);
-      }
-
-      .category-list {
-        display: grid;
-        gap: var(--space-xs);
-        align-content: start;
-      }
-
-      .category {
-        display: grid;
-        gap: 2px;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: var(--surface);
-        padding: var(--space-sm);
-      }
-
-      .category strong {
-        font-size: 0.9rem;
-      }
-
-      .category span {
-        color: var(--muted);
-        font-size: 0.8rem;
-      }
-
-      .command-cloud {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-xs);
-        align-content: start;
-      }
-
-      .command-pill {
-        min-height: 34px;
-        border: 1px solid var(--line-strong);
-        border-radius: 999px;
-        background: var(--surface);
-        color: var(--ink-soft);
-        padding: 0 var(--space-sm);
-      }
-
-      .command-pill:hover,
-      .command-pill.is-active {
-        border-color: color-mix(in oklch, var(--blue) 55%, var(--line));
-        background: var(--blue-soft);
-        color: var(--blue);
       }
 
       .result-box,
@@ -856,7 +746,6 @@
       }
 
       @media (max-width: 1120px) {
-        .prototype-inner,
         .target-bar,
         .content {
           padding-left: var(--space-lg);
@@ -869,8 +758,7 @@
 
         .target-controls,
         .layout-two,
-        .layout-three,
-        .command-grid {
+        .layout-three {
           grid-template-columns: 1fr;
         }
 
@@ -897,10 +785,6 @@
       }
 
       @media (max-width: 640px) {
-        .prototype-inner {
-          gap: var(--space-sm);
-        }
-
         .login-screen {
           padding: var(--space-lg);
         }
@@ -926,15 +810,6 @@
     </style>
   </head>
   <body>
-    <header class="prototype-bar" aria-label="后台顶部">
-      <div class="prototype-inner">
-        <div class="prototype-title">
-          <i data-lucide="layout-dashboard"></i>
-          <span>Pi Gateway 后台原型</span>
-        </div>
-      </div>
-    </header>
-
     <main>
       <section class="screen is-active login-screen" id="screen-login">
         <div class="login-frame">
@@ -952,183 +827,11 @@
               </div>
             </div>
 
-            <button class="button primary" type="button" data-screen-link="commands">
+            <button class="button primary" type="button" data-screen-link="sessions">
               <i data-lucide="log-in"></i>
               登录
             </button>
           </form>
-        </div>
-      </section>
-
-      <section class="screen" id="screen-commands">
-        <div class="admin-shell">
-          <aside class="sidebar">
-            <div class="app-logo">
-              <div class="brand-mark">Pi</div>
-              <div>
-                <strong>Pi Gateway</strong>
-                <span>本机管理后台</span>
-              </div>
-            </div>
-            <nav class="nav-list" aria-label="后台页面">
-              <button class="nav-item is-active" type="button" data-screen-link="commands">
-                <i data-lucide="terminal-square"></i><span>全部命令</span><span></span>
-              </button>
-              <button class="nav-item" type="button" data-screen-link="sessions">
-                <i data-lucide="messages-square"></i><span>会话</span><span></span>
-              </button>
-              <button class="nav-item" type="button" data-screen-link="models">
-                <i data-lucide="cpu"></i><span>模型</span><span></span>
-              </button>
-              <button class="nav-item" type="button" data-screen-link="cron">
-                <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
-              </button>
-              <button class="nav-item" type="button" data-screen-link="group">
-                <i data-lucide="users-round"></i><span>群聊设置</span><span></span>
-              </button>
-              <button class="nav-item" type="button" data-screen-link="tools">
-                <i data-lucide="wrench"></i><span>工具</span><span></span>
-              </button>
-            </nav>
-            <div class="sidebar-foot">
-              <span>当前只对本机开放</span>
-              <span>操作前先确认执行目标</span>
-            </div>
-          </aside>
-
-          <div class="workspace">
-            <header class="target-bar">
-              <div class="target-current">
-                <small>当前执行目标</small>
-                <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
-              </div>
-              <div class="target-controls">
-                <div class="segmented" aria-label="目标类型">
-                  <button class="is-active" type="button">群聊</button>
-                  <button type="button">私聊</button>
-                  <button type="button">手动输入</button>
-                </div>
-                <div class="field">
-                  <span class="field-icon"><i data-lucide="search"></i></span>
-                  <input type="search" value="产品讨论群" aria-label="搜索目标" />
-                </div>
-                <button class="button" type="button">
-                  <i data-lucide="check"></i>
-                  切换
-                </button>
-              </div>
-              <label class="sync-toggle">
-                <span>同步结果到飞书</span>
-                <span class="switch" aria-hidden="true"></span>
-              </label>
-            </header>
-
-            <div class="content">
-              <div class="page-title">
-                <div>
-                  <h1>全部命令</h1>
-                  <p>常用命令提供快捷入口，也可以直接输入完整命令执行。</p>
-                </div>
-                <button class="button primary" type="button">
-                  <i data-lucide="play"></i>
-                  执行命令
-                </button>
-              </div>
-
-              <div class="layout-two">
-                <section class="panel">
-                  <div class="panel-head">
-                    <div>
-                      <h2 class="panel-title">命令分类</h2>
-                      <p class="panel-note">点击命令后，可以在右侧补充参数。</p>
-                    </div>
-                    <span class="badge blue">36 个入口</span>
-                  </div>
-
-                  <div class="command-grid">
-                    <div class="category-list">
-                      <div class="category">
-                        <strong>会话</strong>
-                        <span>/new /reset /status /sessions /resume /context</span>
-                      </div>
-                      <div class="category">
-                        <strong>模型</strong>
-                        <span>/models /model /route</span>
-                      </div>
-                      <div class="category">
-                        <strong>设置</strong>
-                        <span>/settings /stream /stt /reaction /toolcalls</span>
-                      </div>
-                      <div class="category">
-                        <strong>工具</strong>
-                        <span>/tools</span>
-                      </div>
-                      <div class="category">
-                        <strong>定时任务</strong>
-                        <span>/cron</span>
-                      </div>
-                      <div class="category">
-                        <strong>控制</strong>
-                        <span>/stop /next /restart</span>
-                      </div>
-                      <div class="category">
-                        <strong>群聊</strong>
-                        <span>/group</span>
-                      </div>
-                      <div class="category">
-                        <strong>技能</strong>
-                        <span>/skills /skillstat</span>
-                      </div>
-                    </div>
-
-                    <div class="command-cloud" aria-label="命令列表">
-                      <button class="command-pill is-active" type="button" data-command="/status">/status</button>
-                      <button class="command-pill" type="button" data-command="/sessions">/sessions</button>
-                      <button class="command-pill" type="button" data-command="/context">/context</button>
-                      <button class="command-pill" type="button" data-command="/models">/models</button>
-                      <button class="command-pill" type="button" data-command="/model router">/model router</button>
-                      <button class="command-pill" type="button" data-command="/route on">/route on</button>
-                      <button class="command-pill" type="button" data-command="/route off">/route off</button>
-                      <button class="command-pill" type="button" data-command="/tools">/tools</button>
-                      <button class="command-pill" type="button" data-command="/tools reset">/tools reset</button>
-                      <button class="command-pill" type="button" data-command="/cron list">/cron list</button>
-                      <button class="command-pill" type="button" data-command="/stop">/stop</button>
-                      <button class="command-pill" type="button" data-command="/restart">/restart</button>
-                      <button class="command-pill" type="button" data-command="/group">/group</button>
-                      <button class="command-pill" type="button" data-command="/skills">/skills</button>
-                      <button class="command-pill" type="button" data-command="/skillstat">/skillstat</button>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="panel">
-                  <div>
-                    <h2 class="panel-title">命令执行</h2>
-                    <p class="panel-note">执行前请确认当前目标。</p>
-                  </div>
-                  <div class="raw-command">
-                    <label for="command-text">原始命令</label>
-                    <textarea class="command-input" id="command-text" rows="4">/status</textarea>
-                    <div class="button-row">
-                      <button class="button primary" type="button">
-                        <i data-lucide="play"></i>
-                        执行
-                      </button>
-                      <button class="button ghost" type="button">
-                        <i data-lucide="rotate-ccw"></i>
-                        清空
-                      </button>
-                    </div>
-                  </div>
-                  <div class="result-box">
-                    <strong>产品讨论群</strong><br />
-                    当前会话正在运行，模型为 gpt-5.5，模型路由已开启。<br />
-                    最近一次响应时间：14:32。
-                  </div>
-                </section>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -1143,14 +846,14 @@
               </div>
             </div>
             <nav class="nav-list" aria-label="后台页面">
-              <button class="nav-item" type="button" data-screen-link="commands">
-                <i data-lucide="terminal-square"></i><span>全部命令</span><span></span>
-              </button>
               <button class="nav-item is-active" type="button" data-screen-link="sessions">
                 <i data-lucide="messages-square"></i><span>会话</span><span></span>
               </button>
               <button class="nav-item" type="button" data-screen-link="models">
                 <i data-lucide="cpu"></i><span>模型</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="settings">
+                <i data-lucide="sliders-horizontal"></i><span>设置</span><span></span>
               </button>
               <button class="nav-item" type="button" data-screen-link="cron">
                 <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
@@ -1161,11 +864,13 @@
               <button class="nav-item" type="button" data-screen-link="tools">
                 <i data-lucide="wrench"></i><span>工具</span><span></span>
               </button>
+              <button class="nav-item" type="button" data-screen-link="control">
+                <i data-lucide="power"></i><span>控制</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="skills">
+                <i data-lucide="sparkles"></i><span>技能</span><span></span>
+              </button>
             </nav>
-            <div class="sidebar-foot">
-              <span>当前只对本机开放</span>
-              <span>操作前先确认执行目标</span>
-            </div>
           </aside>
 
           <div class="workspace">
@@ -1175,19 +880,14 @@
                 <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
               </div>
               <div class="target-controls">
-                <div class="segmented" aria-label="目标类型">
-                  <button class="is-active" type="button">群聊</button>
-                  <button type="button">私聊</button>
-                  <button type="button">手动输入</button>
-                </div>
                 <div class="field">
                   <span class="field-icon"><i data-lucide="search"></i></span>
-                  <input type="search" value="产品讨论群" aria-label="搜索目标" />
+                  <select aria-label="选择执行目标">
+                    <option>群聊 · 产品讨论群</option>
+                    <option>群聊 · 日报任务群</option>
+                    <option>私聊 · 王安迪</option>
+                  </select>
                 </div>
-                <button class="button" type="button">
-                  <i data-lucide="check"></i>
-                  切换
-                </button>
               </div>
               <label class="sync-toggle">
                 <span>同步结果到飞书</span>
@@ -1298,14 +998,14 @@
               </div>
             </div>
             <nav class="nav-list" aria-label="后台页面">
-              <button class="nav-item" type="button" data-screen-link="commands">
-                <i data-lucide="terminal-square"></i><span>全部命令</span><span></span>
-              </button>
               <button class="nav-item" type="button" data-screen-link="sessions">
                 <i data-lucide="messages-square"></i><span>会话</span><span></span>
               </button>
               <button class="nav-item is-active" type="button" data-screen-link="models">
                 <i data-lucide="cpu"></i><span>模型</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="settings">
+                <i data-lucide="sliders-horizontal"></i><span>设置</span><span></span>
               </button>
               <button class="nav-item" type="button" data-screen-link="cron">
                 <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
@@ -1316,11 +1016,13 @@
               <button class="nav-item" type="button" data-screen-link="tools">
                 <i data-lucide="wrench"></i><span>工具</span><span></span>
               </button>
+              <button class="nav-item" type="button" data-screen-link="control">
+                <i data-lucide="power"></i><span>控制</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="skills">
+                <i data-lucide="sparkles"></i><span>技能</span><span></span>
+              </button>
             </nav>
-            <div class="sidebar-foot">
-              <span>当前只对本机开放</span>
-              <span>操作前先确认执行目标</span>
-            </div>
           </aside>
 
           <div class="workspace">
@@ -1330,19 +1032,14 @@
                 <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
               </div>
               <div class="target-controls">
-                <div class="segmented" aria-label="目标类型">
-                  <button class="is-active" type="button">群聊</button>
-                  <button type="button">私聊</button>
-                  <button type="button">手动输入</button>
-                </div>
                 <div class="field">
                   <span class="field-icon"><i data-lucide="search"></i></span>
-                  <input type="search" value="产品讨论群" aria-label="搜索目标" />
+                  <select aria-label="选择执行目标">
+                    <option>群聊 · 产品讨论群</option>
+                    <option>群聊 · 日报任务群</option>
+                    <option>私聊 · 王安迪</option>
+                  </select>
                 </div>
-                <button class="button" type="button">
-                  <i data-lucide="check"></i>
-                  切换
-                </button>
               </div>
               <label class="sync-toggle">
                 <span>同步结果到飞书</span>
@@ -1456,6 +1153,137 @@
         </div>
       </section>
 
+      <section class="screen" id="screen-settings">
+        <div class="admin-shell">
+          <aside class="sidebar">
+            <div class="app-logo">
+              <div class="brand-mark">Pi</div>
+              <div>
+                <strong>Pi Gateway</strong>
+                <span>本机管理后台</span>
+              </div>
+            </div>
+            <nav class="nav-list" aria-label="后台页面">
+              <button class="nav-item" type="button" data-screen-link="sessions">
+                <i data-lucide="messages-square"></i><span>会话</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="models">
+                <i data-lucide="cpu"></i><span>模型</span><span></span>
+              </button>
+              <button class="nav-item is-active" type="button" data-screen-link="settings">
+                <i data-lucide="sliders-horizontal"></i><span>设置</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="cron">
+                <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="group">
+                <i data-lucide="users-round"></i><span>群聊设置</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="tools">
+                <i data-lucide="wrench"></i><span>工具</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="control">
+                <i data-lucide="power"></i><span>控制</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="skills">
+                <i data-lucide="sparkles"></i><span>技能</span><span></span>
+              </button>
+            </nav>
+          </aside>
+
+          <div class="workspace">
+            <header class="target-bar">
+              <div class="target-current">
+                <small>当前执行目标</small>
+                <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
+              </div>
+              <div class="target-controls">
+                <div class="field">
+                  <span class="field-icon"><i data-lucide="search"></i></span>
+                  <select aria-label="选择执行目标">
+                    <option>群聊 · 产品讨论群</option>
+                    <option>群聊 · 日报任务群</option>
+                    <option>私聊 · 王安迪</option>
+                  </select>
+                </div>
+              </div>
+              <label class="sync-toggle">
+                <span>同步结果到飞书</span>
+                <span class="switch" aria-hidden="true"></span>
+              </label>
+            </header>
+
+            <div class="content">
+              <div class="page-title">
+                <div>
+                  <h1>设置</h1>
+                  <p>调整当前目标的回复方式和提示反馈，修改后立即生效。</p>
+                </div>
+              </div>
+
+              <div class="layout-two">
+                <section class="panel">
+                  <div class="panel-head">
+                    <div>
+                      <h2 class="panel-title">回复设置</h2>
+                      <p class="panel-note">开关只影响当前目标。</p>
+                    </div>
+                    <span class="badge green">已同步</span>
+                  </div>
+                  <div class="tool-list">
+                    <div class="tool-item">
+                      <div class="item-main">
+                        <strong>流式回复</strong>
+                        <span>回复过程中持续显示新内容</span>
+                      </div>
+                      <button class="tool-toggle" type="button" aria-label="关闭流式回复"></button>
+                    </div>
+                    <div class="tool-item">
+                      <div class="item-main">
+                        <strong>语音输入</strong>
+                        <span>允许把语音消息转成文字处理</span>
+                      </div>
+                      <button class="tool-toggle off" type="button" aria-label="开启语音输入"></button>
+                    </div>
+                    <div class="tool-item">
+                      <div class="item-main">
+                        <strong>表情反馈</strong>
+                        <span>处理消息时用表情提示状态</span>
+                      </div>
+                      <button class="tool-toggle" type="button" aria-label="关闭表情反馈"></button>
+                    </div>
+                    <div class="tool-item">
+                      <div class="item-main">
+                        <strong>工具调用详情</strong>
+                        <span>回复中显示工具使用过程</span>
+                      </div>
+                      <button class="tool-toggle off" type="button" aria-label="显示工具调用详情"></button>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="panel">
+                  <div>
+                    <h2 class="panel-title">命令输入</h2>
+                    <p class="panel-note">需要连续操作时，可以直接输入命令。</p>
+                  </div>
+                  <div class="raw-command">
+                    <label for="settings-command">原始命令</label>
+                    <textarea class="command-input" id="settings-command" rows="4">/stream on
+/reaction on
+/toolcalls off</textarea>
+                    <button class="button primary" type="button">
+                      <i data-lucide="play"></i>
+                      执行
+                    </button>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="screen" id="screen-cron">
         <div class="admin-shell">
           <aside class="sidebar">
@@ -1467,14 +1295,14 @@
               </div>
             </div>
             <nav class="nav-list" aria-label="后台页面">
-              <button class="nav-item" type="button" data-screen-link="commands">
-                <i data-lucide="terminal-square"></i><span>全部命令</span><span></span>
-              </button>
               <button class="nav-item" type="button" data-screen-link="sessions">
                 <i data-lucide="messages-square"></i><span>会话</span><span></span>
               </button>
               <button class="nav-item" type="button" data-screen-link="models">
                 <i data-lucide="cpu"></i><span>模型</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="settings">
+                <i data-lucide="sliders-horizontal"></i><span>设置</span><span></span>
               </button>
               <button class="nav-item is-active" type="button" data-screen-link="cron">
                 <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
@@ -1485,11 +1313,13 @@
               <button class="nav-item" type="button" data-screen-link="tools">
                 <i data-lucide="wrench"></i><span>工具</span><span></span>
               </button>
+              <button class="nav-item" type="button" data-screen-link="control">
+                <i data-lucide="power"></i><span>控制</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="skills">
+                <i data-lucide="sparkles"></i><span>技能</span><span></span>
+              </button>
             </nav>
-            <div class="sidebar-foot">
-              <span>当前只对本机开放</span>
-              <span>操作前先确认执行目标</span>
-            </div>
           </aside>
 
           <div class="workspace">
@@ -1499,19 +1329,14 @@
                 <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
               </div>
               <div class="target-controls">
-                <div class="segmented" aria-label="目标类型">
-                  <button class="is-active" type="button">群聊</button>
-                  <button type="button">私聊</button>
-                  <button type="button">手动输入</button>
-                </div>
                 <div class="field">
                   <span class="field-icon"><i data-lucide="search"></i></span>
-                  <input type="search" value="产品讨论群" aria-label="搜索目标" />
+                  <select aria-label="选择执行目标">
+                    <option>群聊 · 产品讨论群</option>
+                    <option>群聊 · 日报任务群</option>
+                    <option>私聊 · 王安迪</option>
+                  </select>
                 </div>
-                <button class="button" type="button">
-                  <i data-lucide="check"></i>
-                  切换
-                </button>
               </div>
               <label class="sync-toggle">
                 <span>同步结果到飞书</span>
@@ -1655,14 +1480,14 @@
               </div>
             </div>
             <nav class="nav-list" aria-label="后台页面">
-              <button class="nav-item" type="button" data-screen-link="commands">
-                <i data-lucide="terminal-square"></i><span>全部命令</span><span></span>
-              </button>
               <button class="nav-item" type="button" data-screen-link="sessions">
                 <i data-lucide="messages-square"></i><span>会话</span><span></span>
               </button>
               <button class="nav-item" type="button" data-screen-link="models">
                 <i data-lucide="cpu"></i><span>模型</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="settings">
+                <i data-lucide="sliders-horizontal"></i><span>设置</span><span></span>
               </button>
               <button class="nav-item" type="button" data-screen-link="cron">
                 <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
@@ -1673,11 +1498,13 @@
               <button class="nav-item" type="button" data-screen-link="tools">
                 <i data-lucide="wrench"></i><span>工具</span><span></span>
               </button>
+              <button class="nav-item" type="button" data-screen-link="control">
+                <i data-lucide="power"></i><span>控制</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="skills">
+                <i data-lucide="sparkles"></i><span>技能</span><span></span>
+              </button>
             </nav>
-            <div class="sidebar-foot">
-              <span>当前只对本机开放</span>
-              <span>操作前先确认执行目标</span>
-            </div>
           </aside>
 
           <div class="workspace">
@@ -1687,19 +1514,14 @@
                 <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
               </div>
               <div class="target-controls">
-                <div class="segmented" aria-label="目标类型">
-                  <button class="is-active" type="button">群聊</button>
-                  <button type="button">私聊</button>
-                  <button type="button">手动输入</button>
-                </div>
                 <div class="field">
                   <span class="field-icon"><i data-lucide="search"></i></span>
-                  <input type="search" value="产品讨论群" aria-label="搜索目标" />
+                  <select aria-label="选择执行目标">
+                    <option>群聊 · 产品讨论群</option>
+                    <option>群聊 · 日报任务群</option>
+                    <option>私聊 · 王安迪</option>
+                  </select>
                 </div>
-                <button class="button" type="button">
-                  <i data-lucide="check"></i>
-                  切换
-                </button>
               </div>
               <label class="sync-toggle">
                 <span>同步结果到飞书</span>
@@ -1813,14 +1635,14 @@
               </div>
             </div>
             <nav class="nav-list" aria-label="后台页面">
-              <button class="nav-item" type="button" data-screen-link="commands">
-                <i data-lucide="terminal-square"></i><span>全部命令</span><span></span>
-              </button>
               <button class="nav-item" type="button" data-screen-link="sessions">
                 <i data-lucide="messages-square"></i><span>会话</span><span></span>
               </button>
               <button class="nav-item" type="button" data-screen-link="models">
                 <i data-lucide="cpu"></i><span>模型</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="settings">
+                <i data-lucide="sliders-horizontal"></i><span>设置</span><span></span>
               </button>
               <button class="nav-item" type="button" data-screen-link="cron">
                 <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
@@ -1831,11 +1653,13 @@
               <button class="nav-item is-active" type="button" data-screen-link="tools">
                 <i data-lucide="wrench"></i><span>工具</span><span></span>
               </button>
+              <button class="nav-item" type="button" data-screen-link="control">
+                <i data-lucide="power"></i><span>控制</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="skills">
+                <i data-lucide="sparkles"></i><span>技能</span><span></span>
+              </button>
             </nav>
-            <div class="sidebar-foot">
-              <span>当前只对本机开放</span>
-              <span>操作前先确认执行目标</span>
-            </div>
           </aside>
 
           <div class="workspace">
@@ -1845,19 +1669,14 @@
                 <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
               </div>
               <div class="target-controls">
-                <div class="segmented" aria-label="目标类型">
-                  <button class="is-active" type="button">群聊</button>
-                  <button type="button">私聊</button>
-                  <button type="button">手动输入</button>
-                </div>
                 <div class="field">
                   <span class="field-icon"><i data-lucide="search"></i></span>
-                  <input type="search" value="产品讨论群" aria-label="搜索目标" />
+                  <select aria-label="选择执行目标">
+                    <option>群聊 · 产品讨论群</option>
+                    <option>群聊 · 日报任务群</option>
+                    <option>私聊 · 王安迪</option>
+                  </select>
                 </div>
-                <button class="button" type="button">
-                  <i data-lucide="check"></i>
-                  切换
-                </button>
               </div>
               <label class="sync-toggle">
                 <span>同步结果到飞书</span>
@@ -1869,11 +1688,11 @@
               <div class="page-title">
                 <div>
                   <h1>工具</h1>
-                  <p>查看当前目标会话里的工具状态，启用、停用、指定工具集合或恢复默认。</p>
+                  <p>查看当前目标会话里的工具状态，启用或停用工具。</p>
                 </div>
               </div>
 
-              <div class="layout-two">
+              <div class="layout-two tools-layout">
                 <section class="panel">
                   <div class="panel-head">
                     <div>
@@ -1919,38 +1738,272 @@
                       <button class="tool-toggle" type="button" aria-label="停用 workspace_files"></button>
                     </div>
                   </div>
+                  <div class="raw-command">
+                    <label for="tools-command">原始命令</label>
+                    <textarea class="command-input" id="tools-command" rows="3">/tools</textarea>
+                    <button class="button primary" type="button">
+                      <i data-lucide="play"></i>
+                      执行
+                    </button>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-control">
+        <div class="admin-shell">
+          <aside class="sidebar">
+            <div class="app-logo">
+              <div class="brand-mark">Pi</div>
+              <div>
+                <strong>Pi Gateway</strong>
+                <span>本机管理后台</span>
+              </div>
+            </div>
+            <nav class="nav-list" aria-label="后台页面">
+              <button class="nav-item" type="button" data-screen-link="sessions">
+                <i data-lucide="messages-square"></i><span>会话</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="models">
+                <i data-lucide="cpu"></i><span>模型</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="settings">
+                <i data-lucide="sliders-horizontal"></i><span>设置</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="cron">
+                <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="group">
+                <i data-lucide="users-round"></i><span>群聊设置</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="tools">
+                <i data-lucide="wrench"></i><span>工具</span><span></span>
+              </button>
+              <button class="nav-item is-active" type="button" data-screen-link="control">
+                <i data-lucide="power"></i><span>控制</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="skills">
+                <i data-lucide="sparkles"></i><span>技能</span><span></span>
+              </button>
+            </nav>
+          </aside>
+
+          <div class="workspace">
+            <header class="target-bar">
+              <div class="target-current">
+                <small>当前执行目标</small>
+                <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
+              </div>
+              <div class="target-controls">
+                <div class="field">
+                  <span class="field-icon"><i data-lucide="search"></i></span>
+                  <select aria-label="选择执行目标">
+                    <option>群聊 · 产品讨论群</option>
+                    <option>群聊 · 日报任务群</option>
+                    <option>私聊 · 王安迪</option>
+                  </select>
+                </div>
+              </div>
+              <label class="sync-toggle">
+                <span>同步结果到飞书</span>
+                <span class="switch" aria-hidden="true"></span>
+              </label>
+            </header>
+
+            <div class="content">
+              <div class="page-title">
+                <div>
+                  <h1>控制</h1>
+                  <p>停止当前任务、处理下一条消息或重启服务。</p>
+                </div>
+              </div>
+
+              <div class="layout-two">
+                <section class="panel">
+                  <div class="panel-head">
+                    <div>
+                      <h2 class="panel-title">当前状态</h2>
+                      <p class="panel-note">操作会作用在当前执行目标。</p>
+                    </div>
+                    <span class="badge green">运行中</span>
+                  </div>
+                  <div class="status-grid">
+                    <div class="status-cell">
+                      <span>队列</span>
+                      <strong>2 条</strong>
+                    </div>
+                    <div class="status-cell">
+                      <span>当前任务</span>
+                      <strong>生成周报</strong>
+                    </div>
+                    <div class="status-cell">
+                      <span>最近响应</span>
+                      <strong>14:32</strong>
+                    </div>
+                  </div>
+                  <div class="button-row">
+                    <button class="button danger" type="button">
+                      <i data-lucide="square"></i>
+                      停止当前任务
+                    </button>
+                    <button class="button" type="button">
+                      <i data-lucide="skip-forward"></i>
+                      处理下一条
+                    </button>
+                    <button class="button" type="button">
+                      <i data-lucide="refresh-cw"></i>
+                      重启服务
+                    </button>
+                  </div>
                 </section>
 
                 <section class="panel">
                   <div>
-                    <h2 class="panel-title">工具集合</h2>
-                    <p class="panel-note">可以一键设置为指定集合，也可以恢复默认。</p>
-                  </div>
-                  <div class="choice-grid">
-                    <div class="choice is-active">
-                      <strong>默认</strong>
-                      <span>日常使用的工具集合。</span>
-                      <span class="badge green">当前</span>
-                    </div>
-                    <div class="choice">
-                      <strong>只保留基础工具</strong>
-                      <span>适合只需要文本回复的会话。</span>
-                    </div>
-                    <div class="choice">
-                      <strong>文档处理</strong>
-                      <span>适合飞书文档和文件整理。</span>
-                    </div>
-                  </div>
-                  <div class="button-row">
-                    <button class="button ghost" type="button">
-                      <i data-lucide="rotate-ccw"></i>
-                      恢复默认
-                    </button>
+                    <h2 class="panel-title">命令输入</h2>
+                    <p class="panel-note">需要连续操作时，可以直接输入命令。</p>
                   </div>
                   <div class="raw-command">
-                    <label for="tools-command">原始命令</label>
-                    <textarea class="command-input" id="tools-command" rows="4">/tools
-/tools reset</textarea>
+                    <label for="control-command">原始命令</label>
+                    <textarea class="command-input" id="control-command" rows="4">/stop
+/next
+/restart</textarea>
+                    <button class="button primary" type="button">
+                      <i data-lucide="play"></i>
+                      执行
+                    </button>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-skills">
+        <div class="admin-shell">
+          <aside class="sidebar">
+            <div class="app-logo">
+              <div class="brand-mark">Pi</div>
+              <div>
+                <strong>Pi Gateway</strong>
+                <span>本机管理后台</span>
+              </div>
+            </div>
+            <nav class="nav-list" aria-label="后台页面">
+              <button class="nav-item" type="button" data-screen-link="sessions">
+                <i data-lucide="messages-square"></i><span>会话</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="models">
+                <i data-lucide="cpu"></i><span>模型</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="settings">
+                <i data-lucide="sliders-horizontal"></i><span>设置</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="cron">
+                <i data-lucide="calendar-clock"></i><span>定时任务</span><span class="badge amber">3</span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="group">
+                <i data-lucide="users-round"></i><span>群聊设置</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="tools">
+                <i data-lucide="wrench"></i><span>工具</span><span></span>
+              </button>
+              <button class="nav-item" type="button" data-screen-link="control">
+                <i data-lucide="power"></i><span>控制</span><span></span>
+              </button>
+              <button class="nav-item is-active" type="button" data-screen-link="skills">
+                <i data-lucide="sparkles"></i><span>技能</span><span></span>
+              </button>
+            </nav>
+          </aside>
+
+          <div class="workspace">
+            <header class="target-bar">
+              <div class="target-current">
+                <small>当前执行目标</small>
+                <strong><i data-lucide="users-round"></i> 产品讨论群</strong>
+              </div>
+              <div class="target-controls">
+                <div class="field">
+                  <span class="field-icon"><i data-lucide="search"></i></span>
+                  <select aria-label="选择执行目标">
+                    <option>群聊 · 产品讨论群</option>
+                    <option>群聊 · 日报任务群</option>
+                    <option>私聊 · 王安迪</option>
+                  </select>
+                </div>
+              </div>
+              <label class="sync-toggle">
+                <span>同步结果到飞书</span>
+                <span class="switch" aria-hidden="true"></span>
+              </label>
+            </header>
+
+            <div class="content">
+              <div class="page-title">
+                <div>
+                  <h1>技能</h1>
+                  <p>查看当前可用技能和使用状态。</p>
+                </div>
+                <button class="button" type="button">
+                  <i data-lucide="refresh-cw"></i>
+                  刷新列表
+                </button>
+              </div>
+
+              <div class="layout-two">
+                <section class="panel">
+                  <div class="panel-head">
+                    <div>
+                      <h2 class="panel-title">技能列表</h2>
+                      <p class="panel-note">状态来自当前目标。</p>
+                    </div>
+                    <span class="badge green">4 个可用</span>
+                  </div>
+                  <div class="data-list">
+                    <div class="data-item">
+                      <div class="item-main">
+                        <strong>feishu-cron</strong>
+                        <span>创建、查看和删除飞书定时任务</span>
+                      </div>
+                      <span class="badge green">可用</span>
+                    </div>
+                    <div class="data-item">
+                      <div class="item-main">
+                        <strong>browser-use</strong>
+                        <span>打开网页并查看页面状态</span>
+                      </div>
+                      <span class="badge green">可用</span>
+                    </div>
+                    <div class="data-item">
+                      <div class="item-main">
+                        <strong>openai-docs</strong>
+                        <span>查询 OpenAI 官方文档</span>
+                      </div>
+                      <span class="badge green">可用</span>
+                    </div>
+                    <div class="data-item">
+                      <div class="item-main">
+                        <strong>imagegen</strong>
+                        <span>生成或编辑图片</span>
+                      </div>
+                      <span class="badge">未启用</span>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="panel">
+                  <div>
+                    <h2 class="panel-title">命令输入</h2>
+                    <p class="panel-note">需要连续操作时，可以直接输入命令。</p>
+                  </div>
+                  <div class="raw-command">
+                    <label for="skills-command">原始命令</label>
+                    <textarea class="command-input" id="skills-command" rows="4">/skills
+/skillstat</textarea>
                     <button class="button primary" type="button">
                       <i data-lucide="play"></i>
                       执行
@@ -1965,8 +2018,7 @@
     </main>
 
     <script>
-      const screenNames = ["login", "commands", "sessions", "models", "cron", "group", "tools"];
-      const commandInput = document.querySelector("#command-text");
+      const screenNames = ["login", "sessions", "models", "settings", "cron", "group", "tools", "control", "skills"];
 
       function renderIcons() {
         if (window.lucide) {
@@ -1997,13 +2049,24 @@
         });
       });
 
-      document.querySelectorAll(".command-pill").forEach((button) => {
-        button.addEventListener("click", () => {
-          document.querySelectorAll(".command-pill").forEach((item) => item.classList.remove("is-active"));
-          button.classList.add("is-active");
-          if (commandInput) {
-            commandInput.value = button.dataset.command;
-          }
+      function setTarget(value) {
+        const isPrivate = value.startsWith("私聊");
+        const name = value.split(" · ").slice(1).join(" · ") || value;
+
+        document.querySelectorAll(".target-controls select").forEach((select) => {
+          select.value = value;
+        });
+
+        document.querySelectorAll(".target-current strong").forEach((target) => {
+          target.innerHTML = `<i data-lucide="${isPrivate ? "user-round" : "users-round"}"></i> ${name}`;
+        });
+
+        renderIcons();
+      }
+
+      document.querySelectorAll(".target-controls select").forEach((select) => {
+        select.addEventListener("change", () => {
+          setTarget(select.value);
         });
       });
 
