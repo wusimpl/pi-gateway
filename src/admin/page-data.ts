@@ -16,6 +16,7 @@ export interface AdminPageDataService {
   getSettingsPage(targetKey: string): Promise<AdminSettingsPageData>;
   getCronPage(targetKey: string): Promise<AdminCronPageData>;
   getGroupPage(targetKey: string): Promise<AdminGroupPageData>;
+  getToolsPage(targetKey: string): Promise<AdminToolsPageData>;
 }
 
 export interface AdminSessionsPageData {
@@ -88,6 +89,16 @@ export interface AdminGroupPageData {
   allowlist: string[];
   keywords: string[];
   currentInAllowlist: boolean;
+}
+
+export interface AdminToolsPageData {
+  targetKey: string;
+  supported: boolean;
+  enabledCount: number;
+  tools: Array<{
+    name: string;
+    enabled: boolean;
+  }>;
 }
 
 export function createAdminPageDataService(deps: {
@@ -242,6 +253,38 @@ export function createAdminPageDataService(deps: {
     };
   }
 
+  async function getToolsPage(targetKey: string): Promise<AdminToolsPageData> {
+    const resolved = await deps.targets.resolveTarget(targetKey);
+    if (!resolved) {
+      throw new Error("ADMIN_TARGET_NOT_FOUND");
+    }
+    const sessionState = resolved.target.kind === "group" && deps.sessionService.getOrCreateActiveSessionForTarget
+      ? await deps.sessionService.getOrCreateActiveSessionForTarget(resolved.identity, resolved.conversationTarget)
+      : await deps.sessionService.getOrCreateActiveSession(resolved.identity);
+    const toolSession = getToolConfigSession(sessionState.piSession);
+    if (!toolSession) {
+      return {
+        targetKey: resolved.target.key,
+        supported: false,
+        enabledCount: 0,
+        tools: [],
+      };
+    }
+
+    const allToolNames = toolSession.getAllTools().map((tool) => tool.name);
+    const allToolNameSet = new Set(allToolNames);
+    const activeToolNames = new Set(toolSession.getActiveToolNames().filter((name) => allToolNameSet.has(name)));
+    return {
+      targetKey: resolved.target.key,
+      supported: true,
+      enabledCount: activeToolNames.size,
+      tools: allToolNames.map((name) => ({
+        name,
+        enabled: activeToolNames.has(name),
+      })),
+    };
+  }
+
   async function readGroupRoutingConfig(chatId: string): Promise<PersistedGroupRoutingConfig> {
     return (await deps.groupSettingsStore?.readGroupRoutingConfig(chatId)) ?? getDefaultGroupRoutingConfig();
   }
@@ -269,7 +312,26 @@ export function createAdminPageDataService(deps: {
     getSettingsPage,
     getCronPage,
     getGroupPage,
+    getToolsPage,
   };
+}
+
+interface ToolConfigSession {
+  getAllTools(): Array<{ name: string }>;
+  getActiveToolNames(): string[];
+  setActiveToolsByName(toolNames: string[]): void;
+}
+
+function getToolConfigSession(session: unknown): ToolConfigSession | null {
+  if (
+    !session
+    || typeof (session as ToolConfigSession).getAllTools !== "function"
+    || typeof (session as ToolConfigSession).getActiveToolNames !== "function"
+    || typeof (session as ToolConfigSession).setActiveToolsByName !== "function"
+  ) {
+    return null;
+  }
+  return session as ToolConfigSession;
 }
 
 function formatListedSession(session: ListedSession): AdminSessionsPageData["sessions"][number] {

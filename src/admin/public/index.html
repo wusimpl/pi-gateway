@@ -32,7 +32,7 @@
           <button class="nav-item" type="button" data-page="settings">设置</button>
           <button class="nav-item" type="button" data-page="cron">定时任务</button>
           <button class="nav-item" type="button" data-page="group">群聊设置</button>
-          <button class="nav-item" type="button" data-page="tools" disabled>工具</button>
+          <button class="nav-item" type="button" data-page="tools">工具</button>
           <button class="nav-item" type="button" data-page="control" disabled>控制</button>
           <button class="nav-item" type="button" data-page="skills" disabled>技能</button>
         </nav>
@@ -362,6 +362,41 @@
                   <button class="button primary" type="submit">执行</button>
                 </form>
                 <pre class="result-box" id="group-command-result">执行结果会显示在这里。</pre>
+              </section>
+            </div>
+          </section>
+
+          <section class="page-view is-hidden" id="page-tools" data-page-view="tools">
+            <div class="page-title">
+              <div>
+                <h1>工具</h1>
+                <p>查看当前目标会话里的工具状态，启用或停用工具。</p>
+              </div>
+            </div>
+
+            <div class="layout-two">
+              <section class="panel">
+                <div class="panel-head">
+                  <div>
+                    <h2>工具列表</h2>
+                    <p>开关只影响当前目标。</p>
+                  </div>
+                  <span class="badge" id="tools-count">0 个启用</span>
+                </div>
+                <div class="setting-list" id="tools-list"></div>
+              </section>
+
+              <section class="panel">
+                <div>
+                  <h2>命令输入</h2>
+                  <p>需要连续操作时，可以直接输入命令。</p>
+                </div>
+                <form class="raw-command" id="tools-command-form">
+                  <label for="tools-command">原始命令</label>
+                  <textarea id="tools-command" rows="4">/tools</textarea>
+                  <button class="button primary" type="submit">执行</button>
+                </form>
+                <pre class="result-box" id="tools-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>

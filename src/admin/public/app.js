@@ -51,6 +51,11 @@ const groupAllowlistRemove = document.querySelector("#group-allowlist-remove");
 const groupCommandForm = document.querySelector("#group-command-form");
 const groupCommandInput = document.querySelector("#group-command");
 const groupCommandResult = document.querySelector("#group-command-result");
+const toolsCount = document.querySelector("#tools-count");
+const toolsList = document.querySelector("#tools-list");
+const toolsCommandForm = document.querySelector("#tools-command-form");
+const toolsCommandInput = document.querySelector("#tools-command");
+const toolsCommandResult = document.querySelector("#tools-command-result");
 
 let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
@@ -169,6 +174,23 @@ groupAllowlistRemove?.addEventListener("click", async () => {
     return;
   }
   await runRawCommand("/group allowlist remove here", groupCommandResult);
+});
+
+toolsCommandForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runRawCommand(toolsCommandInput.value, toolsCommandResult);
+});
+
+toolsList?.addEventListener("change", async (event) => {
+  const input = event.target.closest("[data-tool-name]");
+  if (!input) {
+    return;
+  }
+  const toolName = input.dataset.toolName;
+  if (!toolName) {
+    return;
+  }
+  await runRawCommand(input.checked ? `/tools on ${toolName}` : `/tools off ${toolName}`, toolsCommandResult);
 });
 
 routeEnabled?.addEventListener("change", async () => {
@@ -301,6 +323,10 @@ async function loadCurrentPage() {
   }
   if (currentPage === "group") {
     await loadGroup();
+    return;
+  }
+  if (currentPage === "tools") {
+    await loadTools();
     return;
   }
   await loadSessions();
@@ -627,6 +653,62 @@ function renderGroupAllowlist(data) {
     item.querySelector("span").textContent = chatId;
     groupAllowlist.append(item);
   }
+}
+
+async function loadTools() {
+  if (!currentTargetKey) {
+    toolsCommandResult.textContent = "请先选择私聊或群聊。";
+    return;
+  }
+
+  const response = await apiFetch(`./api/pages/tools?targetKey=${encodeURIComponent(currentTargetKey)}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    toolsCommandResult.textContent = data.message ?? "读取失败。";
+    return;
+  }
+
+  renderTools(await response.json());
+}
+
+function renderTools(data) {
+  const tools = data.tools ?? [];
+  toolsCount.textContent = data.supported === false ? "不可配置" : `${data.enabledCount ?? 0} 个启用`;
+  toolsList.innerHTML = "";
+  if (data.supported === false) {
+    appendToolsMessage("当前会话不支持工具配置。");
+    return;
+  }
+  if (tools.length === 0) {
+    appendToolsMessage("当前会话没有可配置的工具。");
+    return;
+  }
+
+  for (const tool of tools) {
+    const item = document.createElement("label");
+    item.className = "setting-item";
+    item.innerHTML = `
+      <span>
+        <strong></strong>
+        <small></small>
+      </span>
+      <input type="checkbox" />
+    `;
+    item.querySelector("strong").textContent = tool.name;
+    item.querySelector("small").textContent = tool.enabled ? "已启用" : "已停用";
+    const checkbox = item.querySelector("input");
+    checkbox.checked = tool.enabled === true;
+    checkbox.dataset.toolName = tool.name;
+    checkbox.setAttribute("aria-label", `${tool.enabled ? "停用" : "启用"} ${tool.name}`);
+    toolsList.append(item);
+  }
+}
+
+function appendToolsMessage(text) {
+  const item = document.createElement("div");
+  item.className = "data-item";
+  item.textContent = text;
+  toolsList.append(item);
 }
 
 function renderModelSummary(data) {

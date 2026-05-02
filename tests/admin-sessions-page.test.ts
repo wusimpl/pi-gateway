@@ -312,4 +312,55 @@ describe("admin sessions page", () => {
       currentInAllowlist: true,
     });
   });
+
+  it("返回当前目标的工具状态", async () => {
+    const targets: AdminTargetService = {
+      listTargets: vi.fn(),
+      resolveTarget: vi.fn().mockResolvedValue({
+        target: {
+          key: "ou_1",
+          kind: "p2p",
+          label: "私聊 · ou_1",
+          detail: "ou_1",
+          sources: ["历史私聊"],
+        },
+        identity: { openId: "ou_1" },
+        conversationTarget: {
+          kind: "p2p",
+          key: "ou_1",
+          receiveIdType: "open_id",
+          receiveId: "ou_1",
+        },
+      }),
+    };
+    const service = createAdminPageDataService({
+      targets,
+      runtimeState: { isLocked: vi.fn(() => false) },
+      sessionService: {
+        getOrCreateActiveSession: vi.fn().mockResolvedValue({
+          activeSessionId: "sess_1",
+          piSession: {
+            getAllTools: vi.fn(() => [{ name: "read" }, { name: "bash" }, { name: "edit" }]),
+            getActiveToolNames: vi.fn(() => ["read", "edit", "missing"]),
+            setActiveToolsByName: vi.fn(),
+          },
+        }),
+        getOrCreateActiveSessionForTarget: vi.fn(),
+        listSessions: vi.fn(),
+        listSessionsForTarget: vi.fn(),
+        readSessionState: vi.fn(),
+      },
+    });
+
+    await expect(service.getToolsPage("ou_1")).resolves.toEqual({
+      targetKey: "ou_1",
+      supported: true,
+      enabledCount: 2,
+      tools: [
+        { name: "read", enabled: true },
+        { name: "bash", enabled: false },
+        { name: "edit", enabled: true },
+      ],
+    });
+  });
 });
