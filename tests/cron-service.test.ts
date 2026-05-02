@@ -405,6 +405,94 @@ describe("cron service", () => {
     expect(resumed.state.nextRunAtMs).toBeDefined();
   });
 
+  it("updateJob 会更新名称、提示词和时间", async () => {
+    const store = createMemoryStore();
+    const runner = {
+      run: vi.fn(async (job: CronJob) => ({
+        jobId: job.id,
+        status: "success" as const,
+      })),
+    };
+    const service = createCronService({
+      store,
+      runner,
+      defaultTz: "Asia/Shanghai",
+    });
+
+    await service.start();
+    const job = await service.addJob({
+      openId: "ou_1",
+      name: "早报",
+      prompt: "总结早上的待办。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 60_000,
+      },
+    });
+
+    const updated = await service.updateJob("ou_1", job.id, {
+      name: "晚报",
+      prompt: "总结今天完成的事。",
+      schedule: {
+        kind: "cron",
+        expr: "0 18 * * *",
+        tz: "Asia/Shanghai",
+      },
+      deleteAfterRun: false,
+    });
+
+    expect(updated).toMatchObject({
+      id: job.id,
+      name: "晚报",
+      prompt: "总结今天完成的事。",
+      deleteAfterRun: false,
+      schedule: {
+        kind: "cron",
+        expr: "0 18 * * *",
+        tz: "Asia/Shanghai",
+      },
+    });
+    expect(updated.state.nextRunAtMs).toBeGreaterThan(Date.now());
+  });
+
+  it("updateJob 不会恢复暂停中的任务", async () => {
+    const store = createMemoryStore();
+    const runner = {
+      run: vi.fn(async (job: CronJob) => ({
+        jobId: job.id,
+        status: "success" as const,
+      })),
+    };
+    const service = createCronService({
+      store,
+      runner,
+      defaultTz: "Asia/Shanghai",
+    });
+
+    await service.start();
+    const job = await service.addJob({
+      openId: "ou_1",
+      prompt: "提醒我喝水。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 60_000,
+      },
+    });
+    await service.setJobEnabled("ou_1", job.id, false);
+
+    const updated = await service.updateJob("ou_1", job.id, {
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 1_000,
+      },
+    });
+
+    expect(updated.enabled).toBe(false);
+    expect(updated.state.nextRunAtMs).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
   it("手动执行遇到 busy 不会改写原定时间", async () => {
     const store = createMemoryStore();
     const runner = {

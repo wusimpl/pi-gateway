@@ -24,6 +24,26 @@ function collectTools(
       id: "cron_1",
       name: "提醒我喝水",
     }),
+    setJobEnabled: vi.fn().mockImplementation(async (_scope, jobId, enabled) => ({
+      id: jobId,
+      name: "提醒我喝水",
+      enabled,
+    })),
+    updateJob: vi.fn().mockImplementation(async (_scope, jobId, input) => ({
+      id: jobId,
+      name: input.name ?? "提醒我喝水",
+      prompt: input.prompt ?? "提醒我喝水。",
+      schedule: input.schedule,
+      deleteAfterRun: input.deleteAfterRun ?? false,
+    })),
+    stopJob: vi.fn().mockResolvedValue({
+      jobId: "cron_1",
+      status: "not_running",
+      job: {
+        id: "cron_1",
+        name: "提醒我喝水",
+      },
+    }),
     runJobNow: vi.fn().mockResolvedValue({
       jobId: "cron_1",
       status: "success",
@@ -136,6 +156,153 @@ describe("cron task extension", () => {
         prompt: "总结群里的待办。",
       }),
     );
+  });
+
+  it("pause 会暂停指定任务", async () => {
+    const { tools, cronService } = collectTools();
+    const tool = tools[0];
+
+    const result = await tool.execute(
+      "call-1",
+      tool.prepareArguments({
+        action: "pause",
+        job_id: "cron_1",
+      }),
+      undefined,
+      undefined,
+      {
+        cwd: "/tmp/workspace/u_1",
+      },
+    );
+
+    expect(cronService.setJobEnabled).toHaveBeenCalledWith(
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_1",
+      false,
+    );
+    expect(result.details).toMatchObject({
+      action: "pause",
+      job: {
+        id: "cron_1",
+        enabled: false,
+      },
+    });
+  });
+
+  it("resume 会恢复指定任务", async () => {
+    const { tools, cronService } = collectTools();
+    const tool = tools[0];
+
+    const result = await tool.execute(
+      "call-1",
+      tool.prepareArguments({
+        action: "resume",
+        job_id: "cron_1",
+      }),
+      undefined,
+      undefined,
+      {
+        cwd: "/tmp/workspace/u_1",
+      },
+    );
+
+    expect(cronService.setJobEnabled).toHaveBeenCalledWith(
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_1",
+      true,
+    );
+    expect(result.details).toMatchObject({
+      action: "resume",
+      job: {
+        id: "cron_1",
+        enabled: true,
+      },
+    });
+  });
+
+  it("resume_all 只恢复当前范围里已暂停的任务", async () => {
+    const { tools, cronService } = collectTools();
+    cronService.listJobs.mockResolvedValueOnce([
+      { id: "cron_1", enabled: false },
+      { id: "cron_2", enabled: true },
+      { id: "cron_3", enabled: false },
+    ]);
+    const tool = tools[0];
+
+    const result = await tool.execute(
+      "call-1",
+      tool.prepareArguments({
+        action: "resume_all",
+      }),
+      undefined,
+      undefined,
+      {
+        cwd: "/tmp/workspace/u_1",
+      },
+    );
+
+    expect(cronService.setJobEnabled).toHaveBeenCalledTimes(2);
+    expect(cronService.setJobEnabled).toHaveBeenNthCalledWith(
+      1,
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_1",
+      true,
+    );
+    expect(cronService.setJobEnabled).toHaveBeenNthCalledWith(
+      2,
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_3",
+      true,
+    );
+    expect(result.details).toMatchObject({
+      action: "resume_all",
+      resumed_count: 2,
+    });
+  });
+
+  it("update 会把名称、提示词和时间交给 cron service", async () => {
+    const { tools, cronService } = collectTools();
+    const tool = tools[0];
+
+    const result = await tool.execute(
+      "call-1",
+      tool.prepareArguments({
+        action: "update",
+        job_id: "cron_1",
+        name: "晚报",
+        time: "0 18 * * *",
+        tz: "Asia/Shanghai",
+        prompt: "总结今天完成的事。",
+      }),
+      undefined,
+      undefined,
+      {
+        cwd: "/tmp/workspace/u_1",
+      },
+    );
+
+    expect(cronService.updateJob).toHaveBeenCalledWith(
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_1",
+      expect.objectContaining({
+        name: "晚报",
+        prompt: "总结今天完成的事。",
+        deleteAfterRun: false,
+        schedule: expect.objectContaining({
+          kind: "cron",
+          expr: "0 18 * * *",
+          tz: "Asia/Shanghai",
+        }),
+      }),
+    );
+    expect(result.details).toMatchObject({
+      action: "update",
+      updated_fields: ["name", "prompt", "time"],
+      job: {
+        id: "cron_1",
+        name: "晚报",
+      },
+    });
   });
 
   it("当前 workspace 没有关联到飞书用户时会报错", async () => {

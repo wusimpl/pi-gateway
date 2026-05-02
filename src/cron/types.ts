@@ -60,6 +60,13 @@ export interface CreateCronJobInput {
   enabled?: boolean;
 }
 
+export interface UpdateCronJobInput {
+  name?: string;
+  prompt?: string;
+  schedule?: CronSchedule;
+  deleteAfterRun?: boolean;
+}
+
 export interface CronJobRunResult {
   jobId: string;
   status: CronRunStatus;

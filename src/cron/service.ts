@@ -10,6 +10,7 @@ import type {
   CronScopeInput,
   CronScopeSelector,
   CronStopJobResult,
+  UpdateCronJobInput,
 } from "./types.js";
 import {
   resolveCreateCronJobScope,
@@ -28,6 +29,7 @@ export interface CronService {
   listJobs(scope: CronScopeInput): Promise<CronJob[]>;
   addJob(input: CreateCronJobInput): Promise<CronJob>;
   setJobEnabled(scope: CronScopeInput, jobId: string, enabled: boolean): Promise<CronJob>;
+  updateJob(scope: CronScopeInput, jobId: string, input: UpdateCronJobInput): Promise<CronJob>;
   removeJob(scope: CronScopeInput, jobId: string): Promise<CronJob | null>;
   stopJob(scope: CronScopeInput, jobId: string): Promise<CronStopJobResult>;
   runJobNow(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult>;
@@ -243,6 +245,53 @@ export function createCronService(deps: CronServiceDeps): CronService {
     });
   }
 
+  async function updateJob(scope: CronScopeInput, jobId: string, input: UpdateCronJobInput): Promise<CronJob> {
+    if (deps.enabled === false) {
+      throw new Error("CRON_DISABLED");
+    }
+
+    const hasName = input.name !== undefined;
+    const hasPrompt = input.prompt !== undefined;
+    const hasSchedule = input.schedule !== undefined;
+    if (!hasName && !hasPrompt && !hasSchedule) {
+      throw new Error("CRON_UPDATE_REQUIRED");
+    }
+
+    const nextName = hasName ? input.name?.trim() : undefined;
+    const nextPrompt = hasPrompt ? input.prompt?.trim() : undefined;
+    if (hasName && !nextName) {
+      throw new Error("CRON_NAME_REQUIRED");
+    }
+    if (hasPrompt && !nextPrompt) {
+      throw new Error("CRON_PROMPT_REQUIRED");
+    }
+
+    const owner = resolveCronScopeInput(scope);
+    return mutate(async () => {
+      const job = requireOwnedJob(owner, jobId);
+      if (!job) {
+        throw new Error("CRON_JOB_NOT_FOUND");
+      }
+
+      const currentTime = now();
+      if (nextName) {
+        job.name = nextName;
+      }
+      if (nextPrompt) {
+        job.prompt = nextPrompt;
+      }
+      if (input.schedule) {
+        job.schedule = input.schedule;
+        job.deleteAfterRun = input.deleteAfterRun ?? input.schedule.kind === "at";
+        job.state.nextRunAtMs = job.enabled ? computeNextRunAtMs(input.schedule, currentTime) : undefined;
+      }
+      job.updatedAtMs = currentTime;
+      await persist();
+      armTimer();
+      return cloneJob(job);
+    });
+  }
+
   async function stopJob(scope: CronScopeInput, jobId: string): Promise<CronStopJobResult> {
     const owner = resolveCronScopeInput(scope);
     const ownedJob = requireOwnedJob(owner, jobId);
@@ -363,6 +412,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
     listJobs,
     addJob,
     setJobEnabled,
+    updateJob,
     removeJob,
     stopJob,
     runJobNow,

@@ -8,7 +8,7 @@ import type { CronService } from "../../cron/service.js";
 import type { DeferredCronRunService } from "../../cron/deferred-run.js";
 import type { UserIdentity } from "../../types.js";
 import type { ConversationTarget } from "../../conversation.js";
-import type { CronScopeSelector } from "../../cron/types.js";
+import type { CronScopeSelector, CronSchedule, UpdateCronJobInput } from "../../cron/types.js";
 import {
   createCronScopeSelector,
   getCronConversationTargetForStorage,
@@ -53,28 +53,30 @@ export function createCronTaskExtension(
     name: "cron_task",
     label: "Cron Task",
     description:
-      "创建、查看、删除、停止、立即执行当前飞书用户的定时任务。提醒、定时、每天几点这类需求必须调用它，不能只口头答应。",
+      "创建、查看、更新、删除、暂停、恢复、停止、立即执行当前飞书用户的定时任务。提醒、定时、每天几点这类需求必须调用它，不能只口头答应。",
     promptSnippet:
-      "cron_task: 创建、查看、删除、停止、立即执行当前飞书用户的定时任务。涉及提醒/定时时必须调用。",
+      "cron_task: 创建、查看、更新、删除、暂停、恢复、停止、立即执行当前飞书用户的定时任务。涉及提醒/定时时必须调用。",
     promptGuidelines: [
       "涉及提醒、稍后、X分钟后、每天几点、每周几这类定时需求时，必须调用 cron_task，不能只用自然语言承诺。",
       "action=add 时必须同时提供 prompt 和 time；name 可不传，系统会自动生成。",
+      "action=update 时必须提供 job_id，并至少提供 name、prompt、time 之一；只传 tz 不算更新。",
       "time 支持相对时间（如 20m、1h30m）、ISO 时间、cron 表达式（如 0 9 * * *）。",
       "cron 表达式默认使用网关时区；如果用户明确给了时区，再传 tz。",
-      "删除、停止或立即执行时，先用 list 拿到 job_id，再调用 remove、stop 或 run。",
+      "删除、暂停、恢复、更新、停止或立即执行时，先用 list 拿到 job_id，再调用对应 action。",
+      "action=resume_all 只恢复当前会话范围里已暂停的任务。",
       "action=run 只代表已安排执行；当前回复结束后才会真正开始跑，不能声称已经拿到了执行结果。",
     ],
     parameters: Type.Object({
-      action: Type.String({ description: "add、list、remove、stop、run 之一。" }),
-      name: Type.Optional(Type.String({ description: "任务名称，可不传。" })),
+      action: Type.String({ description: "add、list、update、remove、pause、resume、resume_all、stop、run 之一。" }),
+      name: Type.Optional(Type.String({ description: "任务名称。add/update 时可传。" })),
       time: Type.Optional(
         Type.String({
-          description: "相对时间、ISO 时间或 cron 表达式。仅 add 时需要。",
+          description: "相对时间、ISO 时间或 cron 表达式。add 时需要，update 时可传。",
         }),
       ),
       tz: Type.Optional(Type.String({ description: "cron 表达式的 IANA 时区，可不传。" })),
-      prompt: Type.Optional(Type.String({ description: "到时要执行的提示词。仅 add 时需要。" })),
-      job_id: Type.Optional(Type.String({ description: "已有任务的 job_id。remove/stop/run 时需要。" })),
+      prompt: Type.Optional(Type.String({ description: "到时要执行的提示词。add/update 时可传。" })),
+      job_id: Type.Optional(Type.String({ description: "已有任务的 job_id。update/remove/pause/resume/stop/run 时需要。" })),
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -108,16 +110,7 @@ export function createCronTaskExtension(
             throw new Error("action=add 时必须提供 time");
           }
 
-          const parsed = parseScheduleInput(
-            params.time,
-            typeof params.tz === "string" && params.tz.trim()
-              ? params.tz.trim()
-              : cronService.getDefaultTimezone(),
-          );
-          const schedule =
-            parsed.schedule.kind === "cron" && typeof params.tz === "string" && params.tz.trim()
-              ? { ...parsed.schedule, tz: params.tz.trim() }
-              : parsed.schedule;
+          const parsed = parseToolSchedule(params, cronService.getDefaultTimezone());
           const job = await cronService.addJob({
             openId: identity.openId,
             userId: identity.userId,
@@ -126,11 +119,48 @@ export function createCronTaskExtension(
             conversationTarget: getCronConversationTargetForStorage(conversationTarget),
             name: typeof params.name === "string" ? params.name : undefined,
             prompt: params.prompt,
-            schedule,
+            schedule: parsed.schedule,
             deleteAfterRun: parsed.deleteAfterRun,
           });
           return toToolResult({
             action,
+            job,
+          });
+        }
+        case "update": {
+          if (typeof params.job_id !== "string" || !params.job_id.trim()) {
+            throw new Error("action=update 时必须提供 job_id");
+          }
+
+          const input: UpdateCronJobInput = {};
+          const updatedFields: string[] = [];
+          if (typeof params.name === "string") {
+            input.name = params.name;
+            updatedFields.push("name");
+          }
+          if (typeof params.prompt === "string") {
+            input.prompt = params.prompt;
+            updatedFields.push("prompt");
+          }
+          if (typeof params.time === "string") {
+            if (!params.time.trim()) {
+              throw new Error("action=update 修改 time 时不能为空");
+            }
+            const parsed = parseToolSchedule(params, cronService.getDefaultTimezone());
+            input.schedule = parsed.schedule;
+            input.deleteAfterRun = parsed.deleteAfterRun;
+            updatedFields.push("time");
+          } else if (typeof params.tz === "string" && params.tz.trim()) {
+            throw new Error("action=update 修改 tz 时必须同时提供 time");
+          }
+          if (updatedFields.length === 0) {
+            throw new Error("action=update 时至少提供 name、prompt、time 之一");
+          }
+
+          const job = await cronService.updateJob(cronScope, params.job_id.trim(), input);
+          return toToolResult({
+            action,
+            updated_fields: updatedFields,
             job,
           });
         }
@@ -145,6 +175,30 @@ export function createCronTaskExtension(
           return toToolResult({
             action,
             removed,
+          });
+        }
+        case "pause":
+        case "resume": {
+          if (typeof params.job_id !== "string" || !params.job_id.trim()) {
+            throw new Error(`action=${action} 时必须提供 job_id`);
+          }
+          const job = await cronService.setJobEnabled(cronScope, params.job_id.trim(), action === "resume");
+          return toToolResult({
+            action,
+            job,
+          });
+        }
+        case "resume_all": {
+          const jobs = await cronService.listJobs(cronScope);
+          const pausedJobs = jobs.filter((job) => !job.enabled);
+          const resumed = [];
+          for (const job of pausedJobs) {
+            resumed.push(await cronService.setJobEnabled(cronScope, job.id, true));
+          }
+          return toToolResult({
+            action,
+            resumed_count: resumed.length,
+            resumed,
           });
         }
         case "stop": {
@@ -175,7 +229,7 @@ export function createCronTaskExtension(
           });
         }
         default:
-          throw new Error("action 只支持 add、list、remove、stop、run");
+          throw new Error("action 只支持 add、list、update、remove、pause、resume、resume_all、stop、run");
       }
     },
   });
@@ -202,4 +256,20 @@ function createCronScope(
   conversationTarget?: ConversationTarget,
 ): CronScopeSelector {
   return createCronScopeSelector(identity.openId, conversationTarget);
+}
+
+function parseToolSchedule(
+  params: { time?: unknown; tz?: unknown },
+  defaultTz: string,
+): { schedule: CronSchedule; deleteAfterRun: boolean } {
+  if (typeof params.time !== "string" || !params.time.trim()) {
+    throw new Error("time 不能为空");
+  }
+
+  const tz = typeof params.tz === "string" && params.tz.trim() ? params.tz.trim() : defaultTz;
+  const parsed = parseScheduleInput(params.time, tz);
+  return {
+    schedule: parsed.schedule.kind === "cron" ? { ...parsed.schedule, tz } : parsed.schedule,
+    deleteAfterRun: parsed.deleteAfterRun,
+  };
 }
