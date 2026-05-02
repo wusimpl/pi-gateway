@@ -7,15 +7,109 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="login-screen">
+    <main class="login-screen" id="login-screen">
       <form class="login-card" id="login-form">
         <h1>登录后台</h1>
         <label for="password">管理密码</label>
         <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
         <button type="submit">登录</button>
-        <p class="message" id="message" role="status"></p>
+        <p class="message" id="login-message" role="status"></p>
       </form>
     </main>
+
+    <main class="admin-shell is-hidden" id="admin-shell">
+      <aside class="sidebar">
+        <div class="app-logo">
+          <div class="brand-mark">Pi</div>
+          <div>
+            <strong>Pi Gateway</strong>
+            <span>本机管理后台</span>
+          </div>
+        </div>
+        <nav class="nav-list" aria-label="后台页面">
+          <button class="nav-item is-active" type="button" data-page="sessions">会话</button>
+          <button class="nav-item" type="button" data-page="models" disabled>模型</button>
+          <button class="nav-item" type="button" data-page="settings" disabled>设置</button>
+          <button class="nav-item" type="button" data-page="cron" disabled>定时任务</button>
+          <button class="nav-item" type="button" data-page="group" disabled>群聊设置</button>
+          <button class="nav-item" type="button" data-page="tools" disabled>工具</button>
+          <button class="nav-item" type="button" data-page="control" disabled>控制</button>
+          <button class="nav-item" type="button" data-page="skills" disabled>技能</button>
+        </nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="target-bar">
+          <div class="target-current">
+            <small>当前执行目标</small>
+            <strong id="current-target">未选择</strong>
+          </div>
+          <label class="target-select">
+            <span>选择目标</span>
+            <select id="target-select" aria-label="选择执行目标"></select>
+          </label>
+          <label class="sync-toggle">
+            <input id="sync-to-feishu" type="checkbox" />
+            <span>同步结果到飞书</span>
+          </label>
+        </header>
+
+        <div class="content" id="content">
+          <div class="page-title">
+            <div>
+              <h1>会话</h1>
+              <p>查看当前目标的状态、历史会话和已加载上下文。</p>
+            </div>
+            <button class="button" type="button" id="refresh-button">刷新</button>
+          </div>
+
+          <div class="empty-state is-hidden" id="empty-state">请先选择私聊或群聊。</div>
+
+          <section class="status-grid" id="session-status"></section>
+
+          <div class="layout-two">
+            <section class="panel flush">
+              <div class="panel-head padded">
+                <div>
+                  <h2>历史会话</h2>
+                  <p>这里只查看会话，不会切换或重置。</p>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>会话</th>
+                      <th>消息</th>
+                      <th>最后活动</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sessions-table"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div>
+                <h2>已加载上下文</h2>
+                <p>来自当前会话。</p>
+              </div>
+              <div class="chips" id="context-files"></div>
+              <form class="raw-command" id="raw-command-form">
+                <label for="raw-command">原始命令</label>
+                <textarea id="raw-command" rows="4">/status
+/sessions
+/context</textarea>
+                <button class="button primary" type="submit">执行</button>
+              </form>
+              <pre class="result-box" id="command-result">执行结果会显示在这里。</pre>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+
     <script src="./app.js" type="module"></script>
   </body>
 </html>

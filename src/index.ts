@@ -43,6 +43,9 @@ import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
 import { createRuntimeConfigStore } from "./app/runtime-config.js";
 import { createAdminServer, type AdminServer } from "./admin/server.js";
+import { createAdminTargetService } from "./admin/targets.js";
+import { createAdminCommandExecutor, type AdminCaptureMessenger } from "./admin/command-executor.js";
+import { createAdminPageDataService } from "./admin/page-data.js";
 
 async function main() {
   const config = loadConfig();
@@ -172,14 +175,15 @@ async function main() {
     conversationStateStore,
     workspaceService,
   });
-  const commandService = createCommandService({
+  const restartService = createRestartService();
+  const createCommandServiceWithMessenger = (messenger: AdminCaptureMessenger | typeof feishuMessenger) => createCommandService({
     config,
-    messenger: feishuMessenger,
+    messenger,
     sessionService,
     userStateStore,
     workspaceService,
     runtimeState,
-    restartService: createRestartService(),
+    restartService,
     listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
     findAvailableModel: (rawRef: string) => findAvailableModel(rawRef, piRuntime.getModelRegistry()),
     cronService: cronService ?? undefined,
@@ -188,6 +192,7 @@ async function main() {
     skillStatsStore,
     groupSettingsStore,
   });
+  const commandService = createCommandServiceWithMessenger(feishuMessenger);
   const promptService = createPromptService({
     config,
     runtimeConfig,
@@ -217,7 +222,22 @@ async function main() {
   });
   logger.info("消息路由就绪");
 
-  const adminServer = createAdminServer(config);
+  const adminTargets = createAdminTargetService(config);
+  const adminCommandExecutor = createAdminCommandExecutor({
+    config,
+    messenger: feishuMessenger,
+    createCommandService: (messenger) => createCommandServiceWithMessenger(messenger),
+  });
+  const adminPages = createAdminPageDataService({
+    targets: adminTargets,
+    sessionService,
+    runtimeState,
+  });
+  const adminServer = createAdminServer(config, {
+    targets: adminTargets,
+    commands: adminCommandExecutor,
+    pages: adminPages,
+  });
   await adminServer.start();
 
   registerShutdown(sessionService, runtimeState, cronService, adminServer);
