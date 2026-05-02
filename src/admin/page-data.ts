@@ -1,6 +1,8 @@
 import type { RuntimeStateStore } from "../app/state.js";
 import type { RuntimeConfigStore } from "../app/runtime-config.js";
 import { getConversationTargetKey } from "../conversation.js";
+import type { CronService } from "../cron/service.js";
+import { createCronScopeSelector } from "../cron/scope.js";
 import { getModelRoutingConfig } from "../pi/model-routing.js";
 import { formatModelLabel, type AvailableModelInfo } from "../pi/models.js";
 import type { ListedSession, SessionService } from "../pi/sessions.js";
@@ -11,6 +13,7 @@ export interface AdminPageDataService {
   getSessionsPage(targetKey: string): Promise<AdminSessionsPageData>;
   getModelsPage(targetKey: string): Promise<AdminModelsPageData>;
   getSettingsPage(targetKey: string): Promise<AdminSettingsPageData>;
+  getCronPage(targetKey: string): Promise<AdminCronPageData>;
 }
 
 export interface AdminSessionsPageData {
@@ -60,6 +63,21 @@ export interface AdminSettingsPageData {
   skillFolderEnabled: boolean;
 }
 
+export interface AdminCronPageData {
+  targetKey: string;
+  enabled: boolean;
+  jobs: Array<{
+    id: string;
+    name: string;
+    enabled: boolean;
+    prompt: string;
+    nextRunAtMs?: number;
+    runningAtMs?: number;
+    lastRunAtMs?: number;
+    lastRunStatus?: string;
+  }>;
+}
+
 export function createAdminPageDataService(deps: {
   targets: AdminTargetService;
   sessionService: Pick<
@@ -72,6 +90,7 @@ export function createAdminPageDataService(deps: {
     RuntimeConfigStore,
     "getStreamingEnabled" | "getAudioTranscribeProvider" | "getProcessingReactionType"
   >;
+  cronService?: Pick<CronService, "isEnabled" | "listJobs">;
 }): AdminPageDataService {
   async function getSessionsPage(targetKey: string): Promise<AdminSessionsPageData> {
     const resolved = await deps.targets.resolveTarget(targetKey);
@@ -154,6 +173,37 @@ export function createAdminPageDataService(deps: {
     };
   }
 
+  async function getCronPage(targetKey: string): Promise<AdminCronPageData> {
+    const resolved = await deps.targets.resolveTarget(targetKey);
+    if (!resolved) {
+      throw new Error("ADMIN_TARGET_NOT_FOUND");
+    }
+    if (!deps.cronService?.isEnabled()) {
+      return {
+        targetKey: resolved.target.key,
+        enabled: false,
+        jobs: [],
+      };
+    }
+
+    const scope = createCronScopeSelector(resolved.identity.openId, resolved.conversationTarget);
+    const jobs = await deps.cronService.listJobs(scope);
+    return {
+      targetKey: resolved.target.key,
+      enabled: true,
+      jobs: jobs.map((job) => ({
+        id: job.id,
+        name: job.name,
+        enabled: job.enabled,
+        prompt: job.prompt,
+        nextRunAtMs: job.state.nextRunAtMs,
+        runningAtMs: job.state.runningAtMs,
+        lastRunAtMs: job.state.lastRunAtMs,
+        lastRunStatus: job.state.lastRunStatus,
+      })),
+    };
+  }
+
   async function readTargetState(resolved: Awaited<ReturnType<AdminTargetService["resolveTarget"]>>): Promise<UserState | null> {
     if (!resolved) {
       return null;
@@ -165,6 +215,7 @@ export function createAdminPageDataService(deps: {
     getSessionsPage,
     getModelsPage,
     getSettingsPage,
+    getCronPage,
   };
 }
 

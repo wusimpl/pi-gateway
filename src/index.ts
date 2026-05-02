@@ -234,6 +234,7 @@ async function main() {
     runtimeState,
     listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
     runtimeConfig,
+    cronService: cronService ?? undefined,
   });
   const adminServer = createAdminServer(config, {
     targets: adminTargets,

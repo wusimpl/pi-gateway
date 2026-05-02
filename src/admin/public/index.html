@@ -30,7 +30,7 @@
           <button class="nav-item is-active" type="button" data-page="sessions">会话</button>
           <button class="nav-item" type="button" data-page="models">模型</button>
           <button class="nav-item" type="button" data-page="settings">设置</button>
-          <button class="nav-item" type="button" data-page="cron" disabled>定时任务</button>
+          <button class="nav-item" type="button" data-page="cron">定时任务</button>
           <button class="nav-item" type="button" data-page="group" disabled>群聊设置</button>
           <button class="nav-item" type="button" data-page="tools" disabled>工具</button>
           <button class="nav-item" type="button" data-page="control" disabled>控制</button>
@@ -240,6 +240,54 @@
                   <button class="button primary" type="submit">执行</button>
                 </form>
                 <pre class="result-box" id="settings-command-result">执行结果会显示在这里。</pre>
+              </section>
+            </div>
+          </section>
+
+          <section class="page-view is-hidden" id="page-cron" data-page-view="cron">
+            <div class="page-title">
+              <div>
+                <h1>定时任务</h1>
+                <p>查看当前目标的任务列表，支持立即运行、停止和删除。</p>
+              </div>
+              <button class="button" type="button" id="cron-refresh-button">刷新列表</button>
+            </div>
+
+            <div class="layout-two">
+              <section class="panel flush">
+                <div class="panel-head padded">
+                  <div>
+                    <h2>任务列表</h2>
+                    <p>这里不提供新建任务入口。</p>
+                  </div>
+                  <span class="badge" id="cron-count">0 个任务</span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>任务</th>
+                        <th>下次运行</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="cron-table"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div>
+                  <h2>执行结果</h2>
+                  <p>结果会显示在页面中，可同步到飞书。</p>
+                </div>
+                <form class="raw-command" id="cron-command-form">
+                  <label for="cron-command">原始命令</label>
+                  <textarea id="cron-command" rows="3">/cron list</textarea>
+                  <button class="button primary" type="submit">执行</button>
+                </form>
+                <pre class="result-box" id="cron-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>

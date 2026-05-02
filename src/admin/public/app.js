@@ -32,6 +32,12 @@ const settingSkillFolder = document.querySelector("#setting-skill-folder");
 const settingsCommandForm = document.querySelector("#settings-command-form");
 const settingsCommandInput = document.querySelector("#settings-command");
 const settingsCommandResult = document.querySelector("#settings-command-result");
+const cronRefreshButton = document.querySelector("#cron-refresh-button");
+const cronCount = document.querySelector("#cron-count");
+const cronTable = document.querySelector("#cron-table");
+const cronCommandForm = document.querySelector("#cron-command-form");
+const cronCommandInput = document.querySelector("#cron-command");
+const cronCommandResult = document.querySelector("#cron-command-result");
 
 let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
@@ -79,6 +85,36 @@ modelCommandForm?.addEventListener("submit", async (event) => {
 settingsCommandForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   await runRawCommand(settingsCommandInput.value, settingsCommandResult);
+});
+
+cronCommandForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runRawCommand(cronCommandInput.value, cronCommandResult);
+});
+
+cronRefreshButton?.addEventListener("click", () => {
+  void loadCron();
+});
+
+cronTable?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-cron-action]");
+  if (!button) {
+    return;
+  }
+  const jobId = button.dataset.jobId;
+  const action = button.dataset.cronAction;
+  if (!jobId || !action) {
+    return;
+  }
+  if (action === "remove" && !confirm("删除后这个任务不会继续运行。")) {
+    return;
+  }
+  const command = action === "run"
+    ? `/cron run ${jobId}`
+    : action === "stop"
+      ? `/cron stop ${jobId}`
+      : `/cron remove ${jobId}`;
+  await runRawCommand(command, cronCommandResult);
 });
 
 routeEnabled?.addEventListener("change", async () => {
@@ -203,6 +239,10 @@ async function loadCurrentPage() {
   }
   if (currentPage === "settings") {
     await loadSettings();
+    return;
+  }
+  if (currentPage === "cron") {
+    await loadCron();
     return;
   }
   await loadSessions();
@@ -348,6 +388,94 @@ function renderSettings(data) {
   settingSkillFolder.checked = data.skillFolderEnabled === true;
 }
 
+async function loadCron() {
+  if (!currentTargetKey) {
+    cronCommandResult.textContent = "请先选择私聊或群聊。";
+    return;
+  }
+
+  const response = await apiFetch(`./api/pages/cron?targetKey=${encodeURIComponent(currentTargetKey)}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    cronCommandResult.textContent = data.message ?? "读取失败。";
+    return;
+  }
+
+  renderCron(await response.json());
+}
+
+function renderCron(data) {
+  const jobs = data.jobs ?? [];
+  cronCount.textContent = data.enabled === false ? "未开启" : `${jobs.length} 个任务`;
+  cronTable.innerHTML = "";
+  if (data.enabled === false) {
+    appendCronEmptyRow("当前没有开启定时任务。");
+    return;
+  }
+  if (jobs.length === 0) {
+    appendCronEmptyRow("当前目标没有定时任务。");
+    return;
+  }
+
+  for (const job of jobs) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><strong></strong><br /><span></span></td>
+      <td></td>
+      <td><span class="badge"></span></td>
+      <td><div class="table-actions"></div></td>
+    `;
+    row.querySelector("strong").textContent = job.name || job.id;
+    row.querySelector("td span").textContent = job.id;
+    row.children[1].textContent = job.runningAtMs ? "运行中" : formatTimestamp(job.nextRunAtMs);
+    const badge = row.querySelector(".badge");
+    const status = resolveCronStatus(job);
+    badge.textContent = status.label;
+    if (status.className) {
+      badge.classList.add(status.className);
+    }
+    const actions = row.querySelector(".table-actions");
+    actions.append(
+      createCronActionButton("run", job.id, "▶", "立即运行"),
+      createCronActionButton("stop", job.id, "■", "停止"),
+      createCronActionButton("remove", job.id, "×", "删除"),
+    );
+    cronTable.append(row);
+  }
+}
+
+function appendCronEmptyRow(text) {
+  const row = document.createElement("tr");
+  row.innerHTML = `<td colspan="4"></td>`;
+  row.querySelector("td").textContent = text;
+  cronTable.append(row);
+}
+
+function createCronActionButton(action, jobId, text, label) {
+  const button = document.createElement("button");
+  button.className = "icon-button";
+  button.type = "button";
+  button.dataset.cronAction = action;
+  button.dataset.jobId = jobId;
+  button.textContent = text;
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  return button;
+}
+
+function resolveCronStatus(job) {
+  if (job.runningAtMs) {
+    return { label: "正在运行", className: "amber" };
+  }
+  if (!job.enabled) {
+    return { label: "已暂停", className: "" };
+  }
+  if (job.lastRunStatus === "error") {
+    return { label: "上次失败", className: "red" };
+  }
+  return { label: "等待运行", className: "green" };
+}
+
 function renderModelSummary(data) {
   const cards = [
     ["Router", data.routeModels?.router ?? "未设置"],
@@ -418,6 +546,13 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatTimestamp(value) {
+  if (!value) {
+    return "--";
+  }
+  return formatDateTime(new Date(value).toISOString());
 }
 
 function apiFetch(url, options = {}) {

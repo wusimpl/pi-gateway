@@ -195,4 +195,69 @@ describe("admin sessions page", () => {
       skillFolderEnabled: true,
     });
   });
+
+  it("返回当前目标的定时任务", async () => {
+    const targets: AdminTargetService = {
+      listTargets: vi.fn(),
+      resolveTarget: vi.fn().mockResolvedValue({
+        target: {
+          key: "ou_1",
+          kind: "p2p",
+          label: "私聊 · ou_1",
+          detail: "ou_1",
+          sources: ["历史私聊"],
+        },
+        identity: { openId: "ou_1" },
+        conversationTarget: {
+          kind: "p2p",
+          key: "ou_1",
+          receiveIdType: "open_id",
+          receiveId: "ou_1",
+        },
+      }),
+    };
+    const service = createAdminPageDataService({
+      targets,
+      runtimeState: { isLocked: vi.fn(() => false) },
+      cronService: {
+        isEnabled: vi.fn(() => true),
+        listJobs: vi.fn().mockResolvedValue([
+          {
+            id: "cron_1",
+            openId: "ou_1",
+            scopeType: "dm",
+            scopeKey: "ou_1",
+            name: "daily",
+            enabled: true,
+            prompt: "run",
+            schedule: { kind: "at", atMs: 1000 },
+            deleteAfterRun: false,
+            createdAtMs: 1,
+            updatedAtMs: 2,
+            state: { nextRunAtMs: 3000, lastRunStatus: "success" },
+          },
+        ]),
+      },
+      sessionService: {
+        getOrCreateActiveSession: vi.fn(),
+        getOrCreateActiveSessionForTarget: vi.fn(),
+        listSessions: vi.fn(),
+        listSessionsForTarget: vi.fn(),
+        readSessionState: vi.fn(),
+      },
+    });
+
+    await expect(service.getCronPage("ou_1")).resolves.toMatchObject({
+      targetKey: "ou_1",
+      enabled: true,
+      jobs: [
+        {
+          id: "cron_1",
+          name: "daily",
+          nextRunAtMs: 3000,
+          lastRunStatus: "success",
+        },
+      ],
+    });
+  });
 });

@@ -398,6 +398,18 @@ tr:last-child td {
   color: color-mix(in oklch, var(--amber) 75%, var(--ink));
 }
 
+.badge.red {
+  border-color: color-mix(in oklch, var(--red) 36%, var(--line));
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.badge.amber {
+  border-color: color-mix(in oklch, var(--amber) 36%, var(--line));
+  background: var(--amber-soft);
+  color: color-mix(in oklch, var(--amber) 75%, var(--ink));
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -518,6 +530,29 @@ tr:last-child td {
   border-radius: var(--radius);
   background: var(--surface);
   padding: var(--space-sm);
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-weight: 850;
+}
+
+.icon-button:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
 }
 
 .setting-list {
