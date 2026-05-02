@@ -240,6 +240,32 @@ describe("session service", () => {
     );
   });
 
+  it("创建新会话时应使用当前私聊保存的 skill 目录开关", async () => {
+    const deps = createDeps();
+    deps.userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "old-session",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+      globalAgentsSkillsEnabled: true,
+    });
+    deps.runtime.createPiSession.mockResolvedValue({
+      sessionId: "pi-session-new",
+      sessionFile: "/tmp/sessions/ou_1/new.jsonl",
+      dispose: vi.fn(),
+    });
+
+    const service = createSessionService(deps as any);
+    await service.createNewSession({ openId: "ou_1", userId: "u_1" });
+
+    expect(deps.runtime.createPiSession).toHaveBeenCalledWith(
+      "/tmp/workspace/ou_1",
+      "/tmp/sessions/ou_1",
+      undefined,
+      { loadGlobalAgentsSkills: true },
+    );
+  });
+
   it("创建新会话时应使用当前群聊保存的模型偏好", async () => {
     const deps = createDeps();
     const conversationStateStore = {

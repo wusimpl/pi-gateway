@@ -132,6 +132,54 @@ describe("pi runtime", () => {
     ]);
   });
 
+  it("默认会过滤 ~/.agents/skills 目录下的 skill", async () => {
+    const runtime = createPiRuntime();
+
+    await runtime.createPiSession("/tmp/workspace/ou_1", "/tmp/sessions/ou_1");
+
+    const skillsOverride = mocks.loaderInstances[0]?.options.skillsOverride as
+      | ((base: {
+        skills: Array<{ filePath: string }>;
+        diagnostics: Array<{ type: "warning" | "error" | "collision"; message: string; path?: string }>;
+      }) => {
+        skills: Array<{ filePath: string }>;
+        diagnostics: Array<{ type: "warning" | "error" | "collision"; message: string; path?: string }>;
+      })
+      | undefined;
+    const homeDir = process.env.HOME ?? "/Users/test";
+
+    expect(skillsOverride).toBeTypeOf("function");
+    expect(
+      skillsOverride?.({
+        skills: [
+          { filePath: `${homeDir}/.agents/skills/exa-search/SKILL.md` },
+          { filePath: `${homeDir}/.pi/agent/skills/feishu-docs/SKILL.md` },
+          { filePath: "/tmp/workspace/.agents/skills/local/SKILL.md" },
+        ],
+        diagnostics: [
+          { type: "warning", message: "blocked", path: `${homeDir}/.agents/skills/bad/SKILL.md` },
+          { type: "warning", message: "kept", path: `${homeDir}/.pi/agent/skills/bad/SKILL.md` },
+        ],
+      }).skills,
+    ).toEqual([
+      { filePath: `${homeDir}/.pi/agent/skills/feishu-docs/SKILL.md` },
+      { filePath: "/tmp/workspace/.agents/skills/local/SKILL.md" },
+    ]);
+  });
+
+  it("开启 loadGlobalAgentsSkills 时保留 Pi 默认 skill 加载结果", async () => {
+    const runtime = createPiRuntime();
+
+    await runtime.createPiSession(
+      "/tmp/workspace/ou_1",
+      "/tmp/sessions/ou_1",
+      undefined,
+      { loadGlobalAgentsSkills: true },
+    );
+
+    expect(mocks.loaderInstances[0]?.options.skillsOverride).toBeUndefined();
+  });
+
   it("会把飞书网关专属 AGENTS.md 插入到全局和项目规则之间", async () => {
     const dir = await mkdtemp(join(tmpdir(), "pi-gateway-agents-"));
     const gatewayAgentsFile = join(dir, "AGENTS.md");

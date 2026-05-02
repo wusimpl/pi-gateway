@@ -18,6 +18,10 @@ export function canRunBridgeCommand(
     return true;
   }
 
+  if (command.name === "skill-folder" && command.args.trim().length === 0) {
+    return true;
+  }
+
   if (GROUP_PUBLIC_COMMANDS.has(command.name)) {
     return true;
   }

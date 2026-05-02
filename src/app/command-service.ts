@@ -392,6 +392,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleToolsCommand(identity, command, conversationTarget);
       } else if (command.name === "toolcalls") {
         await handleToolCallsCommand(identity, command, conversationTarget);
+      } else if (command.name === "skill-folder") {
+        await handleSkillFolderCommand(identity, command, conversationTarget);
       } else if (command.name === "cron") {
         await handleCronCommand(identity, command, conversationTarget);
       } else if (command.name === "stt") {
@@ -1228,6 +1230,41 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await sendCommandReply(identity, conversationTarget, reply);
   }
 
+  async function handleSkillFolderCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
+    const openId = identity.openId;
+    const parsed = parseSkillFolderArgs(command.args);
+    if (parsed.error) {
+      await sendTextReply(identity, conversationTarget, parsed.error);
+      return;
+    }
+
+    if (parsed.kind === "show") {
+      const userState = await readTargetState(identity, conversationTarget);
+      const reply = handleBridgeCommand(command, {
+        openId,
+        globalAgentsSkillsEnabled: userState?.globalAgentsSkillsEnabled === true,
+      });
+      await sendCommandReply(identity, conversationTarget, reply);
+      return;
+    }
+
+    const sessionState = await getActiveSession(identity, conversationTarget);
+    const userState = await ensureTargetState(identity, conversationTarget, sessionState);
+    userState.globalAgentsSkillsEnabled = parsed.enabled;
+    userState.updatedAt = new Date().toISOString();
+    await writeTargetState(identity, conversationTarget, userState);
+
+    const reply = handleBridgeCommand(command, {
+      openId,
+      globalAgentsSkillsEnabled: parsed.enabled,
+    });
+    await sendCommandReply(identity, conversationTarget, reply);
+  }
+
   async function handleUnsupportedSlashCommand(
     identity: UserIdentity,
     rawText: string,
@@ -1670,6 +1707,24 @@ function parseToolCallsArgs(
   }
 
   return { error: "用法：/toolcalls、/toolcalls off、/toolcalls name 或 /toolcalls full。" };
+}
+
+function parseSkillFolderArgs(
+  args: string,
+):
+  | { kind: "show"; error?: undefined }
+  | { kind: "set"; enabled: boolean; error?: undefined }
+  | { kind?: undefined; enabled?: undefined; error: string } {
+  const normalized = args.trim().toLowerCase();
+  if (!normalized) {
+    return { kind: "show" };
+  }
+
+  if (normalized === "on" || normalized === "off") {
+    return { kind: "set", enabled: normalized === "on" };
+  }
+
+  return { error: "用法：/skill-folder、/skill-folder on 或 /skill-folder off。" };
 }
 
 function parseSttProviderArgs(

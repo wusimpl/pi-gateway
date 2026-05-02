@@ -7,24 +7,41 @@ import {
   getAgentDir,
   type AgentSession,
   type ExtensionFactory,
+  type ResourceDiagnostic,
   type SessionInfo,
+  type Skill,
 } from "@mariozechner/pi-coding-agent";
 import type { Model } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { logger } from "../app/logger.js";
 import { createRuntimeMetadataExtension } from "./extensions/runtime-metadata.js";
+
+export interface PiSessionResourceOptions {
+  loadGlobalAgentsSkills?: boolean;
+}
 
 export interface PiRuntime {
   getAuthStorage(): AuthStorage;
   getModelRegistry(): ModelRegistry;
-  createPiSession(cwd: string, sessionDir?: string, model?: Model<any>): Promise<AgentSession>;
+  createPiSession(
+    cwd: string,
+    sessionDir?: string,
+    model?: Model<any>,
+    resourceOptions?: PiSessionResourceOptions,
+  ): Promise<AgentSession>;
   listPiSessions(cwd: string, sessionDir?: string): Promise<SessionInfo[]>;
   continueRecentPiSession(
     cwd: string,
     sessionDir?: string,
+    resourceOptions?: PiSessionResourceOptions,
   ): Promise<{ session: AgentSession; fallbackMessage?: string } | null>;
-  openPiSession(sessionFile: string, cwd: string): Promise<AgentSession>;
+  openPiSession(
+    sessionFile: string,
+    cwd: string,
+    resourceOptions?: PiSessionResourceOptions,
+  ): Promise<AgentSession>;
 }
 
 export interface CreatePiRuntimeOptions {
@@ -42,12 +59,13 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
     gatewayAgentsFile: options.gatewayAgentsFile,
   });
 
-  async function createResourceLoader(cwd: string) {
+  async function createResourceLoader(cwd: string, resourceOptions?: PiSessionResourceOptions) {
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       agentDir: getAgentDir(),
       extensionFactories,
       agentsFilesOverride,
+      skillsOverride: createSkillsOverride(resourceOptions),
     });
     await resourceLoader.reload();
     return resourceLoader;
@@ -57,9 +75,10 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
     cwd: string,
     sessionDir?: string,
     model?: Model<any>,
+    resourceOptions?: PiSessionResourceOptions,
   ): Promise<AgentSession> {
     const sessionManager = SessionManager.create(cwd, sessionDir);
-    const resourceLoader = await createResourceLoader(cwd);
+    const resourceLoader = await createResourceLoader(cwd, resourceOptions);
     const { session } = await createAgentSession({
       cwd,
       sessionManager,
@@ -82,11 +101,12 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
 
   async function continueRecentPiSession(
     cwd: string,
-    sessionDir?: string
+    sessionDir?: string,
+    resourceOptions?: PiSessionResourceOptions,
   ): Promise<{ session: AgentSession; fallbackMessage?: string } | null> {
     try {
       const sessionManager = SessionManager.continueRecent(cwd, sessionDir);
-      const resourceLoader = await createResourceLoader(cwd);
+      const resourceLoader = await createResourceLoader(cwd, resourceOptions);
       const { session, modelFallbackMessage } = await createAgentSession({
         cwd,
         sessionManager,
@@ -108,9 +128,10 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
   async function openPiSession(
     sessionFile: string,
     cwd: string,
+    resourceOptions?: PiSessionResourceOptions,
   ): Promise<AgentSession> {
     const sessionManager = SessionManager.open(sessionFile, undefined, cwd);
-    const resourceLoader = await createResourceLoader(cwd);
+    const resourceLoader = await createResourceLoader(cwd, resourceOptions);
     const { session } = await createAgentSession({
       cwd,
       sessionManager,
@@ -186,6 +207,40 @@ function readGatewayAgentsFile(path: string): { path: string; content: string } 
   }
 }
 
+function createSkillsOverride(resourceOptions?: PiSessionResourceOptions) {
+  if (resourceOptions?.loadGlobalAgentsSkills === true) {
+    return undefined;
+  }
+
+  const globalAgentsSkillsDir = resolve(join(getHomeDir(), ".agents", "skills"));
+  return (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => ({
+    skills: base.skills.filter((skill) => !isUnderPath(skill.filePath, globalAgentsSkillsDir)),
+    diagnostics: base.diagnostics.filter((diagnostic) => !isBlockedSkillDiagnostic(diagnostic, globalAgentsSkillsDir)),
+  });
+}
+
+function isBlockedSkillDiagnostic(diagnostic: ResourceDiagnostic, globalAgentsSkillsDir: string): boolean {
+  if (diagnostic.path && isUnderPath(diagnostic.path, globalAgentsSkillsDir)) {
+    return true;
+  }
+
+  const collision = diagnostic.collision;
+  return Boolean(
+    collision
+      && (isUnderPath(collision.winnerPath, globalAgentsSkillsDir)
+        || isUnderPath(collision.loserPath, globalAgentsSkillsDir)),
+  );
+}
+
+function isUnderPath(filePath: string, rootDir: string): boolean {
+  const relativePath = relative(rootDir, resolve(filePath));
+  return relativePath === "" || (relativePath.length > 0 && !relativePath.startsWith("..") && !isAbsolute(relativePath));
+}
+
+function getHomeDir(): string {
+  return process.env.HOME || homedir();
+}
+
 let defaultPiRuntime: PiRuntime | null = null;
 
 export function initPiRuntime(): PiRuntime {
@@ -213,15 +268,17 @@ export async function createPiSession(
   cwd: string,
   sessionDir?: string,
   model?: Model<any>,
+  resourceOptions?: PiSessionResourceOptions,
 ): Promise<AgentSession> {
-  return getDefaultPiRuntime().createPiSession(cwd, sessionDir, model);
+  return getDefaultPiRuntime().createPiSession(cwd, sessionDir, model, resourceOptions);
 }
 
 export async function continueRecentPiSession(
   cwd: string,
-  sessionDir?: string
+  sessionDir?: string,
+  resourceOptions?: PiSessionResourceOptions,
 ): Promise<{ session: AgentSession; fallbackMessage?: string } | null> {
-  return getDefaultPiRuntime().continueRecentPiSession(cwd, sessionDir);
+  return getDefaultPiRuntime().continueRecentPiSession(cwd, sessionDir, resourceOptions);
 }
 
 export async function listPiSessions(
@@ -234,6 +291,7 @@ export async function listPiSessions(
 export async function openPiSession(
   sessionFile: string,
   cwd: string,
+  resourceOptions?: PiSessionResourceOptions,
 ): Promise<AgentSession> {
-  return getDefaultPiRuntime().openPiSession(sessionFile, cwd);
+  return getDefaultPiRuntime().openPiSession(sessionFile, cwd, resourceOptions);
 }

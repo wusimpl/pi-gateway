@@ -20,6 +20,7 @@ const BRIDGE_COMMANDS = [
   "settings",
   "tools",
   "toolcalls",
+  "skill-folder",
   "stop",
   "next",
   "restart",
@@ -89,6 +90,7 @@ interface BridgeCommandContext {
   skills?: BridgeSkillInfo[];
   tools?: BridgeToolStatus[];
   toolCallsDisplayMode?: ToolCallsDisplayMode;
+  globalAgentsSkillsEnabled?: boolean;
   sessions?: BridgeListedSession[];
   sessionsPage?: number;
   sessionsTotalPages?: number;
@@ -275,6 +277,8 @@ export function handleBridgeCommand(
       return formatToolsReply(context.tools ?? []);
     case "toolcalls":
       return formatToolCallsReply(context.toolCallsDisplayMode ?? "off", Boolean(normalized.args.trim()));
+    case "skill-folder":
+      return formatSkillFolderReply(context.globalAgentsSkillsEnabled === true, Boolean(normalized.args.trim()));
     case "stop":
       return STOP_MESSAGE;
     case "next":
@@ -288,6 +292,21 @@ export function handleBridgeCommand(
     default:
       return "";
   }
+}
+
+function formatSkillFolderReply(enabled: boolean, updated: boolean): string {
+  const status = enabled ? "已开启" : "已关闭";
+  if (updated) {
+    return `✅ ${status} ~/.agents/skills 目录\n新会话生效。`;
+  }
+
+  return [
+    `📁 ~/.agents/skills 目录：${status}`,
+    "",
+    "开启：/skill-folder on",
+    "关闭：/skill-folder off",
+    "修改后新会话生效。",
+  ].join("\n");
 }
 
 function formatToolCallsReply(mode: ToolCallsDisplayMode, updated: boolean): string {

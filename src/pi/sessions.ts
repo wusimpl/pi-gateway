@@ -1,6 +1,6 @@
 import type { AgentSession, SessionInfo } from "@mariozechner/pi-coding-agent";
 import type { Model } from "@mariozechner/pi-ai";
-import type { PiRuntime } from "./runtime.js";
+import type { PiRuntime, PiSessionResourceOptions } from "./runtime.js";
 import { createPiSession, continueRecentPiSession, openPiSession, listPiSessions, getModelRegistry } from "./runtime.js";
 import {
   getDataDir,
@@ -66,7 +66,12 @@ export interface SessionService {
 
 interface SessionServiceDeps {
   runtime: Pick<PiRuntime, "listPiSessions" | "continueRecentPiSession" | "openPiSession" | "getModelRegistry"> & {
-    createPiSession(cwd: string, sessionDir?: string, model?: Model<any>): Promise<SessionLike>;
+    createPiSession(
+      cwd: string,
+      sessionDir?: string,
+      model?: Model<any>,
+      resourceOptions?: PiSessionResourceOptions,
+    ): Promise<SessionLike>;
   };
   userStateStore: Pick<
     UserStateStore,
@@ -109,6 +114,40 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const workspaceDir = await deps.workspaceService.ensureConversationWorkspace(identity, target);
     bindWorkspaceIdentity(workspaceDir, identity, target);
     return workspaceDir;
+  }
+
+  async function createRuntimePiSession(
+    workspaceDir: string,
+    sessionDir: string,
+    model: Model<any> | undefined,
+    state?: Pick<UserState, "globalAgentsSkillsEnabled"> | null,
+  ): Promise<SessionLike> {
+    const resourceOptions = getSessionResourceOptions(state);
+    return resourceOptions
+      ? deps.runtime.createPiSession(workspaceDir, sessionDir, model, resourceOptions)
+      : deps.runtime.createPiSession(workspaceDir, sessionDir, model);
+  }
+
+  async function continueRuntimePiSession(
+    workspaceDir: string,
+    sessionDir: string,
+    state: Pick<UserState, "globalAgentsSkillsEnabled">,
+  ): Promise<{ session: SessionLike; fallbackMessage?: string } | null> {
+    const resourceOptions = getSessionResourceOptions(state);
+    return resourceOptions
+      ? deps.runtime.continueRecentPiSession(workspaceDir, sessionDir, resourceOptions)
+      : deps.runtime.continueRecentPiSession(workspaceDir, sessionDir);
+  }
+
+  async function openRuntimePiSession(
+    sessionFile: string,
+    workspaceDir: string,
+    state?: Pick<UserState, "globalAgentsSkillsEnabled"> | null,
+  ): Promise<SessionLike> {
+    const resourceOptions = getSessionResourceOptions(state);
+    return resourceOptions
+      ? deps.runtime.openPiSession(sessionFile, workspaceDir, resourceOptions)
+      : deps.runtime.openPiSession(sessionFile, workspaceDir);
   }
 
   function resolveScope(identity: UserIdentity, target?: ConversationTarget): SessionScope {
@@ -177,7 +216,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     if (state?.activeSessionId && state.piSessionFile) {
       try {
         const workspaceDir = await scope.ensureWorkspace();
-        const session = await deps.runtime.openPiSession(state.piSessionFile, workspaceDir);
+        const session = await openRuntimePiSession(state.piSessionFile, workspaceDir, state);
         applySavedToolSelection(session, state);
         applyUserPreferences(session, state?.thinkingLevel);
         ensureGroupChatContext(session, scope);
@@ -210,7 +249,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       try {
         const sessionDir = scope.sessionsDir();
         const workspaceDir = await scope.ensureWorkspace();
-        const result = await deps.runtime.continueRecentPiSession(workspaceDir, sessionDir);
+        const result = await continueRuntimePiSession(workspaceDir, sessionDir, state);
         if (result) {
           applySavedToolSelection(result.session, state);
           applyUserPreferences(result.session, state?.thinkingLevel);
@@ -281,7 +320,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const workspaceDir = await scope.ensureWorkspace();
     const existing = await scope.readState();
     const preferredModel = resolvePreferredModel(existing?.modelRouting?.heavyModel ?? existing?.modelPreference);
-    const piSession = await deps.runtime.createPiSession(workspaceDir, sessionDir, preferredModel);
+    const piSession = await createRuntimePiSession(workspaceDir, sessionDir, preferredModel, existing);
     applySavedToolSelection(piSession, existing);
     applyUserPreferences(piSession, existing?.thinkingLevel);
     ensureGroupChatContext(piSession, scope);
@@ -377,8 +416,8 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     const workspaceDir = await scope.ensureWorkspace();
     disposeCachedSession(scope.cacheKey);
 
-    const piSession = await deps.runtime.openPiSession(targetSession.sessionFile, workspaceDir);
     const state = await scope.readState();
+    const piSession = await openRuntimePiSession(targetSession.sessionFile, workspaceDir, state);
     applySavedToolSelection(piSession, state);
     applyUserPreferences(piSession, state?.thinkingLevel);
     ensureGroupChatContext(piSession, scope);
@@ -665,6 +704,16 @@ export function getSessionDefaultToolNames(
     return [];
   }
   return [...(defaultToolNamesBySession.get(session as object) ?? session.getActiveToolNames())];
+}
+
+function getSessionResourceOptions(
+  state?: Pick<UserState, "globalAgentsSkillsEnabled"> | null,
+): PiSessionResourceOptions | undefined {
+  if (state?.globalAgentsSkillsEnabled === true) {
+    return { loadGlobalAgentsSkills: true };
+  }
+
+  return undefined;
 }
 
 function applySavedToolSelection(

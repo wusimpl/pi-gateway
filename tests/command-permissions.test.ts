@@ -27,6 +27,8 @@ describe("canRunBridgeCommand", () => {
     expect(canRunBridgeCommand(identity, { name: "tools", args: "off read" }, groupTarget, [])).toBe(false);
     expect(canRunBridgeCommand(identity, { name: "tools", args: "set read" }, groupTarget, [])).toBe(false);
     expect(canRunBridgeCommand(identity, { name: "tools", args: "reset" }, groupTarget, [])).toBe(false);
+    expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "" }, groupTarget, [])).toBe(true);
+    expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "on" }, groupTarget, [])).toBe(false);
     expect(canRunBridgeCommand(identity, { name: "skills", args: "" }, groupTarget, [])).toBe(true);
     expect(canRunBridgeCommand(identity, { name: "status", args: "" }, groupTarget, [])).toBe(true);
     expect(canRunBridgeCommand(identity, { name: "new", args: "" }, groupTarget, [])).toBe(false);
@@ -35,5 +37,6 @@ describe("canRunBridgeCommand", () => {
   it("群聊 owner 可以执行 owner-only 命令", () => {
     expect(canRunBridgeCommand(identity, { name: "restart", args: "" }, groupTarget, ["ou_1"])).toBe(true);
     expect(canRunBridgeCommand(identity, { name: "tools", args: "on read" }, groupTarget, ["ou_1"])).toBe(true);
+    expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "off" }, groupTarget, ["ou_1"])).toBe(true);
   });
 });

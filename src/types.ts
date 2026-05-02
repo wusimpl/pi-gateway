@@ -68,6 +68,7 @@ export interface UserState {
   lastMessageId?: string;
   thinkingLevel?: ThinkingLevel;
   streamingEnabled?: boolean;
+  globalAgentsSkillsEnabled?: boolean;
   toolCallsDisplayMode?: ToolCallsDisplayMode;
   enabledTools?: string[];
   modelPreference?: ModelPreference;

@@ -78,6 +78,13 @@ describe("parseBridgeCommand", () => {
     });
   });
 
+  it("should parse /skill-folder with args", () => {
+    expect(parseBridgeCommand("/skill-folder off")).toEqual({
+      name: "skill-folder",
+      args: "off",
+    });
+  });
+
   it("should parse /stop", () => {
     expect(parseBridgeCommand("/stop")).toEqual({
       name: "stop",
@@ -243,6 +250,24 @@ describe("handleBridgeCommand", () => {
         "只显示工具名：/toolcalls name\n" +
         "显示详情：/toolcalls full",
     );
+  });
+
+  it("`/skill-folder` 应返回当前目录开关", () => {
+    expect(handleBridgeCommand("skill-folder", { globalAgentsSkillsEnabled: false })).toBe(
+      "📁 ~/.agents/skills 目录：已关闭\n" +
+        "\n" +
+        "开启：/skill-folder on\n" +
+        "关闭：/skill-folder off\n" +
+        "修改后新会话生效。",
+    );
+  });
+
+  it("`/skill-folder on` 应提示新会话生效", () => {
+    expect(
+      handleBridgeCommand({ name: "skill-folder", args: "on" }, {
+        globalAgentsSkillsEnabled: true,
+      }),
+    ).toBe("✅ 已开启 ~/.agents/skills 目录\n新会话生效。");
   });
 
   it("`/sessions` 应返回最近会话列表", () => {
