@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => {
     getAvailable: vi.fn(() => [{ provider: "pi", id: "model-1" }]),
   };
   const modelRouter = { route: vi.fn() };
+  const adminServer = {
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+    getUrl: vi.fn(() => "http://127.0.0.1:8787/admin/"),
+  };
 
   return {
     client,
@@ -85,6 +90,8 @@ const mocks = vi.hoisted(() => {
     createMessageRouter: vi.fn(() => ({
       handleFeishuMessage: vi.fn(),
     })),
+    adminServer,
+    createAdminServer: vi.fn(() => adminServer),
     createRuntimeStateStore: vi.fn(() => ({
       clearAllState: vi.fn(),
       isDuplicate: vi.fn(),
@@ -208,6 +215,10 @@ vi.mock("../src/app/router.js", () => ({
   createMessageRouter: mocks.createMessageRouter,
 }));
 
+vi.mock("../src/admin/server.js", () => ({
+  createAdminServer: mocks.createAdminServer,
+}));
+
 vi.mock("../src/app/state.js", () => ({
   createRuntimeStateStore: mocks.createRuntimeStateStore,
 }));
@@ -261,6 +272,10 @@ describe("index wiring", () => {
     mocks.modelRouter.route.mockClear();
     mocks.modelRegistry.getAvailable.mockClear();
     mocks.createMessageRouter.mockClear();
+    mocks.createAdminServer.mockClear();
+    mocks.adminServer.start.mockClear();
+    mocks.adminServer.stop.mockClear();
+    mocks.adminServer.getUrl.mockClear();
     mocks.createRuntimeStateStore.mockClear();
     mocks.createGroupSettingsStore.mockClear();
     mocks.createUserStateStore.mockClear();
