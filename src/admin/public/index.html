@@ -33,7 +33,7 @@
           <button class="nav-item" type="button" data-page="cron">定时任务</button>
           <button class="nav-item" type="button" data-page="group">群聊设置</button>
           <button class="nav-item" type="button" data-page="tools">工具</button>
-          <button class="nav-item" type="button" data-page="control" disabled>控制</button>
+          <button class="nav-item" type="button" data-page="control">控制</button>
           <button class="nav-item" type="button" data-page="skills" disabled>技能</button>
         </nav>
       </aside>
@@ -397,6 +397,57 @@
                   <button class="button primary" type="submit">执行</button>
                 </form>
                 <pre class="result-box" id="tools-command-result">执行结果会显示在这里。</pre>
+              </section>
+            </div>
+          </section>
+
+          <section class="page-view is-hidden" id="page-control" data-page-view="control">
+            <div class="page-title">
+              <div>
+                <h1>控制</h1>
+                <p>停止当前任务、处理下一条消息或重启服务。</p>
+              </div>
+            </div>
+
+            <div class="layout-two">
+              <section class="panel">
+                <div class="panel-head">
+                  <div>
+                    <h2>当前状态</h2>
+                    <p>操作会作用在当前执行目标。</p>
+                  </div>
+                  <span class="badge" id="control-status">未读取</span>
+                </div>
+                <div class="status-grid compact-grid">
+                  <div class="status-cell">
+                    <span>当前任务</span>
+                    <strong id="control-running">--</strong>
+                  </div>
+                  <div class="status-cell">
+                    <span>服务状态</span>
+                    <strong id="control-draining">--</strong>
+                  </div>
+                </div>
+                <div class="button-row">
+                  <button class="button" type="button" id="control-stop">停止当前任务</button>
+                  <button class="button" type="button" id="control-next">处理下一条</button>
+                  <button class="button" type="button" id="control-restart">重启服务</button>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div>
+                  <h2>命令输入</h2>
+                  <p>需要连续操作时，可以直接输入命令。</p>
+                </div>
+                <form class="raw-command" id="control-command-form">
+                  <label for="control-command">原始命令</label>
+                  <textarea id="control-command" rows="4">/stop
+/next
+/restart</textarea>
+                  <button class="button primary" type="submit">执行</button>
+                </form>
+                <pre class="result-box" id="control-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>

@@ -363,4 +363,46 @@ describe("admin sessions page", () => {
       ],
     });
   });
+
+  it("返回当前目标的控制状态", async () => {
+    const targets: AdminTargetService = {
+      listTargets: vi.fn(),
+      resolveTarget: vi.fn().mockResolvedValue({
+        target: {
+          key: "ou_1",
+          kind: "p2p",
+          label: "私聊 · ou_1",
+          detail: "ou_1",
+          sources: ["历史私聊"],
+        },
+        identity: { openId: "ou_1" },
+        conversationTarget: {
+          kind: "p2p",
+          key: "ou_1",
+          receiveIdType: "open_id",
+          receiveId: "ou_1",
+        },
+      }),
+    };
+    const service = createAdminPageDataService({
+      targets,
+      runtimeState: {
+        isLocked: vi.fn((key: string) => key === "ou_1"),
+        isDraining: vi.fn(() => true),
+      },
+      sessionService: {
+        getOrCreateActiveSession: vi.fn(),
+        getOrCreateActiveSessionForTarget: vi.fn(),
+        listSessions: vi.fn(),
+        listSessionsForTarget: vi.fn(),
+        readSessionState: vi.fn(),
+      },
+    });
+
+    await expect(service.getControlPage("ou_1")).resolves.toEqual({
+      targetKey: "ou_1",
+      running: true,
+      draining: true,
+    });
+  });
 });

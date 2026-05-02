@@ -17,6 +17,7 @@ export interface AdminPageDataService {
   getCronPage(targetKey: string): Promise<AdminCronPageData>;
   getGroupPage(targetKey: string): Promise<AdminGroupPageData>;
   getToolsPage(targetKey: string): Promise<AdminToolsPageData>;
+  getControlPage(targetKey: string): Promise<AdminControlPageData>;
 }
 
 export interface AdminSessionsPageData {
@@ -101,13 +102,19 @@ export interface AdminToolsPageData {
   }>;
 }
 
+export interface AdminControlPageData {
+  targetKey: string;
+  running: boolean;
+  draining: boolean;
+}
+
 export function createAdminPageDataService(deps: {
   targets: AdminTargetService;
   sessionService: Pick<
     SessionService,
     "getOrCreateActiveSession" | "getOrCreateActiveSessionForTarget" | "listSessions" | "listSessionsForTarget" | "readSessionState"
   >;
-  runtimeState: Pick<RuntimeStateStore, "isLocked">;
+  runtimeState: Pick<RuntimeStateStore, "isLocked"> & Partial<Pick<RuntimeStateStore, "isDraining">>;
   listAvailableModels?: () => Promise<AvailableModelInfo[]>;
   runtimeConfig?: Pick<
     RuntimeConfigStore,
@@ -285,6 +292,19 @@ export function createAdminPageDataService(deps: {
     };
   }
 
+  async function getControlPage(targetKey: string): Promise<AdminControlPageData> {
+    const resolved = await deps.targets.resolveTarget(targetKey);
+    if (!resolved) {
+      throw new Error("ADMIN_TARGET_NOT_FOUND");
+    }
+    const conversationKey = getConversationTargetKey(resolved.conversationTarget, resolved.identity.openId);
+    return {
+      targetKey: resolved.target.key,
+      running: deps.runtimeState.isLocked(conversationKey),
+      draining: deps.runtimeState.isDraining?.() === true,
+    };
+  }
+
   async function readGroupRoutingConfig(chatId: string): Promise<PersistedGroupRoutingConfig> {
     return (await deps.groupSettingsStore?.readGroupRoutingConfig(chatId)) ?? getDefaultGroupRoutingConfig();
   }
@@ -313,6 +333,7 @@ export function createAdminPageDataService(deps: {
     getCronPage,
     getGroupPage,
     getToolsPage,
+    getControlPage,
   };
 }
 

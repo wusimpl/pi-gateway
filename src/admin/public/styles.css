@@ -290,6 +290,10 @@ label,
   gap: var(--space-sm);
 }
 
+.status-grid.compact-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .status-cell {
   display: grid;
   gap: var(--space-xs);

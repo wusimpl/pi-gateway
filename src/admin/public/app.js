@@ -56,6 +56,15 @@ const toolsList = document.querySelector("#tools-list");
 const toolsCommandForm = document.querySelector("#tools-command-form");
 const toolsCommandInput = document.querySelector("#tools-command");
 const toolsCommandResult = document.querySelector("#tools-command-result");
+const controlStatus = document.querySelector("#control-status");
+const controlRunning = document.querySelector("#control-running");
+const controlDraining = document.querySelector("#control-draining");
+const controlStop = document.querySelector("#control-stop");
+const controlNext = document.querySelector("#control-next");
+const controlRestart = document.querySelector("#control-restart");
+const controlCommandForm = document.querySelector("#control-command-form");
+const controlCommandInput = document.querySelector("#control-command");
+const controlCommandResult = document.querySelector("#control-command-result");
 
 let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
@@ -193,6 +202,26 @@ toolsList?.addEventListener("change", async (event) => {
   await runRawCommand(input.checked ? `/tools on ${toolName}` : `/tools off ${toolName}`, toolsCommandResult);
 });
 
+controlCommandForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runRawCommand(controlCommandInput.value, controlCommandResult);
+});
+
+controlStop?.addEventListener("click", async () => {
+  await runRawCommand("/stop", controlCommandResult);
+});
+
+controlNext?.addEventListener("click", async () => {
+  await runRawCommand("/next", controlCommandResult);
+});
+
+controlRestart?.addEventListener("click", async () => {
+  if (!confirm("确认重启网关？")) {
+    return;
+  }
+  await runRawCommand("/restart", controlCommandResult);
+});
+
 routeEnabled?.addEventListener("change", async () => {
   await runRawCommand(routeEnabled.checked ? "/route on" : "/route off", modelCommandResult);
 });
@@ -327,6 +356,10 @@ async function loadCurrentPage() {
   }
   if (currentPage === "tools") {
     await loadTools();
+    return;
+  }
+  if (currentPage === "control") {
+    await loadControl();
     return;
   }
   await loadSessions();
@@ -709,6 +742,39 @@ function appendToolsMessage(text) {
   item.className = "data-item";
   item.textContent = text;
   toolsList.append(item);
+}
+
+async function loadControl() {
+  if (!currentTargetKey) {
+    controlCommandResult.textContent = "请先选择私聊或群聊。";
+    return;
+  }
+
+  const response = await apiFetch(`./api/pages/control?targetKey=${encodeURIComponent(currentTargetKey)}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    controlCommandResult.textContent = data.message ?? "读取失败。";
+    return;
+  }
+
+  renderControl(await response.json());
+}
+
+function renderControl(data) {
+  const running = data.running === true;
+  const draining = data.draining === true;
+  controlStatus.className = "badge";
+  if (draining) {
+    controlStatus.textContent = "重启中";
+    controlStatus.classList.add("amber");
+  } else if (running) {
+    controlStatus.textContent = "运行中";
+    controlStatus.classList.add("green");
+  } else {
+    controlStatus.textContent = "空闲";
+  }
+  controlRunning.textContent = running ? "运行中" : "空闲";
+  controlDraining.textContent = draining ? "正在重启" : "正常";
 }
 
 function renderModelSummary(data) {
