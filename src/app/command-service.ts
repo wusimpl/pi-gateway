@@ -42,6 +42,7 @@ import type { RuntimeConfigStore } from "./runtime-config.js";
 import {
   formatCronHelp,
   formatCronJobAdded,
+  formatCronJobEnabled,
   formatCronJobList,
   formatCronJobRemoved,
   formatCronJobRunResult,
@@ -97,7 +98,7 @@ interface CommandServiceDeps {
   restartService: Pick<RestartService, "restartGateway">;
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
-  cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "removeJob" | "stopJob" | "runJobNow">;
+  cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "setJobEnabled" | "removeJob" | "stopJob" | "runJobNow">;
   deferredCronRunService?: Pick<DeferredCronRunService, "queueRun">;
   skillStatsStore?: Pick<SkillStatsStore, "listSkillUsage" | "reset">;
   groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig" | "writeGroupRoutingConfig">;
@@ -748,6 +749,21 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         } catch (error) {
           if ((error instanceof Error ? error.message : String(error)) === "CRON_JOB_RUNNING") {
             await sendTextReply(identity, conversationTarget, "这个定时任务正在执行，先用 /stop 停掉再删。");
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
+      case "resume":
+      case "pause": {
+        try {
+          const job = await cronService.setJobEnabled(cronScope, parsed.command.jobId, parsed.command.action === "resume");
+          await sendCommandReply(identity, conversationTarget, formatCronJobEnabled(job));
+        } catch (error) {
+          const code = error instanceof Error ? error.message : String(error);
+          if (code === "CRON_JOB_NOT_FOUND") {
+            await sendTextReply(identity, conversationTarget, "没找到这个定时任务。");
             return;
           }
           throw error;

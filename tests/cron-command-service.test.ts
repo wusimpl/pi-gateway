@@ -39,6 +39,11 @@ function createDeps() {
       state: { nextRunAtMs: Date.parse("2026-04-17T09:00:00.000+08:00") },
     }),
     removeJob: vi.fn(),
+    setJobEnabled: vi.fn().mockImplementation(async (_scope, jobId, enabled) => ({
+      id: jobId,
+      name: "早报",
+      enabled,
+    })),
     runJobNow: vi.fn(),
   };
   const runtimeState = {
@@ -207,5 +212,45 @@ describe("command service /cron", () => {
       "cron_1",
     );
     expect(cronService.runJobNow).not.toHaveBeenCalled();
+  });
+
+  it("pause 会暂停定时任务", async () => {
+    const { service, messenger, cronService } = createDeps();
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "cron", args: "pause cron_1" },
+    );
+
+    expect(cronService.setJobEnabled).toHaveBeenCalledWith(
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_1",
+      false,
+    );
+    expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      expect.stringContaining("已暂停定时任务"),
+      2000,
+    );
+  });
+
+  it("resume 会启动定时任务", async () => {
+    const { service, messenger, cronService } = createDeps();
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "cron", args: "resume cron_1" },
+    );
+
+    expect(cronService.setJobEnabled).toHaveBeenCalledWith(
+      { scopeKey: "ou_1", scopeType: "dm" },
+      "cron_1",
+      true,
+    );
+    expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      expect.stringContaining("已启动定时任务"),
+      2000,
+    );
   });
 });

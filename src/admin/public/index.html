@@ -59,7 +59,6 @@
           <div class="page-title">
             <div>
               <h1>会话</h1>
-              <p>查看当前目标的状态、历史会话和已加载上下文。</p>
             </div>
             <button class="button" type="button" id="refresh-button">刷新</button>
           </div>
@@ -73,7 +72,6 @@
               <div class="panel-head padded">
                 <div>
                   <h2>历史会话</h2>
-                  <p>这里只查看会话，不会切换或重置。</p>
                 </div>
               </div>
               <div class="table-wrap">
@@ -94,17 +92,8 @@
             <section class="panel">
               <div>
                 <h2>已加载上下文</h2>
-                <p>来自当前会话。</p>
               </div>
               <div class="chips" id="context-files"></div>
-              <form class="raw-command" id="raw-command-form">
-                <label for="raw-command">原始命令</label>
-                <textarea id="raw-command" rows="4">/status
-/sessions
-/context</textarea>
-                <button class="button primary" type="submit">执行</button>
-              </form>
-              <pre class="result-box" id="command-result">执行结果会显示在这里。</pre>
             </section>
           </div>
           </section>
@@ -113,7 +102,6 @@
             <div class="page-title">
               <div>
                 <h1>模型</h1>
-                <p>查看当前模型，设置 router、light、heavy，并切换模型路由。</p>
               </div>
             </div>
 
@@ -122,15 +110,12 @@
                 <div class="panel-head">
                   <div>
                     <h2>当前模型</h2>
-                    <p>设置只作用于当前执行目标。</p>
                   </div>
                   <label class="inline-check">
                     <input id="route-enabled" type="checkbox" />
                     <span>模型路由</span>
                   </label>
                 </div>
-
-                <div class="model-summary" id="model-summary"></div>
 
                 <div class="model-selectors">
                   <label class="model-row">
@@ -151,17 +136,8 @@
               <section class="panel">
                 <div>
                   <h2>可用模型</h2>
-                  <p>从当前配置中读取。</p>
                 </div>
                 <div class="data-list" id="available-models"></div>
-                <form class="raw-command" id="model-command-form">
-                  <label for="model-command">原始命令</label>
-                  <textarea id="model-command" rows="4">/model
-/models
-/route on</textarea>
-                  <button class="button primary" type="submit">执行</button>
-                </form>
-                <pre class="result-box" id="model-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>
@@ -170,15 +146,13 @@
             <div class="page-title">
               <div>
                 <h1>设置</h1>
-                <p>调整当前目标的回复方式和提示反馈，修改后立即生效。</p>
               </div>
             </div>
 
-            <div class="layout-two">
+            <div class="layout-single">
               <section class="panel">
                 <div>
                   <h2>回复设置</h2>
-                  <p>开关只影响当前目标。</p>
                 </div>
                 <div class="setting-list">
                   <label class="setting-item">
@@ -226,21 +200,6 @@
                   </label>
                 </div>
               </section>
-
-              <section class="panel">
-                <div>
-                  <h2>命令输入</h2>
-                  <p>需要连续操作时，可以直接输入命令。</p>
-                </div>
-                <form class="raw-command" id="settings-command-form">
-                  <label for="settings-command">原始命令</label>
-                  <textarea id="settings-command" rows="4">/settings
-/stream on
-/toolcalls name</textarea>
-                  <button class="button primary" type="submit">执行</button>
-                </form>
-                <pre class="result-box" id="settings-command-result">执行结果会显示在这里。</pre>
-              </section>
             </div>
           </section>
 
@@ -248,17 +207,15 @@
             <div class="page-title">
               <div>
                 <h1>定时任务</h1>
-                <p>查看当前目标的任务列表，支持立即运行、停止和删除。</p>
               </div>
               <button class="button" type="button" id="cron-refresh-button">刷新列表</button>
             </div>
 
-            <div class="layout-two">
+            <div class="layout-single">
               <section class="panel flush">
                 <div class="panel-head padded">
                   <div>
                     <h2>任务列表</h2>
-                    <p>这里不提供新建任务入口。</p>
                   </div>
                   <span class="badge" id="cron-count">0 个任务</span>
                 </div>
@@ -276,19 +233,6 @@
                   </table>
                 </div>
               </section>
-
-              <section class="panel">
-                <div>
-                  <h2>执行结果</h2>
-                  <p>结果会显示在页面中，可同步到飞书。</p>
-                </div>
-                <form class="raw-command" id="cron-command-form">
-                  <label for="cron-command">原始命令</label>
-                  <textarea id="cron-command" rows="3">/cron list</textarea>
-                  <button class="button primary" type="submit">执行</button>
-                </form>
-                <pre class="result-box" id="cron-command-result">执行结果会显示在这里。</pre>
-              </section>
             </div>
           </section>
 
@@ -296,7 +240,6 @@
             <div class="page-title">
               <div>
                 <h1>群聊设置</h1>
-                <p>管理当前群的响应范围、触发方式、关键词和白名单。</p>
               </div>
             </div>
 
@@ -305,7 +248,6 @@
                 <div class="panel-head">
                   <div>
                     <h2>触发规则</h2>
-                    <p>修改后立即作用于当前群。</p>
                   </div>
                   <span class="badge" id="group-policy-badge">未读取</span>
                 </div>
@@ -348,20 +290,12 @@
               <section class="panel">
                 <div>
                   <h2>白名单</h2>
-                  <p>控制当前群是否在允许列表中。</p>
                 </div>
                 <div class="data-list" id="group-allowlist"></div>
                 <div class="button-row">
                   <button class="button primary" type="button" id="group-allowlist-add">加入白名单</button>
                   <button class="button" type="button" id="group-allowlist-remove">移出白名单</button>
                 </div>
-                <form class="raw-command" id="group-command-form">
-                  <label for="group-command">原始命令</label>
-                  <textarea id="group-command" rows="4">/group
-/group keywords show</textarea>
-                  <button class="button primary" type="submit">执行</button>
-                </form>
-                <pre class="result-box" id="group-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>
@@ -370,33 +304,18 @@
             <div class="page-title">
               <div>
                 <h1>工具</h1>
-                <p>查看当前目标会话里的工具状态，启用或停用工具。</p>
               </div>
             </div>
 
-            <div class="layout-two">
+            <div class="layout-single">
               <section class="panel">
                 <div class="panel-head">
                   <div>
                     <h2>工具列表</h2>
-                    <p>开关只影响当前目标。</p>
                   </div>
                   <span class="badge" id="tools-count">0 个启用</span>
                 </div>
                 <div class="setting-list" id="tools-list"></div>
-              </section>
-
-              <section class="panel">
-                <div>
-                  <h2>命令输入</h2>
-                  <p>需要连续操作时，可以直接输入命令。</p>
-                </div>
-                <form class="raw-command" id="tools-command-form">
-                  <label for="tools-command">原始命令</label>
-                  <textarea id="tools-command" rows="4">/tools</textarea>
-                  <button class="button primary" type="submit">执行</button>
-                </form>
-                <pre class="result-box" id="tools-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>
@@ -405,16 +324,14 @@
             <div class="page-title">
               <div>
                 <h1>控制</h1>
-                <p>停止当前任务、处理下一条消息或重启服务。</p>
               </div>
             </div>
 
-            <div class="layout-two">
+            <div class="layout-single">
               <section class="panel">
                 <div class="panel-head">
                   <div>
                     <h2>当前状态</h2>
-                    <p>操作会作用在当前执行目标。</p>
                   </div>
                   <span class="badge" id="control-status">未读取</span>
                 </div>
@@ -434,21 +351,6 @@
                   <button class="button" type="button" id="control-restart">重启服务</button>
                 </div>
               </section>
-
-              <section class="panel">
-                <div>
-                  <h2>命令输入</h2>
-                  <p>需要连续操作时，可以直接输入命令。</p>
-                </div>
-                <form class="raw-command" id="control-command-form">
-                  <label for="control-command">原始命令</label>
-                  <textarea id="control-command" rows="4">/stop
-/next
-/restart</textarea>
-                  <button class="button primary" type="submit">执行</button>
-                </form>
-                <pre class="result-box" id="control-command-result">执行结果会显示在这里。</pre>
-              </section>
             </div>
           </section>
 
@@ -456,7 +358,6 @@
             <div class="page-title">
               <div>
                 <h1>技能</h1>
-                <p>查看当前可用技能和使用状态。</p>
               </div>
               <button class="button" type="button" id="skills-refresh-button">刷新列表</button>
             </div>
@@ -466,7 +367,6 @@
                 <div class="panel-head">
                   <div>
                     <h2>技能列表</h2>
-                    <p>来自当前目标会话。</p>
                   </div>
                   <span class="badge" id="skills-count">0 个可用</span>
                 </div>
@@ -476,16 +376,8 @@
               <section class="panel">
                 <div>
                   <h2>使用统计</h2>
-                  <p>按使用次数和最近时间排序。</p>
                 </div>
                 <div class="data-list" id="skills-usage-list"></div>
-                <form class="raw-command" id="skills-command-form">
-                  <label for="skills-command">原始命令</label>
-                  <textarea id="skills-command" rows="4">/skills
-/skillstat</textarea>
-                  <button class="button primary" type="submit">执行</button>
-                </form>
-                <pre class="result-box" id="skills-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>

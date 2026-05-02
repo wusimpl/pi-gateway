@@ -9,35 +9,22 @@ const sessionStatus = document.querySelector("#session-status");
 const sessionsTable = document.querySelector("#sessions-table");
 const contextFiles = document.querySelector("#context-files");
 const emptyState = document.querySelector("#empty-state");
-const rawCommandForm = document.querySelector("#raw-command-form");
-const rawCommandInput = document.querySelector("#raw-command");
-const commandResult = document.querySelector("#command-result");
 const refreshButton = document.querySelector("#refresh-button");
 const navItems = document.querySelectorAll("[data-page]");
 const pageViews = document.querySelectorAll("[data-page-view]");
 const routeEnabled = document.querySelector("#route-enabled");
-const modelSummary = document.querySelector("#model-summary");
 const modelRouter = document.querySelector("#model-router");
 const modelLight = document.querySelector("#model-light");
 const modelHeavy = document.querySelector("#model-heavy");
 const availableModels = document.querySelector("#available-models");
-const modelCommandForm = document.querySelector("#model-command-form");
-const modelCommandInput = document.querySelector("#model-command");
-const modelCommandResult = document.querySelector("#model-command-result");
 const settingStream = document.querySelector("#setting-stream");
 const settingSttProvider = document.querySelector("#setting-stt-provider");
 const settingReaction = document.querySelector("#setting-reaction");
 const settingToolcalls = document.querySelector("#setting-toolcalls");
 const settingSkillFolder = document.querySelector("#setting-skill-folder");
-const settingsCommandForm = document.querySelector("#settings-command-form");
-const settingsCommandInput = document.querySelector("#settings-command");
-const settingsCommandResult = document.querySelector("#settings-command-result");
 const cronRefreshButton = document.querySelector("#cron-refresh-button");
 const cronCount = document.querySelector("#cron-count");
 const cronTable = document.querySelector("#cron-table");
-const cronCommandForm = document.querySelector("#cron-command-form");
-const cronCommandInput = document.querySelector("#cron-command");
-const cronCommandResult = document.querySelector("#cron-command-result");
 const groupPolicy = document.querySelector("#group-policy");
 const groupMode = document.querySelector("#group-mode");
 const groupPolicyBadge = document.querySelector("#group-policy-badge");
@@ -48,30 +35,18 @@ const groupKeywordsClear = document.querySelector("#group-keywords-clear");
 const groupAllowlist = document.querySelector("#group-allowlist");
 const groupAllowlistAdd = document.querySelector("#group-allowlist-add");
 const groupAllowlistRemove = document.querySelector("#group-allowlist-remove");
-const groupCommandForm = document.querySelector("#group-command-form");
-const groupCommandInput = document.querySelector("#group-command");
-const groupCommandResult = document.querySelector("#group-command-result");
 const toolsCount = document.querySelector("#tools-count");
 const toolsList = document.querySelector("#tools-list");
-const toolsCommandForm = document.querySelector("#tools-command-form");
-const toolsCommandInput = document.querySelector("#tools-command");
-const toolsCommandResult = document.querySelector("#tools-command-result");
 const controlStatus = document.querySelector("#control-status");
 const controlRunning = document.querySelector("#control-running");
 const controlDraining = document.querySelector("#control-draining");
 const controlStop = document.querySelector("#control-stop");
 const controlNext = document.querySelector("#control-next");
 const controlRestart = document.querySelector("#control-restart");
-const controlCommandForm = document.querySelector("#control-command-form");
-const controlCommandInput = document.querySelector("#control-command");
-const controlCommandResult = document.querySelector("#control-command-result");
 const skillsRefreshButton = document.querySelector("#skills-refresh-button");
 const skillsCount = document.querySelector("#skills-count");
 const skillsList = document.querySelector("#skills-list");
 const skillsUsageList = document.querySelector("#skills-usage-list");
-const skillsCommandForm = document.querySelector("#skills-command-form");
-const skillsCommandInput = document.querySelector("#skills-command");
-const skillsCommandResult = document.querySelector("#skills-command-result");
 
 let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
@@ -106,26 +81,6 @@ refreshButton?.addEventListener("click", () => {
   void loadSessions();
 });
 
-rawCommandForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runRawCommand(rawCommandInput.value, commandResult);
-});
-
-modelCommandForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runRawCommand(modelCommandInput.value, modelCommandResult);
-});
-
-settingsCommandForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runRawCommand(settingsCommandInput.value, settingsCommandResult);
-});
-
-cronCommandForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runRawCommand(cronCommandInput.value, cronCommandResult);
-});
-
 cronRefreshButton?.addEventListener("click", () => {
   void loadCron();
 });
@@ -145,56 +100,50 @@ cronTable?.addEventListener("click", async (event) => {
   }
   const command = action === "run"
     ? `/cron run ${jobId}`
-    : action === "stop"
-      ? `/cron stop ${jobId}`
-      : `/cron remove ${jobId}`;
-  await runRawCommand(command, cronCommandResult);
-});
-
-groupCommandForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runRawCommand(groupCommandInput.value, groupCommandResult);
+    : action === "pause"
+      ? `/cron pause ${jobId}`
+      : action === "resume"
+        ? `/cron resume ${jobId}`
+        : action === "stop"
+          ? `/cron stop ${jobId}`
+          : `/cron remove ${jobId}`;
+  await runRawCommand(command);
 });
 
 groupPolicy?.addEventListener("change", async () => {
-  await runRawCommand(`/group policy ${groupPolicy.value}`, groupCommandResult);
+  await runRawCommand(`/group policy ${groupPolicy.value}`);
 });
 
 groupMode?.addEventListener("change", async () => {
-  await runRawCommand(`/group mode ${groupMode.value}`, groupCommandResult);
+  await runRawCommand(`/group mode ${groupMode.value}`);
 });
 
 groupKeywordForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const keywords = splitKeywords(groupKeywords.value);
   if (keywords.length === 0) {
-    groupCommandResult.textContent = "请输入关键词，或使用清空关键词。";
+    alert("请输入关键词，或使用清空关键词。");
     return;
   }
-  await runRawCommand(`/group keywords set ${keywords.join(" ")}`, groupCommandResult);
+  await runRawCommand(`/group keywords set ${keywords.join(" ")}`);
 });
 
 groupKeywordsClear?.addEventListener("click", async () => {
   if (!confirm("清空后当前群不会再用关键词触发。")) {
     return;
   }
-  await runRawCommand("/group keywords clear", groupCommandResult);
+  await runRawCommand("/group keywords clear");
 });
 
 groupAllowlistAdd?.addEventListener("click", async () => {
-  await runRawCommand("/group allowlist add here", groupCommandResult);
+  await runRawCommand("/group allowlist add here");
 });
 
 groupAllowlistRemove?.addEventListener("click", async () => {
   if (!confirm("移出后当前群在白名单策略下不会响应。")) {
     return;
   }
-  await runRawCommand("/group allowlist remove here", groupCommandResult);
-});
-
-toolsCommandForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runRawCommand(toolsCommandInput.value, toolsCommandResult);
+  await runRawCommand("/group allowlist remove here");
 });
 
 toolsList?.addEventListener("change", async (event) => {
@@ -206,32 +155,22 @@ toolsList?.addEventListener("change", async (event) => {
   if (!toolName) {
     return;
   }
-  await runRawCommand(input.checked ? `/tools on ${toolName}` : `/tools off ${toolName}`, toolsCommandResult);
-});
-
-controlCommandForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runRawCommand(controlCommandInput.value, controlCommandResult);
+  await runRawCommand(input.checked ? `/tools on ${toolName}` : `/tools off ${toolName}`);
 });
 
 controlStop?.addEventListener("click", async () => {
-  await runRawCommand("/stop", controlCommandResult);
+  await runRawCommand("/stop");
 });
 
 controlNext?.addEventListener("click", async () => {
-  await runRawCommand("/next", controlCommandResult);
+  await runRawCommand("/next");
 });
 
 controlRestart?.addEventListener("click", async () => {
   if (!confirm("确认重启网关？")) {
     return;
   }
-  await runRawCommand("/restart", controlCommandResult);
-});
-
-skillsCommandForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await runRawCommand(skillsCommandInput.value, skillsCommandResult);
+  await runRawCommand("/restart");
 });
 
 skillsRefreshButton?.addEventListener("click", () => {
@@ -239,27 +178,27 @@ skillsRefreshButton?.addEventListener("click", () => {
 });
 
 routeEnabled?.addEventListener("change", async () => {
-  await runRawCommand(routeEnabled.checked ? "/route on" : "/route off", modelCommandResult);
+  await runRawCommand(routeEnabled.checked ? "/route on" : "/route off");
 });
 
 settingStream?.addEventListener("change", async () => {
-  await runRawCommand(settingStream.checked ? "/stream on" : "/stream off", settingsCommandResult);
+  await runRawCommand(settingStream.checked ? "/stream on" : "/stream off");
 });
 
 settingSttProvider?.addEventListener("change", async () => {
-  await runRawCommand(`/stt provider ${settingSttProvider.value}`, settingsCommandResult);
+  await runRawCommand(`/stt provider ${settingSttProvider.value}`);
 });
 
 settingReaction?.addEventListener("change", async () => {
-  await runRawCommand(settingReaction.checked ? "/reaction on" : "/reaction off", settingsCommandResult);
+  await runRawCommand(settingReaction.checked ? "/reaction on" : "/reaction off");
 });
 
 settingToolcalls?.addEventListener("change", async () => {
-  await runRawCommand(`/toolcalls ${settingToolcalls.value}`, settingsCommandResult);
+  await runRawCommand(`/toolcalls ${settingToolcalls.value}`);
 });
 
 settingSkillFolder?.addEventListener("change", async () => {
-  await runRawCommand(settingSkillFolder.checked ? "/skill-folder on" : "/skill-folder off", settingsCommandResult);
+  await runRawCommand(settingSkillFolder.checked ? "/skill-folder on" : "/skill-folder off");
 });
 
 for (const item of navItems) {
@@ -269,6 +208,7 @@ for (const item of navItems) {
     }
     currentPage = item.dataset.page ?? "sessions";
     renderPageVisibility();
+    window.scrollTo(0, 0);
     await loadCurrentPage();
   });
 }
@@ -282,7 +222,7 @@ for (const [slot, select] of [
     if (!select.value) {
       return;
     }
-    await runRawCommand(`/model ${slot} ${select.value}`, modelCommandResult);
+    await runRawCommand(`/model ${slot} ${select.value}`);
   });
 }
 
@@ -326,7 +266,7 @@ async function loadSessions() {
   const response = await apiFetch(`./api/pages/sessions?targetKey=${encodeURIComponent(currentTargetKey)}`);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    commandResult.textContent = data.message ?? "读取失败。";
+    alert(data.message ?? "读取失败。");
     return;
   }
 
@@ -338,14 +278,14 @@ async function loadSessions() {
 
 async function loadModels() {
   if (!currentTargetKey) {
-    modelCommandResult.textContent = "请先选择私聊或群聊。";
+    alert("请先选择私聊或群聊。");
     return;
   }
 
   const response = await apiFetch(`./api/pages/models?targetKey=${encodeURIComponent(currentTargetKey)}`);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    modelCommandResult.textContent = data.message ?? "读取失败。";
+    alert(data.message ?? "读取失败。");
     return;
   }
 
@@ -385,9 +325,9 @@ async function loadCurrentPage() {
   await loadSessions();
 }
 
-async function runRawCommand(command, resultElement) {
+async function runRawCommand(command) {
   if (!currentTargetKey) {
-    resultElement.textContent = "请先选择私聊或群聊。";
+    alert("请先选择私聊或群聊。");
     return;
   }
   const response = await apiFetch("./api/command", {
@@ -399,7 +339,10 @@ async function runRawCommand(command, resultElement) {
     }),
   });
   const data = await response.json().catch(() => ({}));
-  resultElement.textContent = data.output ?? data.message ?? "执行失败。";
+  if (!response.ok) {
+    alert(data.message ?? "操作失败。");
+    return;
+  }
   await loadCurrentPage();
 }
 
@@ -514,7 +457,6 @@ function renderContextFiles(files) {
 
 function renderModels(data) {
   routeEnabled.checked = data.routeEnabled === true;
-  renderModelSummary(data);
   renderModelSelect(modelRouter, data.availableModels ?? [], data.routeModels?.router);
   renderModelSelect(modelLight, data.availableModels ?? [], data.routeModels?.light);
   renderModelSelect(modelHeavy, data.availableModels ?? [], data.routeModels?.heavy);
@@ -523,14 +465,14 @@ function renderModels(data) {
 
 async function loadSettings() {
   if (!currentTargetKey) {
-    settingsCommandResult.textContent = "请先选择私聊或群聊。";
+    alert("请先选择私聊或群聊。");
     return;
   }
 
   const response = await apiFetch(`./api/pages/settings?targetKey=${encodeURIComponent(currentTargetKey)}`);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    settingsCommandResult.textContent = data.message ?? "读取失败。";
+    alert(data.message ?? "读取失败。");
     return;
   }
 
@@ -547,14 +489,14 @@ function renderSettings(data) {
 
 async function loadCron() {
   if (!currentTargetKey) {
-    cronCommandResult.textContent = "请先选择私聊或群聊。";
+    alert("请先选择私聊或群聊。");
     return;
   }
 
   const response = await apiFetch(`./api/pages/cron?targetKey=${encodeURIComponent(currentTargetKey)}`);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    cronCommandResult.textContent = data.message ?? "读取失败。";
+    alert(data.message ?? "读取失败。");
     return;
   }
 
@@ -592,11 +534,16 @@ function renderCron(data) {
       badge.classList.add(status.className);
     }
     const actions = row.querySelector(".table-actions");
-    actions.append(
-      createCronActionButton("run", job.id, "▶", "立即运行"),
-      createCronActionButton("stop", job.id, "■", "停止"),
-      createCronActionButton("remove", job.id, "×", "删除"),
-    );
+    if (job.enabled) {
+      actions.append(createCronActionButton("pause", job.id, "停止"));
+    } else {
+      actions.append(createCronActionButton("resume", job.id, "启动"));
+    }
+    actions.append(createCronActionButton("run", job.id, "运行"));
+    if (job.runningAtMs) {
+      actions.append(createCronActionButton("stop", job.id, "终止执行"));
+    }
+    actions.append(createCronActionButton("remove", job.id, "删除"));
     cronTable.append(row);
   }
 }
@@ -608,13 +555,13 @@ function appendCronEmptyRow(text) {
   cronTable.append(row);
 }
 
-function createCronActionButton(action, jobId, text, label) {
+function createCronActionButton(action, jobId, label) {
   const button = document.createElement("button");
-  button.className = "icon-button";
+  button.className = action === "remove" ? "button subtle danger" : "button subtle";
   button.type = "button";
   button.dataset.cronAction = action;
   button.dataset.jobId = jobId;
-  button.textContent = text;
+  button.textContent = label;
   button.setAttribute("aria-label", label);
   button.title = label;
   return button;
@@ -635,14 +582,14 @@ function resolveCronStatus(job) {
 
 async function loadGroup() {
   if (!currentTargetKey) {
-    groupCommandResult.textContent = "请先选择私聊或群聊。";
+    alert("请先选择私聊或群聊。");
     return;
   }
 
   const response = await apiFetch(`./api/pages/group?targetKey=${encodeURIComponent(currentTargetKey)}`);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    groupCommandResult.textContent = data.message ?? "读取失败。";
+    alert(data.message ?? "读取失败。");
     return;
   }
 
@@ -710,14 +657,14 @@ function renderGroupAllowlist(data) {
 
 async function loadTools() {
   if (!currentTargetKey) {
-    toolsCommandResult.textContent = "请先选择私聊或群聊。";
+    alert("请先选择私聊或群聊。");
     return;
   }
 
   const response = await apiFetch(`./api/pages/tools?targetKey=${encodeURIComponent(currentTargetKey)}`);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    toolsCommandResult.textContent = data.message ?? "读取失败。";
+    alert(data.message ?? "读取失败。");
     return;
   }
 
@@ -745,7 +692,7 @@ function renderTools(data) {
         <strong></strong>
         <small></small>
       </span>
-      <input type="checkbox" />
+      <input class="switch-input" type="checkbox" />
     `;
     item.querySelector("strong").textContent = tool.name;
     item.querySelector("small").textContent = tool.enabled ? "已启用" : "已停用";
@@ -766,14 +713,14 @@ function appendToolsMessage(text) {
 
 async function loadControl() {
   if (!currentTargetKey) {
-    controlCommandResult.textContent = "请先选择私聊或群聊。";
+    alert("请先选择私聊或群聊。");
     return;
   }
 
   const response = await apiFetch(`./api/pages/control?targetKey=${encodeURIComponent(currentTargetKey)}`);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    controlCommandResult.textContent = data.message ?? "读取失败。";
+    alert(data.message ?? "读取失败。");
     return;
   }
 
@@ -799,14 +746,14 @@ function renderControl(data) {
 
 async function loadSkills() {
   if (!currentTargetKey) {
-    skillsCommandResult.textContent = "请先选择私聊或群聊。";
+    alert("请先选择私聊或群聊。");
     return;
   }
 
   const response = await apiFetch(`./api/pages/skills?targetKey=${encodeURIComponent(currentTargetKey)}`);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    skillsCommandResult.textContent = data.message ?? "读取失败。";
+    alert(data.message ?? "读取失败。");
     return;
   }
 
@@ -822,13 +769,33 @@ function renderSkills(data) {
   if (skills.length === 0) {
     appendDataMessage(skillsList, "当前会话没有加载技能。");
   } else {
-    for (const skill of skills) {
-      const item = document.createElement("div");
-      item.className = "data-item";
-      item.innerHTML = `<div><strong></strong><span></span></div><span class="badge green">可用</span>`;
-      item.querySelector("strong").textContent = skill.name;
-      item.querySelector("span").textContent = formatSkillPath(skill.path, skill.scope);
-      skillsList.append(item);
+    for (const group of groupSkillsByFolder(skills)) {
+      const details = document.createElement("details");
+      details.className = "skill-group";
+      details.open = true;
+      details.innerHTML = `
+        <summary>
+          <span>
+            <strong></strong>
+            <small></small>
+          </span>
+          <span class="badge"></span>
+        </summary>
+        <div class="skill-group-list"></div>
+      `;
+      details.querySelector("strong").textContent = group.name;
+      details.querySelector("small").textContent = group.path;
+      details.querySelector(".badge").textContent = `${group.skills.length} 个`;
+      const groupList = details.querySelector(".skill-group-list");
+      for (const skill of group.skills) {
+        const item = document.createElement("div");
+        item.className = "data-item";
+        item.innerHTML = `<div><strong></strong><span></span></div><span class="badge green">可用</span>`;
+        item.querySelector("strong").textContent = skill.name;
+        item.querySelector("span").textContent = formatSkillPath(skill.path, skill.scope, group.path);
+        groupList.append(item);
+      }
+      skillsList.append(details);
     }
   }
 
@@ -852,9 +819,47 @@ function renderSkills(data) {
   }
 }
 
-function formatSkillPath(path, scope) {
-  const label = scope ? `${formatScope(scope)} · ` : "";
-  return `${label}${path}`;
+function groupSkillsByFolder(skills) {
+  const groups = new Map();
+  for (const skill of skills) {
+    const folderPath = getSkillParentFolder(skill.path);
+    const key = `${skill.scope ?? ""}:${folderPath}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        name: formatSkillGroupName(folderPath, skill.scope),
+        path: folderPath,
+        skills: [],
+      });
+    }
+    groups.get(key).skills.push(skill);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      skills: group.skills.sort((left, right) => left.name.localeCompare(right.name)),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function getSkillParentFolder(path) {
+  const normalized = path.replace(/\\/g, "/");
+  const skillDir = normalized.endsWith("/SKILL.md")
+    ? normalized.slice(0, -"/SKILL.md".length)
+    : normalized;
+  const index = skillDir.lastIndexOf("/");
+  return index > 0 ? skillDir.slice(0, index) : skillDir;
+}
+
+function formatSkillGroupName(path, scope) {
+  const folder = path.split("/").filter(Boolean).at(-1) ?? path;
+  return scope ? `${formatScope(scope)} · ${folder}` : folder;
+}
+
+function formatSkillPath(path, scope, basePath) {
+  const label = scope && !basePath ? `${formatScope(scope)} · ` : "";
+  const displayPath = basePath && path.startsWith(`${basePath}/`) ? path.slice(basePath.length + 1) : path;
+  return `${label}${displayPath}`;
 }
 
 function formatScope(scope) {
@@ -875,23 +880,6 @@ function appendDataMessage(container, text) {
   item.className = "data-item";
   item.textContent = text;
   container.append(item);
-}
-
-function renderModelSummary(data) {
-  const cards = [
-    ["Router", data.routeModels?.router ?? "未设置"],
-    ["Light", data.routeModels?.light ?? "未设置"],
-    ["Heavy", data.routeModels?.heavy ?? "未设置"],
-  ];
-  modelSummary.innerHTML = "";
-  for (const [title, value] of cards) {
-    const card = document.createElement("div");
-    card.className = "model-card";
-    card.innerHTML = `<strong></strong><span></span>`;
-    card.querySelector("strong").textContent = title;
-    card.querySelector("span").textContent = value;
-    modelSummary.append(card);
-  }
 }
 
 function renderModelSelect(select, models, selectedLabel) {
@@ -922,7 +910,7 @@ function renderAvailableModels(models) {
     const item = document.createElement("div");
     item.className = "data-item";
     item.innerHTML = `<div><strong></strong><span></span></div><span class="badge green">可用</span>`;
-    item.querySelector("strong").textContent = model.label;
+    item.querySelector("strong").textContent = `${model.provider}/${model.id}`;
     item.querySelector("span").textContent = model.name && model.name !== model.id ? model.name : `序号 ${model.order}`;
     availableModels.append(item);
   }

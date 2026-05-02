@@ -27,6 +27,7 @@ export interface CronService {
   getDefaultTimezone(): string;
   listJobs(scope: CronScopeInput): Promise<CronJob[]>;
   addJob(input: CreateCronJobInput): Promise<CronJob>;
+  setJobEnabled(scope: CronScopeInput, jobId: string, enabled: boolean): Promise<CronJob>;
   removeJob(scope: CronScopeInput, jobId: string): Promise<CronJob | null>;
   stopJob(scope: CronScopeInput, jobId: string): Promise<CronStopJobResult>;
   runJobNow(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult>;
@@ -220,6 +221,28 @@ export function createCronService(deps: CronServiceDeps): CronService {
     });
   }
 
+  async function setJobEnabled(scope: CronScopeInput, jobId: string, enabled: boolean): Promise<CronJob> {
+    if (deps.enabled === false) {
+      throw new Error("CRON_DISABLED");
+    }
+
+    const owner = resolveCronScopeInput(scope);
+    return mutate(async () => {
+      const job = requireOwnedJob(owner, jobId);
+      if (!job) {
+        throw new Error("CRON_JOB_NOT_FOUND");
+      }
+
+      const currentTime = now();
+      job.enabled = enabled;
+      job.updatedAtMs = currentTime;
+      job.state.nextRunAtMs = enabled ? computeNextRunAtMs(job.schedule, currentTime) : undefined;
+      await persist();
+      armTimer();
+      return cloneJob(job);
+    });
+  }
+
   async function stopJob(scope: CronScopeInput, jobId: string): Promise<CronStopJobResult> {
     const owner = resolveCronScopeInput(scope);
     const ownedJob = requireOwnedJob(owner, jobId);
@@ -339,6 +362,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
     getDefaultTimezone: () => deps.defaultTz,
     listJobs,
     addJob,
+    setJobEnabled,
     removeJob,
     stopJob,
     runJobNow,
@@ -362,6 +386,11 @@ export function createCronService(deps: CronServiceDeps): CronService {
     currentTime: number,
     trigger: "manual" | "scheduled",
   ): boolean {
+    if (!job.enabled) {
+      job.state.nextRunAtMs = undefined;
+      return false;
+    }
+
     if (runResult.status === "busy") {
       if (trigger === "manual") {
         return false;

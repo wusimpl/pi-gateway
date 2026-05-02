@@ -17,6 +17,8 @@ export type ParsedCronBridgeCommand =
       prompt: string;
     }
   | { action: "remove"; jobId: string }
+  | { action: "resume"; jobId: string }
+  | { action: "pause"; jobId: string }
   | { action: "stop"; jobId: string }
   | { action: "run"; jobId: string };
 
@@ -37,6 +39,22 @@ export function parseCronBridgeCommand(
       return { error: "用法：/cron remove <jobId>" };
     }
     return { command: { action: "remove", jobId } };
+  }
+
+  if (trimmed.startsWith("resume ")) {
+    const jobId = trimmed.slice("resume ".length).trim();
+    if (!jobId) {
+      return { error: "用法：/cron resume <jobId>" };
+    }
+    return { command: { action: "resume", jobId } };
+  }
+
+  if (trimmed.startsWith("pause ")) {
+    const jobId = trimmed.slice("pause ".length).trim();
+    if (!jobId) {
+      return { error: "用法：/cron pause <jobId>" };
+    }
+    return { command: { action: "pause", jobId } };
   }
 
   if (trimmed.startsWith("stop ")) {
@@ -61,7 +79,7 @@ export function parseCronBridgeCommand(
 
   return {
     error:
-      "不认识这个 /cron 子命令。\n\n可用命令：/cron、/cron list、/cron add、/cron run <jobId>、/cron stop <jobId>、/cron remove <jobId>",
+      "不认识这个 /cron 子命令。\n\n可用命令：/cron、/cron list、/cron add、/cron run <jobId>、/cron pause <jobId>、/cron resume <jobId>、/cron stop <jobId>、/cron remove <jobId>",
   };
 }
 
@@ -72,6 +90,8 @@ export function formatCronHelp(defaultTz: string): string {
     "/cron",
     "/cron list",
     "/cron run <jobId>",
+    "/cron pause <jobId>",
+    "/cron resume <jobId>",
     "/cron stop <jobId>",
     "/cron remove <jobId>",
     "",
@@ -129,6 +149,10 @@ export function formatCronJobAdded(job: CronJob, defaultTz: string): string {
 
 export function formatCronJobRemoved(job: CronJob): string {
   return `✅ 已删除定时任务：${job.name}\nID: ${job.id}`;
+}
+
+export function formatCronJobEnabled(job: CronJob): string {
+  return `${job.enabled ? "✅ 已启动定时任务" : "⏸️ 已暂停定时任务"}：${job.name}\nID: ${job.id}`;
 }
 
 export function formatCronJobStopResult(result: CronStopJobResult): string {

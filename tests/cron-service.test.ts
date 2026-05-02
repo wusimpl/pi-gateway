@@ -368,6 +368,43 @@ describe("cron service", () => {
     expect(runner.stop).not.toHaveBeenCalled();
   });
 
+  it("setJobEnabled 会暂停并重新启动任务", async () => {
+    const store = createMemoryStore();
+    const runner = {
+      run: vi.fn(async (job: CronJob) => ({
+        jobId: job.id,
+        status: "success" as const,
+      })),
+    };
+    const service = createCronService({
+      store,
+      runner,
+      defaultTz: "Asia/Shanghai",
+    });
+
+    await service.start();
+    const job = await service.addJob({
+      openId: "ou_1",
+      prompt: "提醒我喝水。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 1_000,
+      },
+    });
+
+    const paused = await service.setJobEnabled("ou_1", job.id, false);
+
+    expect(paused.enabled).toBe(false);
+    expect(paused.state.nextRunAtMs).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(runner.run).not.toHaveBeenCalled();
+
+    const resumed = await service.setJobEnabled("ou_1", job.id, true);
+
+    expect(resumed.enabled).toBe(true);
+    expect(resumed.state.nextRunAtMs).toBeDefined();
+  });
+
   it("手动执行遇到 busy 不会改写原定时间", async () => {
     const store = createMemoryStore();
     const runner = {
