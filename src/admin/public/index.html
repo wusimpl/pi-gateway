@@ -40,10 +40,6 @@
 
       <section class="workspace">
         <header class="target-bar">
-          <div class="target-current">
-            <small>当前执行目标</small>
-            <strong id="current-target">未选择</strong>
-          </div>
           <label class="target-select">
             <span>选择目标</span>
             <select id="target-select" aria-label="选择执行目标"></select>
@@ -68,6 +64,13 @@
           <section class="status-grid" id="session-status"></section>
 
           <div class="layout-stack">
+            <section class="panel">
+              <div>
+                <h2>已加载上下文</h2>
+              </div>
+              <div class="chips" id="context-files"></div>
+            </section>
+
             <section class="panel flush">
               <div class="panel-head padded">
                 <div>
@@ -87,13 +90,6 @@
                   <tbody id="sessions-table"></tbody>
                 </table>
               </div>
-            </section>
-
-            <section class="panel">
-              <div>
-                <h2>已加载上下文</h2>
-              </div>
-              <div class="chips" id="context-files"></div>
             </section>
           </div>
           </section>

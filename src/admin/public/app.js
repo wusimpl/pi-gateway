@@ -3,7 +3,6 @@ const adminShell = document.querySelector("#admin-shell");
 const loginForm = document.querySelector("#login-form");
 const loginMessage = document.querySelector("#login-message");
 const targetSelect = document.querySelector("#target-select");
-const currentTarget = document.querySelector("#current-target");
 const syncToFeishu = document.querySelector("#sync-to-feishu");
 const sessionStatus = document.querySelector("#session-status");
 const sessionsTable = document.querySelector("#sessions-table");
@@ -73,7 +72,7 @@ loginForm?.addEventListener("submit", async (event) => {
 targetSelect?.addEventListener("change", async () => {
   currentTargetKey = targetSelect.value;
   localStorage.setItem("pi-gateway-admin-target", currentTargetKey);
-  renderCurrentTarget();
+  renderNavigationAvailability(getCurrentTarget());
   await loadCurrentPage();
 });
 
@@ -253,7 +252,7 @@ async function loadBootstrap() {
   const validCurrent = targets.some((target) => target.key === currentTargetKey);
   currentTargetKey = validCurrent ? currentTargetKey : data.defaultTargetKey ?? "";
   renderTargetOptions();
-  renderCurrentTarget();
+  renderNavigationAvailability(getCurrentTarget());
 }
 
 async function loadSessions() {
@@ -355,12 +354,6 @@ function renderTargetOptions() {
     targetSelect.append(option);
   }
   targetSelect.value = currentTargetKey;
-}
-
-function renderCurrentTarget() {
-  const target = getCurrentTarget();
-  currentTarget.textContent = target ? target.label : "未选择";
-  renderNavigationAvailability(target);
 }
 
 function getCurrentTarget() {

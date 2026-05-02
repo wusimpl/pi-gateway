@@ -223,28 +223,13 @@ label,
   top: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(240px, auto) minmax(260px, 1fr) auto;
+  grid-template-columns: minmax(260px, 1fr) auto;
   gap: var(--space-md);
   align-items: center;
   padding: var(--space-md) var(--space-xl);
   border-bottom: 1px solid var(--line);
   background: color-mix(in oklch, var(--paper) 91%, transparent);
   backdrop-filter: blur(16px);
-}
-
-.target-current {
-  display: grid;
-  gap: 2px;
-}
-
-.target-current small {
-  color: var(--muted);
-}
-
-.target-current strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .target-select {
