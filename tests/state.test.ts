@@ -128,6 +128,17 @@ describe("停止当前任务", () => {
     expect(isStopRequested("ou_user1", "msg_1")).toBe(true);
   });
 
+  it("指定 messageId 时只会停止匹配的任务", async () => {
+    const abortHandler = vi.fn().mockResolvedValue(undefined);
+    acquireLock("ou_user1", "cron:cron_1:123");
+    await setAbortHandler("ou_user1", "cron:cron_1:123", abortHandler);
+
+    await expect(requestStop("ou_user1", "cron:cron_2:")).resolves.toBe("not_running");
+    expect(abortHandler).not.toHaveBeenCalled();
+    await expect(requestStop("ou_user1", "cron:cron_1:")).resolves.toBe("requested");
+    expect(abortHandler).toHaveBeenCalledTimes(1);
+  });
+
   it("停止请求先到时，补挂中断处理器应立即执行", async () => {
     const abortHandler = vi.fn().mockResolvedValue(undefined);
     acquireLock("ou_user1", "msg_1");

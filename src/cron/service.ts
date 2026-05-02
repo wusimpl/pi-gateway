@@ -9,6 +9,7 @@ import type {
   CronJobRunResult,
   CronScopeInput,
   CronScopeSelector,
+  CronStopJobResult,
 } from "./types.js";
 import {
   resolveCreateCronJobScope,
@@ -27,6 +28,7 @@ export interface CronService {
   listJobs(scope: CronScopeInput): Promise<CronJob[]>;
   addJob(input: CreateCronJobInput): Promise<CronJob>;
   removeJob(scope: CronScopeInput, jobId: string): Promise<CronJob | null>;
+  stopJob(scope: CronScopeInput, jobId: string): Promise<CronStopJobResult>;
   runJobNow(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult>;
 }
 
@@ -34,6 +36,7 @@ interface CronServiceDeps {
   store: Pick<CronStore, "loadJobs" | "saveJobs" | "getFilePath">;
   runner: {
     run(job: CronJob): Promise<CronJobRunResult>;
+    stop?(job: CronJob): Promise<"not_running" | "requested" | "already_requested">;
   };
   defaultTz: string;
   enabled?: boolean;
@@ -217,6 +220,33 @@ export function createCronService(deps: CronServiceDeps): CronService {
     });
   }
 
+  async function stopJob(scope: CronScopeInput, jobId: string): Promise<CronStopJobResult> {
+    const owner = resolveCronScopeInput(scope);
+    const ownedJob = requireOwnedJob(owner, jobId);
+    if (!ownedJob) {
+      throw new Error("CRON_JOB_NOT_FOUND");
+    }
+
+    if (!runningJobs.has(ownedJob.id)) {
+      return {
+        jobId: ownedJob.id,
+        status: "not_running",
+        job: cloneJob(ownedJob),
+      };
+    }
+
+    if (!deps.runner.stop) {
+      throw new Error("CRON_STOP_UNSUPPORTED");
+    }
+
+    const status = await deps.runner.stop(cloneJob(ownedJob));
+    return {
+      jobId: ownedJob.id,
+      status,
+      job: cloneJob(ownedJob),
+    };
+  }
+
   async function runJobNow(scope: CronScopeInput, jobId: string): Promise<CronManualRunResult> {
     if (deps.enabled === false) {
       throw new Error("CRON_DISABLED");
@@ -310,6 +340,7 @@ export function createCronService(deps: CronServiceDeps): CronService {
     listJobs,
     addJob,
     removeJob,
+    stopJob,
     runJobNow,
   };
 

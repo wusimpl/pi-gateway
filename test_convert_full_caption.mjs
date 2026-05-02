@@ -1,0 +1,10 @@
+import 'dotenv/config';
+import * as lark from '@larksuiteoapi/node-sdk';
+import { readFileSync } from 'node:fs';
+const client = new lark.Client({appId:process.env.FEISHU_APP_ID,appSecret:process.env.FEISHU_APP_SECRET,domain:lark.Domain.Feishu,appType:lark.AppType.SelfBuild});
+const caption='图 10｜用点进行 pointing 的示例：迷宫导航与路径追踪。';
+const data=readFileSync('/tmp/pdf_figs/crops/Figure_10_Pointing.jpg').toString('base64');
+const content=`**${caption}**\n\n![${caption}](data:image/jpeg;base64,${data})`;
+const conv=await client.docx.v1.document.convert({data:{content_type:'markdown',content}});
+console.log('first', conv.data?.first_level_block_ids);
+console.log('blocks', (conv.data?.blocks??[]).map(b=>({id:b.block_id,type:b.block_type,hasImage:!!b.image,text:b.text?.elements?.[0]?.text_run?.content?.slice(0,80),image:b.image})));

@@ -1,4 +1,4 @@
-import type { CronJob, CronManualRunResult } from "./types.js";
+import type { CronJob, CronManualRunResult, CronStopJobResult } from "./types.js";
 import {
   formatCronJobNextRun,
   formatCronScheduleForText,
@@ -17,6 +17,7 @@ export type ParsedCronBridgeCommand =
       prompt: string;
     }
   | { action: "remove"; jobId: string }
+  | { action: "stop"; jobId: string }
   | { action: "run"; jobId: string };
 
 export function parseCronBridgeCommand(
@@ -38,6 +39,14 @@ export function parseCronBridgeCommand(
     return { command: { action: "remove", jobId } };
   }
 
+  if (trimmed.startsWith("stop ")) {
+    const jobId = trimmed.slice("stop ".length).trim();
+    if (!jobId) {
+      return { error: "用法：/cron stop <jobId>" };
+    }
+    return { command: { action: "stop", jobId } };
+  }
+
   if (trimmed.startsWith("run ")) {
     const jobId = trimmed.slice("run ".length).trim();
     if (!jobId) {
@@ -52,7 +61,7 @@ export function parseCronBridgeCommand(
 
   return {
     error:
-      "不认识这个 /cron 子命令。\n\n可用命令：/cron、/cron list、/cron add、/cron run <jobId>、/cron remove <jobId>",
+      "不认识这个 /cron 子命令。\n\n可用命令：/cron、/cron list、/cron add、/cron run <jobId>、/cron stop <jobId>、/cron remove <jobId>",
   };
 }
 
@@ -63,6 +72,7 @@ export function formatCronHelp(defaultTz: string): string {
     "/cron",
     "/cron list",
     "/cron run <jobId>",
+    "/cron stop <jobId>",
     "/cron remove <jobId>",
     "",
     "新增周期任务：",
@@ -119,6 +129,17 @@ export function formatCronJobAdded(job: CronJob, defaultTz: string): string {
 
 export function formatCronJobRemoved(job: CronJob): string {
   return `✅ 已删除定时任务：${job.name}\nID: ${job.id}`;
+}
+
+export function formatCronJobStopResult(result: CronStopJobResult): string {
+  const jobLabel = result.job?.name ?? result.jobId;
+  if (result.status === "not_running") {
+    return `这个定时任务当前没有在执行：${jobLabel}\nID: ${result.jobId}`;
+  }
+  if (result.status === "already_requested") {
+    return `⏹️ 已经请求停止定时任务：${jobLabel}\nID: ${result.jobId}`;
+  }
+  return `⏹️ 已请求停止定时任务：${jobLabel}\nID: ${result.jobId}`;
 }
 
 export function formatCronJobRunResult(

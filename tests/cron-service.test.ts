@@ -287,6 +287,87 @@ describe("cron service", () => {
     expect(runner.run).toHaveBeenCalledTimes(1);
   });
 
+  it("stopJob 会把运行中的定时任务停止请求交给 runner", async () => {
+    let releaseRun: ((value: { jobId: string; status: "aborted" }) => void) | undefined;
+    const store = createMemoryStore();
+    const runner = {
+      run: vi.fn(
+        (job: CronJob) =>
+          new Promise<{ jobId: string; status: "aborted" }>((resolve) => {
+            releaseRun = resolve;
+          }),
+      ),
+      stop: vi.fn(async () => "requested" as const),
+    };
+    const service = createCronService({
+      store,
+      runner,
+      defaultTz: "Asia/Shanghai",
+    });
+
+    await service.start();
+    const job = await service.addJob({
+      openId: "ou_1",
+      prompt: "提醒我喝水。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 60_000,
+      },
+    });
+
+    const runPromise = service.runJobNow("ou_1", job.id);
+    await vi.waitFor(() => {
+      expect(runner.run).toHaveBeenCalledTimes(1);
+    });
+
+    const stopResult = await service.stopJob("ou_1", job.id);
+    expect(stopResult).toMatchObject({
+      jobId: job.id,
+      status: "requested",
+      job: { id: job.id },
+    });
+    expect(runner.stop).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }));
+
+    releaseRun?.({ jobId: job.id, status: "aborted" });
+    await expect(runPromise).resolves.toMatchObject({
+      jobId: job.id,
+      status: "aborted",
+    });
+  });
+
+  it("stopJob 遇到未运行任务会返回 not_running", async () => {
+    const store = createMemoryStore();
+    const runner = {
+      run: vi.fn(async (job: CronJob) => ({
+        jobId: job.id,
+        status: "success" as const,
+      })),
+      stop: vi.fn(),
+    };
+    const service = createCronService({
+      store,
+      runner,
+      defaultTz: "Asia/Shanghai",
+    });
+
+    await service.start();
+    const job = await service.addJob({
+      openId: "ou_1",
+      prompt: "提醒我喝水。",
+      schedule: {
+        kind: "at",
+        atMs: Date.now() + 60_000,
+      },
+    });
+
+    await expect(service.stopJob("ou_1", job.id)).resolves.toMatchObject({
+      jobId: job.id,
+      status: "not_running",
+      job: { id: job.id },
+    });
+    expect(runner.stop).not.toHaveBeenCalled();
+  });
+
   it("手动执行遇到 busy 不会改写原定时间", async () => {
     const store = createMemoryStore();
     const runner = {

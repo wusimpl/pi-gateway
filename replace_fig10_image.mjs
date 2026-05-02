@@ -1,0 +1,13 @@
+import 'dotenv/config';
+import * as lark from '@larksuiteoapi/node-sdk';
+import { readFileSync } from 'node:fs';
+const documentId='Gdnmd7qVHoyWrGxwnQPcAeO8nOd';
+const imageBlockId='doxcnn6YmtOGVhi1KTnO5A6mfdd';
+const file='/tmp/pdf_figs/crops/Figure_10_Pointing.jpg';
+const client=new lark.Client({appId:process.env.FEISHU_APP_ID,appSecret:process.env.FEISHU_APP_SECRET,domain:lark.Domain.Feishu,appType:lark.AppType.SelfBuild});
+let rev=(await client.docx.v1.document.get({path:{document_id:documentId}})).data?.document?.revision_id;
+const buf=readFileSync(file);
+const upload=await client.drive.v1.media.uploadAll({data:{file_name:'Figure_10_Pointing.jpg',parent_type:'docx_image',parent_node:imageBlockId,size:buf.length,extra:JSON.stringify({drive_route_token:documentId}),file:buf}});
+console.log('token?',!!upload?.file_token);
+const resp=await client.docx.v1.documentBlock.batchUpdate({path:{document_id:documentId},params:{document_revision_id:rev,client_token:crypto.randomUUID()},data:{requests:[{block_id:imageBlockId,replace_image:{token:upload.file_token}}]}});
+console.log('revision',resp.data?.document_revision_id);

@@ -10,7 +10,7 @@ import { bindWorkspaceIdentity } from "../pi/workspace-identity.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { UserIdentity } from "../types.js";
 import { logger } from "../app/logger.js";
-import type { RuntimeStateStore } from "../app/state.js";
+import type { RuntimeStateStore, StopRequestResult } from "../app/state.js";
 import type { DeferredCronRunService } from "./deferred-run.js";
 import {
   CRON_RESULT_FOOTER_LABEL,
@@ -21,6 +21,7 @@ import type { CronJob, CronJobRunResult } from "./types.js";
 
 export interface CronRunner {
   run(job: CronJob): Promise<CronJobRunResult>;
+  stop(job: CronJob): Promise<StopRequestResult>;
 }
 
 interface CronRunnerDeps {
@@ -28,7 +29,7 @@ interface CronRunnerDeps {
   runtime: Pick<PiRuntime, "createPiSession">;
   runtimeState: Pick<
     RuntimeStateStore,
-    "acquireLock" | "releaseLock" | "setAbortHandler" | "isStopRequested"
+    "acquireLock" | "releaseLock" | "setAbortHandler" | "requestStop" | "isStopRequested"
   >;
   workspaceService: Pick<WorkspaceService, "ensureUserWorkspace"> &
     Partial<Pick<WorkspaceService, "ensureConversationWorkspace">>;
@@ -45,7 +46,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       userId: job.userId,
     };
     const startedAtMs = Date.now();
-    const syntheticMessageId = `cron:${job.id}:${startedAtMs}`;
+    const syntheticMessageId = `${createSyntheticMessageIdPrefix(job.id)}${startedAtMs}`;
     const openId = job.openId;
     const scopeKey = job.scopeKey?.trim() || job.conversationTarget?.key.trim() || openId;
     const conversationTarget = job.conversationTarget?.kind === "p2p" ? undefined : job.conversationTarget;
@@ -178,8 +179,14 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
     }
   }
 
+  async function stop(job: CronJob): Promise<StopRequestResult> {
+    const scopeKey = job.scopeKey?.trim() || job.conversationTarget?.key.trim() || job.openId;
+    return deps.runtimeState.requestStop(scopeKey, createSyntheticMessageIdPrefix(job.id));
+  }
+
   return {
     run,
+    stop,
   };
 
   async function ensureWorkspace(identity: UserIdentity, conversationTarget?: ConversationTarget): Promise<string> {
@@ -202,6 +209,10 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
 
 function buildCronPrompt(job: CronJob): string {
   return `[cron:${job.id} ${job.name}]\n${job.prompt}`;
+}
+
+function createSyntheticMessageIdPrefix(jobId: string): string {
+  return `cron:${jobId}:`;
 }
 
 function sanitizeSegment(value: string): string {

@@ -66,8 +66,16 @@ export interface CronJobRunResult {
   error?: string;
 }
 
+export type CronStopJobStatus = "not_running" | "requested" | "already_requested";
+
 export interface CronManualRunResult extends CronJobRunResult {
   removed: boolean;
   job?: CronJob;
   queued?: boolean;
+}
+
+export interface CronStopJobResult {
+  jobId: string;
+  status: CronStopJobStatus;
+  job?: CronJob;
 }

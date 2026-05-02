@@ -45,6 +45,7 @@ import {
   formatCronJobList,
   formatCronJobRemoved,
   formatCronJobRunResult,
+  formatCronJobStopResult,
   parseCronBridgeCommand,
 } from "../cron/commands.js";
 import { parseScheduleInput } from "../cron/schedule.js";
@@ -96,7 +97,7 @@ interface CommandServiceDeps {
   restartService: Pick<RestartService, "restartGateway">;
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
-  cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "removeJob" | "runJobNow">;
+  cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "removeJob" | "stopJob" | "runJobNow">;
   deferredCronRunService?: Pick<DeferredCronRunService, "queueRun">;
   skillStatsStore?: Pick<SkillStatsStore, "listSkillUsage" | "reset">;
   groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig" | "writeGroupRoutingConfig">;
@@ -747,6 +748,24 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         } catch (error) {
           if ((error instanceof Error ? error.message : String(error)) === "CRON_JOB_RUNNING") {
             await sendTextReply(identity, conversationTarget, "这个定时任务正在执行，先用 /stop 停掉再删。");
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
+      case "stop": {
+        try {
+          const result = await cronService.stopJob(cronScope, parsed.command.jobId);
+          await sendCommandReply(identity, conversationTarget, formatCronJobStopResult(result));
+        } catch (error) {
+          const code = error instanceof Error ? error.message : String(error);
+          if (code === "CRON_JOB_NOT_FOUND") {
+            await sendTextReply(identity, conversationTarget, "没找到这个定时任务。");
+            return;
+          }
+          if (code === "CRON_STOP_UNSUPPORTED") {
+            await sendTextReply(identity, conversationTarget, "当前网关暂不支持停止定时任务。");
             return;
           }
           throw error;

@@ -53,19 +53,19 @@ export function createCronTaskExtension(
     name: "cron_task",
     label: "Cron Task",
     description:
-      "创建、查看、删除、立即执行当前飞书用户的定时任务。提醒、定时、每天几点这类需求必须调用它，不能只口头答应。",
+      "创建、查看、删除、停止、立即执行当前飞书用户的定时任务。提醒、定时、每天几点这类需求必须调用它，不能只口头答应。",
     promptSnippet:
-      "cron_task: 创建、查看、删除、立即执行当前飞书用户的定时任务。涉及提醒/定时时必须调用。",
+      "cron_task: 创建、查看、删除、停止、立即执行当前飞书用户的定时任务。涉及提醒/定时时必须调用。",
     promptGuidelines: [
       "涉及提醒、稍后、X分钟后、每天几点、每周几这类定时需求时，必须调用 cron_task，不能只用自然语言承诺。",
       "action=add 时必须同时提供 prompt 和 time；name 可不传，系统会自动生成。",
       "time 支持相对时间（如 20m、1h30m）、ISO 时间、cron 表达式（如 0 9 * * *）。",
       "cron 表达式默认使用网关时区；如果用户明确给了时区，再传 tz。",
-      "删除或立即执行时，先用 list 拿到 job_id，再调用 remove 或 run。",
+      "删除、停止或立即执行时，先用 list 拿到 job_id，再调用 remove、stop 或 run。",
       "action=run 只代表已安排执行；当前回复结束后才会真正开始跑，不能声称已经拿到了执行结果。",
     ],
     parameters: Type.Object({
-      action: Type.String({ description: "add、list、remove、run 之一。" }),
+      action: Type.String({ description: "add、list、remove、stop、run 之一。" }),
       name: Type.Optional(Type.String({ description: "任务名称，可不传。" })),
       time: Type.Optional(
         Type.String({
@@ -74,7 +74,7 @@ export function createCronTaskExtension(
       ),
       tz: Type.Optional(Type.String({ description: "cron 表达式的 IANA 时区，可不传。" })),
       prompt: Type.Optional(Type.String({ description: "到时要执行的提示词。仅 add 时需要。" })),
-      job_id: Type.Optional(Type.String({ description: "已有任务的 job_id。remove/run 时需要。" })),
+      job_id: Type.Optional(Type.String({ description: "已有任务的 job_id。remove/stop/run 时需要。" })),
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -147,6 +147,16 @@ export function createCronTaskExtension(
             removed,
           });
         }
+        case "stop": {
+          if (typeof params.job_id !== "string" || !params.job_id.trim()) {
+            throw new Error("action=stop 时必须提供 job_id");
+          }
+          const result = await cronService.stopJob(cronScope, params.job_id.trim());
+          return toToolResult({
+            action,
+            result,
+          });
+        }
         case "run": {
           if (typeof params.job_id !== "string" || !params.job_id.trim()) {
             throw new Error("action=run 时必须提供 job_id");
@@ -165,7 +175,7 @@ export function createCronTaskExtension(
           });
         }
         default:
-          throw new Error("action 只支持 add、list、remove、run");
+          throw new Error("action 只支持 add、list、remove、stop、run");
       }
     },
   });

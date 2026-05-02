@@ -245,6 +245,57 @@ describe("cron runner", () => {
     });
   });
 
+  it("stop 会按定时任务 synthetic messageId 前缀请求停止", async () => {
+    const requestStop = vi.fn().mockResolvedValue("requested" as const);
+    const runner = createCronRunner({
+      config: {
+        DATA_DIR: "/tmp/pi-gateway-data",
+        TEXT_CHUNK_LIMIT: 2000,
+        CRON_JOB_TIMEOUT_MS: 30_000,
+        CRON_DEFAULT_TZ: "Asia/Shanghai",
+      },
+      runtime: {
+        createPiSession: vi.fn(),
+      },
+      runtimeState: {
+        acquireLock: vi.fn(),
+        releaseLock: vi.fn(),
+        setAbortHandler: vi.fn(),
+        requestStop,
+        isStopRequested: vi.fn(() => false),
+      },
+      workspaceService: {
+        ensureUserWorkspace: vi.fn(),
+      },
+      promptRunner: {
+        promptSession: vi.fn(),
+      },
+      messenger: {
+        sendTextMessage: vi.fn(),
+      },
+    });
+
+    await expect(runner.stop({
+      id: "cron_1",
+      openId: "ou_1",
+      scopeType: "dm",
+      scopeKey: "ou_1",
+      name: "早报",
+      enabled: true,
+      prompt: "总结今天的待办。",
+      schedule: {
+        kind: "cron",
+        expr: "0 9 * * *",
+        tz: "Asia/Shanghai",
+      },
+      deleteAfterRun: false,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+      state: {},
+    })).resolves.toBe("requested");
+    expect(requestStop).toHaveBeenCalledWith("ou_1", "cron:cron_1:");
+  });
+
   it("任务失败且没有可展示正文时，会把失败通知标成定时任务结果", async () => {
     const abort = vi.fn().mockResolvedValue(undefined);
     const dispose = vi.fn();
@@ -266,6 +317,7 @@ describe("cron runner", () => {
         acquireLock: vi.fn(() => true),
         releaseLock: vi.fn(),
         setAbortHandler: vi.fn().mockResolvedValue(false),
+        requestStop: vi.fn(),
         isStopRequested: vi.fn(() => false),
       },
       workspaceService: {

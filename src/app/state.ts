@@ -4,6 +4,8 @@ import { logger } from "./logger.js";
 const LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 分钟
 
+export type StopRequestResult = "not_running" | "requested" | "already_requested";
+
 export interface RuntimeStateStore {
   acquireLock(openId: string, messageId: string): boolean;
   releaseLock(openId: string): void;
@@ -17,7 +19,7 @@ export interface RuntimeStateStore {
     messageId: string,
     abortHandler: () => Promise<void>,
   ): Promise<boolean>;
-  requestStop(openId: string): Promise<"not_running" | "requested" | "already_requested">;
+  requestStop(openId: string, messageId?: string): Promise<StopRequestResult>;
   isStopRequested(openId: string, messageId?: string): boolean;
   isDuplicate(messageId: string): boolean;
   clearAllState(): void;
@@ -185,10 +187,10 @@ export function createRuntimeStateStore(options?: {
     return true;
   }
 
-  async function requestStop(openId: string): Promise<"not_running" | "requested" | "already_requested"> {
+  async function requestStop(openId: string, messageId?: string): Promise<StopRequestResult> {
     cleanupExpiredLock(openId);
     const lock = userLocks.get(openId);
-    if (!lock) {
+    if (!lock || !matchesStopMessageId(lock.messageId, messageId)) {
       return "not_running";
     }
 
@@ -212,6 +214,16 @@ export function createRuntimeStateStore(options?: {
     );
 
     return "requested";
+  }
+
+  function matchesStopMessageId(lockMessageId: string, requestedMessageId?: string): boolean {
+    if (!requestedMessageId) {
+      return true;
+    }
+    if (requestedMessageId.endsWith(":")) {
+      return lockMessageId.startsWith(requestedMessageId);
+    }
+    return lockMessageId === requestedMessageId;
   }
 
   function isStopRequested(openId: string, messageId?: string): boolean {
@@ -300,8 +312,8 @@ export async function setAbortHandler(
   return defaultRuntimeStateStore.setAbortHandler(openId, messageId, abortHandler);
 }
 
-export async function requestStop(openId: string): Promise<"not_running" | "requested" | "already_requested"> {
-  return defaultRuntimeStateStore.requestStop(openId);
+export async function requestStop(openId: string, messageId?: string): Promise<StopRequestResult> {
+  return defaultRuntimeStateStore.requestStop(openId, messageId);
 }
 
 export function isStopRequested(openId: string, messageId?: string): boolean {
