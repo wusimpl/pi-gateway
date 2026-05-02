@@ -133,30 +133,12 @@
       }
 
       .login-frame {
-        display: grid;
-        grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.05fr);
-        width: min(1080px, 100%);
-        min-height: 620px;
+        width: min(560px, 100%);
         border: 1px solid var(--line);
         border-radius: var(--radius);
         background: var(--surface);
         box-shadow: var(--shadow);
         overflow: hidden;
-      }
-
-      .login-visual {
-        display: grid;
-        align-content: space-between;
-        gap: var(--space-xl);
-        min-height: 100%;
-        padding: var(--space-xl);
-        background:
-          linear-gradient(
-            145deg,
-            color-mix(in oklch, var(--green-soft) 70%, var(--surface)),
-            color-mix(in oklch, var(--amber-soft) 42%, var(--surface))
-          );
-        border-right: 1px solid var(--line);
       }
 
       .brand-mark {
@@ -170,7 +152,6 @@
         font-weight: 850;
       }
 
-      .login-visual h1,
       .page-title h1 {
         margin: 0;
         font-size: 1.85rem;
@@ -178,30 +159,12 @@
         font-weight: 820;
       }
 
-      .login-visual p,
       .page-title p,
       .muted {
         color: var(--muted);
         line-height: 1.7;
       }
 
-      .command-receipt {
-        display: grid;
-        gap: var(--space-sm);
-      }
-
-      .receipt-row {
-        display: grid;
-        grid-template-columns: auto 1fr auto;
-        gap: var(--space-sm);
-        align-items: center;
-        padding: var(--space-sm);
-        border: 1px solid color-mix(in oklch, var(--line-strong) 80%, transparent);
-        border-radius: var(--radius);
-        background: color-mix(in oklch, var(--surface) 76%, transparent);
-      }
-
-      .receipt-row code,
       code,
       .command-input,
       .terminal {
@@ -818,7 +781,7 @@
       .model-row,
       .setting-row {
         display: grid;
-        grid-template-columns: 140px 1fr auto;
+        grid-template-columns: 140px 1fr;
         gap: var(--space-md);
         align-items: center;
         min-height: 56px;
@@ -942,16 +905,6 @@
           padding: var(--space-lg);
         }
 
-        .login-frame {
-          grid-template-columns: 1fr;
-        }
-
-        .login-visual {
-          min-height: 360px;
-          border-right: 0;
-          border-bottom: 1px solid var(--line);
-        }
-
         .login-form {
           padding: var(--space-xl);
         }
@@ -985,33 +938,6 @@
     <main>
       <section class="screen is-active login-screen" id="screen-login">
         <div class="login-frame">
-          <div class="login-visual">
-            <div>
-              <div class="brand-mark">Pi</div>
-              <div style="height: 28px"></div>
-              <h1>Pi Gateway<br />本机管理后台</h1>
-              <p>用按钮、下拉框和输入框完成飞书里的常用命令，适合管理员在电脑旁快速操作。</p>
-            </div>
-
-            <div class="command-receipt" aria-label="快捷命令">
-              <div class="receipt-row">
-                <span class="tiny-icon"><i data-lucide="message-square"></i></span>
-                <code>/model heavy</code>
-                <span class="badge green">已选择目标</span>
-              </div>
-              <div class="receipt-row">
-                <span class="tiny-icon"><i data-lucide="calendar-clock"></i></span>
-                <code>/cron list</code>
-                <span class="badge blue">可同步飞书</span>
-              </div>
-              <div class="receipt-row">
-                <span class="tiny-icon"><i data-lucide="wrench"></i></span>
-                <code>/tools reset</code>
-                <span class="badge amber">等待确认</span>
-              </div>
-            </div>
-          </div>
-
           <form class="login-form">
             <div>
               <h2 style="margin: 0; font-size: 1.45rem">登录后台</h2>
@@ -1430,10 +1356,6 @@
                   <h1>模型</h1>
                   <p>查看当前模型，设置 router、light、heavy，并切换模型路由。</p>
                 </div>
-                <button class="button primary" type="button">
-                  <i data-lucide="save"></i>
-                  保存设置
-                </button>
               </div>
 
               <div class="layout-two">
@@ -1470,7 +1392,6 @@
                         <option>gpt-5.4</option>
                         <option>gpt-5.2</option>
                       </select>
-                      <button class="button" type="button">设置</button>
                     </div>
                     <div class="model-row">
                       <label>Light</label>
@@ -1479,7 +1400,6 @@
                         <option>gpt-5.4</option>
                         <option>gpt-5.2</option>
                       </select>
-                      <button class="button" type="button">设置</button>
                     </div>
                     <div class="model-row">
                       <label>Heavy</label>
@@ -1488,7 +1408,6 @@
                         <option>gpt-5.4</option>
                         <option>gpt-5.2</option>
                       </select>
-                      <button class="button" type="button">设置</button>
                     </div>
                   </div>
                 </section>
@@ -1794,10 +1713,6 @@
                   <h1>群聊设置</h1>
                   <p>当前目标是群聊时，可以管理触发规则、关键词和白名单。</p>
                 </div>
-                <button class="button primary" type="button">
-                  <i data-lucide="save"></i>
-                  保存设置
-                </button>
               </div>
 
               <div class="layout-two">
@@ -1816,7 +1731,6 @@
                       <option>所有群可用</option>
                       <option>关闭</option>
                     </select>
-                    <button class="button" type="button">设置</button>
                   </div>
                   <div class="setting-row">
                     <label>触发方式</label>
@@ -1825,12 +1739,10 @@
                       <option>所有消息都响应</option>
                       <option>包含关键词时响应</option>
                     </select>
-                    <button class="button" type="button">设置</button>
                   </div>
                   <div class="setting-row">
                     <label>关键词</label>
                     <input value="pi, 助手, 总结" aria-label="关键词" />
-                    <button class="button" type="button">更新</button>
                   </div>
                   <div class="keywords">
                     <span class="badge blue">pi</span>
@@ -1959,10 +1871,6 @@
                   <h1>工具</h1>
                   <p>查看当前目标会话里的工具状态，启用、停用、指定工具集合或恢复默认。</p>
                 </div>
-                <button class="button primary" type="button">
-                  <i data-lucide="save"></i>
-                  应用更改
-                </button>
               </div>
 
               <div class="layout-two">
@@ -2034,10 +1942,6 @@
                     </div>
                   </div>
                   <div class="button-row">
-                    <button class="button" type="button">
-                      <i data-lucide="sliders-horizontal"></i>
-                      设置集合
-                    </button>
                     <button class="button ghost" type="button">
                       <i data-lucide="rotate-ccw"></i>
                       恢复默认
