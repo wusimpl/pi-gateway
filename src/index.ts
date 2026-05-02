@@ -233,6 +233,7 @@ async function main() {
     sessionService,
     runtimeState,
     listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
+    runtimeConfig,
   });
   const adminServer = createAdminServer(config, {
     targets: adminTargets,

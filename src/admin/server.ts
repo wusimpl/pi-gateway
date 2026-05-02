@@ -180,6 +180,24 @@ async function handleApiRequest(
     return;
   }
 
+  if (url.pathname === "/admin/api/pages/settings" && req.method === "GET") {
+    const targetKey = url.searchParams.get("targetKey") ?? "";
+    if (!targetKey) {
+      sendJson(res, 400, { error: "TARGET_REQUIRED", message: "请先选择私聊或群聊。" });
+      return;
+    }
+    try {
+      sendJson(res, 200, await deps.pages?.getSettingsPage(targetKey) ?? {});
+    } catch (error) {
+      if ((error as Error).message === "ADMIN_TARGET_NOT_FOUND") {
+        sendJson(res, 404, { error: "TARGET_NOT_FOUND", message: "目标不存在。" });
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
   if (url.pathname === "/admin/api/command" && req.method === "POST") {
     const body = await readJsonBody(req);
     const targetKey = typeof body.targetKey === "string" ? body.targetKey : "";

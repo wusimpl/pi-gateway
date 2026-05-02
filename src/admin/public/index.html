@@ -29,7 +29,7 @@
         <nav class="nav-list" aria-label="后台页面">
           <button class="nav-item is-active" type="button" data-page="sessions">会话</button>
           <button class="nav-item" type="button" data-page="models">模型</button>
-          <button class="nav-item" type="button" data-page="settings" disabled>设置</button>
+          <button class="nav-item" type="button" data-page="settings">设置</button>
           <button class="nav-item" type="button" data-page="cron" disabled>定时任务</button>
           <button class="nav-item" type="button" data-page="group" disabled>群聊设置</button>
           <button class="nav-item" type="button" data-page="tools" disabled>工具</button>
@@ -162,6 +162,84 @@
                   <button class="button primary" type="submit">执行</button>
                 </form>
                 <pre class="result-box" id="model-command-result">执行结果会显示在这里。</pre>
+              </section>
+            </div>
+          </section>
+
+          <section class="page-view is-hidden" id="page-settings" data-page-view="settings">
+            <div class="page-title">
+              <div>
+                <h1>设置</h1>
+                <p>调整当前目标的回复方式和提示反馈，修改后立即生效。</p>
+              </div>
+            </div>
+
+            <div class="layout-two">
+              <section class="panel">
+                <div>
+                  <h2>回复设置</h2>
+                  <p>开关只影响当前目标。</p>
+                </div>
+                <div class="setting-list">
+                  <label class="setting-item">
+                    <span>
+                      <strong>流式回复</strong>
+                      <small>回复过程中持续显示新内容</small>
+                    </span>
+                    <input id="setting-stream" type="checkbox" />
+                  </label>
+                  <label class="setting-item">
+                    <span>
+                      <strong>语音识别方式</strong>
+                      <small>处理语音消息时使用</small>
+                    </span>
+                    <select id="setting-stt-provider">
+                      <option value="whisper">whisper</option>
+                      <option value="sensevoice">sensevoice</option>
+                      <option value="doubao">doubao</option>
+                    </select>
+                  </label>
+                  <label class="setting-item">
+                    <span>
+                      <strong>表情反馈</strong>
+                      <small>处理消息时用表情提示状态</small>
+                    </span>
+                    <input id="setting-reaction" type="checkbox" />
+                  </label>
+                  <label class="setting-item">
+                    <span>
+                      <strong>工具调用展示</strong>
+                      <small>回复中显示工具使用过程</small>
+                    </span>
+                    <select id="setting-toolcalls">
+                      <option value="off">关闭</option>
+                      <option value="name">只显示工具名</option>
+                      <option value="full">显示详情</option>
+                    </select>
+                  </label>
+                  <label class="setting-item">
+                    <span>
+                      <strong>技能目录</strong>
+                      <small>新会话读取 ~/.agents/skills</small>
+                    </span>
+                    <input id="setting-skill-folder" type="checkbox" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div>
+                  <h2>命令输入</h2>
+                  <p>需要连续操作时，可以直接输入命令。</p>
+                </div>
+                <form class="raw-command" id="settings-command-form">
+                  <label for="settings-command">原始命令</label>
+                  <textarea id="settings-command" rows="4">/settings
+/stream on
+/toolcalls name</textarea>
+                  <button class="button primary" type="submit">执行</button>
+                </form>
+                <pre class="result-box" id="settings-command-result">执行结果会显示在这里。</pre>
               </section>
             </div>
           </section>

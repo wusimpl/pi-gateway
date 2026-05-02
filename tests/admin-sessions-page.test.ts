@@ -140,4 +140,59 @@ describe("admin sessions page", () => {
       expect.objectContaining({ order: 1, label: "openai/gpt-5.5" }),
     ]);
   });
+
+  it("返回当前目标设置", async () => {
+    const targets: AdminTargetService = {
+      listTargets: vi.fn(),
+      resolveTarget: vi.fn().mockResolvedValue({
+        target: {
+          key: "ou_1",
+          kind: "p2p",
+          label: "私聊 · ou_1",
+          detail: "ou_1",
+          sources: ["历史私聊"],
+        },
+        identity: { openId: "ou_1" },
+        conversationTarget: {
+          kind: "p2p",
+          key: "ou_1",
+          receiveIdType: "open_id",
+          receiveId: "ou_1",
+        },
+      }),
+    };
+    const service = createAdminPageDataService({
+      targets,
+      runtimeState: { isLocked: vi.fn(() => false) },
+      runtimeConfig: {
+        getStreamingEnabled: vi.fn(() => false),
+        getAudioTranscribeProvider: vi.fn(() => "sensevoice"),
+        getProcessingReactionType: vi.fn(() => "OnIt"),
+      },
+      sessionService: {
+        getOrCreateActiveSession: vi.fn(),
+        getOrCreateActiveSessionForTarget: vi.fn(),
+        listSessions: vi.fn(),
+        listSessionsForTarget: vi.fn(),
+        readSessionState: vi.fn().mockResolvedValue({
+          activeSessionId: "sess_1",
+          createdAt: "2026-05-02T08:00:00.000Z",
+          updatedAt: "2026-05-02T08:00:00.000Z",
+          lastActiveAt: "2026-05-02T08:00:00.000Z",
+          streamingEnabled: true,
+          toolCallsDisplayMode: "name",
+          globalAgentsSkillsEnabled: true,
+        }),
+      },
+    });
+
+    await expect(service.getSettingsPage("ou_1")).resolves.toEqual({
+      targetKey: "ou_1",
+      streamingEnabled: true,
+      audioTranscribeProvider: "sensevoice",
+      processingReactionEnabled: true,
+      toolCallsDisplayMode: "name",
+      skillFolderEnabled: true,
+    });
+  });
 });

@@ -24,6 +24,14 @@ const availableModels = document.querySelector("#available-models");
 const modelCommandForm = document.querySelector("#model-command-form");
 const modelCommandInput = document.querySelector("#model-command");
 const modelCommandResult = document.querySelector("#model-command-result");
+const settingStream = document.querySelector("#setting-stream");
+const settingSttProvider = document.querySelector("#setting-stt-provider");
+const settingReaction = document.querySelector("#setting-reaction");
+const settingToolcalls = document.querySelector("#setting-toolcalls");
+const settingSkillFolder = document.querySelector("#setting-skill-folder");
+const settingsCommandForm = document.querySelector("#settings-command-form");
+const settingsCommandInput = document.querySelector("#settings-command");
+const settingsCommandResult = document.querySelector("#settings-command-result");
 
 let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
@@ -68,8 +76,33 @@ modelCommandForm?.addEventListener("submit", async (event) => {
   await runRawCommand(modelCommandInput.value, modelCommandResult);
 });
 
+settingsCommandForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await runRawCommand(settingsCommandInput.value, settingsCommandResult);
+});
+
 routeEnabled?.addEventListener("change", async () => {
   await runRawCommand(routeEnabled.checked ? "/route on" : "/route off", modelCommandResult);
+});
+
+settingStream?.addEventListener("change", async () => {
+  await runRawCommand(settingStream.checked ? "/stream on" : "/stream off", settingsCommandResult);
+});
+
+settingSttProvider?.addEventListener("change", async () => {
+  await runRawCommand(`/stt provider ${settingSttProvider.value}`, settingsCommandResult);
+});
+
+settingReaction?.addEventListener("change", async () => {
+  await runRawCommand(settingReaction.checked ? "/reaction on" : "/reaction off", settingsCommandResult);
+});
+
+settingToolcalls?.addEventListener("change", async () => {
+  await runRawCommand(`/toolcalls ${settingToolcalls.value}`, settingsCommandResult);
+});
+
+settingSkillFolder?.addEventListener("change", async () => {
+  await runRawCommand(settingSkillFolder.checked ? "/skill-folder on" : "/skill-folder off", settingsCommandResult);
 });
 
 for (const item of navItems) {
@@ -166,6 +199,10 @@ async function loadModels() {
 async function loadCurrentPage() {
   if (currentPage === "models") {
     await loadModels();
+    return;
+  }
+  if (currentPage === "settings") {
+    await loadSettings();
     return;
   }
   await loadSessions();
@@ -285,6 +322,30 @@ function renderModels(data) {
   renderModelSelect(modelLight, data.availableModels ?? [], data.routeModels?.light);
   renderModelSelect(modelHeavy, data.availableModels ?? [], data.routeModels?.heavy);
   renderAvailableModels(data.availableModels ?? []);
+}
+
+async function loadSettings() {
+  if (!currentTargetKey) {
+    settingsCommandResult.textContent = "请先选择私聊或群聊。";
+    return;
+  }
+
+  const response = await apiFetch(`./api/pages/settings?targetKey=${encodeURIComponent(currentTargetKey)}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    settingsCommandResult.textContent = data.message ?? "读取失败。";
+    return;
+  }
+
+  renderSettings(await response.json());
+}
+
+function renderSettings(data) {
+  settingStream.checked = data.streamingEnabled === true;
+  settingSttProvider.value = data.audioTranscribeProvider ?? "whisper";
+  settingReaction.checked = data.processingReactionEnabled === true;
+  settingToolcalls.value = data.toolCallsDisplayMode ?? "off";
+  settingSkillFolder.checked = data.skillFolderEnabled === true;
 }
 
 function renderModelSummary(data) {

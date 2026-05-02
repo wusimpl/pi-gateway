@@ -1,4 +1,5 @@
 import type { RuntimeStateStore } from "../app/state.js";
+import type { RuntimeConfigStore } from "../app/runtime-config.js";
 import { getConversationTargetKey } from "../conversation.js";
 import { getModelRoutingConfig } from "../pi/model-routing.js";
 import { formatModelLabel, type AvailableModelInfo } from "../pi/models.js";
@@ -9,6 +10,7 @@ import type { AdminTargetService } from "./targets.js";
 export interface AdminPageDataService {
   getSessionsPage(targetKey: string): Promise<AdminSessionsPageData>;
   getModelsPage(targetKey: string): Promise<AdminModelsPageData>;
+  getSettingsPage(targetKey: string): Promise<AdminSettingsPageData>;
 }
 
 export interface AdminSessionsPageData {
@@ -49,6 +51,15 @@ export interface AdminModelsPageData {
   }>;
 }
 
+export interface AdminSettingsPageData {
+  targetKey: string;
+  streamingEnabled: boolean;
+  audioTranscribeProvider: "whisper" | "sensevoice" | "doubao";
+  processingReactionEnabled: boolean;
+  toolCallsDisplayMode: "off" | "name" | "full";
+  skillFolderEnabled: boolean;
+}
+
 export function createAdminPageDataService(deps: {
   targets: AdminTargetService;
   sessionService: Pick<
@@ -57,6 +68,10 @@ export function createAdminPageDataService(deps: {
   >;
   runtimeState: Pick<RuntimeStateStore, "isLocked">;
   listAvailableModels?: () => Promise<AvailableModelInfo[]>;
+  runtimeConfig?: Pick<
+    RuntimeConfigStore,
+    "getStreamingEnabled" | "getAudioTranscribeProvider" | "getProcessingReactionType"
+  >;
 }): AdminPageDataService {
   async function getSessionsPage(targetKey: string): Promise<AdminSessionsPageData> {
     const resolved = await deps.targets.resolveTarget(targetKey);
@@ -122,6 +137,23 @@ export function createAdminPageDataService(deps: {
     };
   }
 
+  async function getSettingsPage(targetKey: string): Promise<AdminSettingsPageData> {
+    const resolved = await deps.targets.resolveTarget(targetKey);
+    if (!resolved) {
+      throw new Error("ADMIN_TARGET_NOT_FOUND");
+    }
+    const userState = await readTargetState(resolved);
+
+    return {
+      targetKey: resolved.target.key,
+      streamingEnabled: userState?.streamingEnabled ?? deps.runtimeConfig?.getStreamingEnabled() ?? false,
+      audioTranscribeProvider: deps.runtimeConfig?.getAudioTranscribeProvider() ?? "whisper",
+      processingReactionEnabled: Boolean(deps.runtimeConfig?.getProcessingReactionType()),
+      toolCallsDisplayMode: userState?.toolCallsDisplayMode ?? "off",
+      skillFolderEnabled: userState?.globalAgentsSkillsEnabled === true,
+    };
+  }
+
   async function readTargetState(resolved: Awaited<ReturnType<AdminTargetService["resolveTarget"]>>): Promise<UserState | null> {
     if (!resolved) {
       return null;
@@ -132,6 +164,7 @@ export function createAdminPageDataService(deps: {
   return {
     getSessionsPage,
     getModelsPage,
+    getSettingsPage,
   };
 }
 
