@@ -3,6 +3,9 @@ const adminShell = document.querySelector("#admin-shell");
 const loginForm = document.querySelector("#login-form");
 const loginMessage = document.querySelector("#login-message");
 const targetSelect = document.querySelector("#target-select");
+const targetKind = document.querySelector("#target-kind");
+const targetName = document.querySelector("#target-name");
+const targetDetail = document.querySelector("#target-detail");
 const syncToFeishu = document.querySelector("#sync-to-feishu");
 const sessionStatus = document.querySelector("#session-status");
 const sessionsTable = document.querySelector("#sessions-table");
@@ -51,6 +54,7 @@ let targets = [];
 let currentTargetKey = localStorage.getItem("pi-gateway-admin-target") ?? "";
 let currentPage = "sessions";
 let lastModelsData = null;
+let pendingRequests = 0;
 
 loginForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -72,6 +76,7 @@ loginForm?.addEventListener("submit", async (event) => {
 targetSelect?.addEventListener("change", async () => {
   currentTargetKey = targetSelect.value;
   localStorage.setItem("pi-gateway-admin-target", currentTargetKey);
+  renderTargetSummary();
   renderNavigationAvailability(getCurrentTarget());
   await loadCurrentPage();
 });
@@ -293,35 +298,37 @@ async function loadModels() {
 }
 
 async function loadCurrentPage() {
-  if (currentPage === "models") {
-    await loadModels();
-    return;
-  }
-  if (currentPage === "settings") {
-    await loadSettings();
-    return;
-  }
-  if (currentPage === "cron") {
-    await loadCron();
-    return;
-  }
-  if (currentPage === "group") {
-    await loadGroup();
-    return;
-  }
-  if (currentPage === "tools") {
-    await loadTools();
-    return;
-  }
-  if (currentPage === "control") {
-    await loadControl();
-    return;
-  }
-  if (currentPage === "skills") {
-    await loadSkills();
-    return;
-  }
-  await loadSessions();
+  await withBusy(async () => {
+    if (currentPage === "models") {
+      await loadModels();
+      return;
+    }
+    if (currentPage === "settings") {
+      await loadSettings();
+      return;
+    }
+    if (currentPage === "cron") {
+      await loadCron();
+      return;
+    }
+    if (currentPage === "group") {
+      await loadGroup();
+      return;
+    }
+    if (currentPage === "tools") {
+      await loadTools();
+      return;
+    }
+    if (currentPage === "control") {
+      await loadControl();
+      return;
+    }
+    if (currentPage === "skills") {
+      await loadSkills();
+      return;
+    }
+    await loadSessions();
+  });
 }
 
 async function runRawCommand(command) {
@@ -329,20 +336,33 @@ async function runRawCommand(command) {
     alert("请先选择私聊或群聊。");
     return;
   }
-  const response = await apiFetch("./api/command", {
-    method: "POST",
-    body: JSON.stringify({
-      targetKey: currentTargetKey,
-      command,
-      syncToFeishu: syncToFeishu.checked,
-    }),
+  await withBusy(async () => {
+    const response = await apiFetch("./api/command", {
+      method: "POST",
+      body: JSON.stringify({
+        targetKey: currentTargetKey,
+        command,
+        syncToFeishu: syncToFeishu.checked,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(data.message ?? "操作失败。");
+      return;
+    }
+    await loadCurrentPage();
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    alert(data.message ?? "操作失败。");
-    return;
+}
+
+async function withBusy(task) {
+  pendingRequests += 1;
+  adminShell.classList.add("is-loading");
+  try {
+    return await task();
+  } finally {
+    pendingRequests = Math.max(0, pendingRequests - 1);
+    adminShell.classList.toggle("is-loading", pendingRequests > 0);
   }
-  await loadCurrentPage();
 }
 
 function renderTargetOptions() {
@@ -354,10 +374,28 @@ function renderTargetOptions() {
     targetSelect.append(option);
   }
   targetSelect.value = currentTargetKey;
+  renderTargetSummary();
 }
 
 function getCurrentTarget() {
   return targets.find((item) => item.key === currentTargetKey);
+}
+
+function renderTargetSummary() {
+  const target = getCurrentTarget();
+  targetKind.textContent = target ? formatTargetKind(target.kind) : "当前目标";
+  targetName.textContent = target?.label ?? "未选择目标";
+  targetDetail.textContent = target?.detail ?? "--";
+}
+
+function formatTargetKind(kind) {
+  if (kind === "group") {
+    return "群聊";
+  }
+  if (kind === "p2p") {
+    return "私聊";
+  }
+  return "当前目标";
 }
 
 function renderNavigationAvailability(target) {
@@ -373,11 +411,15 @@ function renderNavigationAvailability(target) {
     }
   }
   renderPageVisibility();
+  renderTargetSummary();
 }
 
 function renderPageVisibility() {
+  adminShell.dataset.page = currentPage;
   for (const item of navItems) {
-    item.classList.toggle("is-active", item.dataset.page === currentPage);
+    const active = item.dataset.page === currentPage;
+    item.classList.toggle("is-active", active);
+    item.setAttribute("aria-current", active ? "page" : "false");
   }
   for (const view of pageViews) {
     view.classList.toggle("is-hidden", view.dataset.pageView !== currentPage);
@@ -385,19 +427,26 @@ function renderPageVisibility() {
 }
 
 function renderSessionStatus(status) {
+  const running = status?.running === true;
   const items = [
-    ["当前状态", status?.running ? "运行中" : "空闲"],
-    ["当前模型", status?.currentModel ?? "未知"],
-    ["最近活动", formatDateTime(status?.lastActiveAt)],
-    ["已加载上下文", `${status?.contextCount ?? 0} 项`],
+    { label: "当前状态", value: running ? "运行中" : "空闲", tone: running ? "green" : "", primary: true },
+    { label: "当前模型", value: status?.currentModel ?? "未知" },
+    { label: "最近活动", value: formatDateTime(status?.lastActiveAt) },
+    { label: "已加载上下文", value: `${status?.contextCount ?? 0} 项` },
   ];
   sessionStatus.innerHTML = "";
-  for (const [label, value] of items) {
+  for (const item of items) {
     const cell = document.createElement("div");
     cell.className = "status-cell";
+    if (item.primary) {
+      cell.classList.add("metric-primary");
+    }
+    if (item.tone) {
+      cell.classList.add(`tone-${item.tone}`);
+    }
     cell.innerHTML = `<span></span><strong></strong>`;
-    cell.querySelector("span").textContent = label;
-    cell.querySelector("strong").textContent = value;
+    cell.querySelector("span").textContent = item.label;
+    cell.querySelector("strong").textContent = item.value;
     sessionStatus.append(cell);
   }
 }

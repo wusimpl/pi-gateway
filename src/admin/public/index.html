@@ -9,6 +9,10 @@
   <body>
     <main class="login-screen" id="login-screen">
       <form class="login-card" id="login-form">
+        <div class="login-brand">
+          <div class="brand-mark">Pi</div>
+          <span>本机管理后台</span>
+        </div>
         <h1>登录后台</h1>
         <label for="password">管理密码</label>
         <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
@@ -27,88 +31,99 @@
           </div>
         </div>
         <nav class="nav-list" aria-label="后台页面">
-          <button class="nav-item is-active" type="button" data-page="sessions">会话</button>
-          <button class="nav-item" type="button" data-page="models">模型</button>
-          <button class="nav-item" type="button" data-page="settings">设置</button>
-          <button class="nav-item" type="button" data-page="cron">定时任务</button>
-          <button class="nav-item" type="button" data-page="group">群聊设置</button>
-          <button class="nav-item" type="button" data-page="tools">工具</button>
-          <button class="nav-item" type="button" data-page="control">控制</button>
-          <button class="nav-item" type="button" data-page="skills">技能</button>
+          <button class="nav-item is-active" type="button" data-page="sessions"><span>会话</span></button>
+          <button class="nav-item" type="button" data-page="models"><span>模型</span></button>
+          <button class="nav-item" type="button" data-page="settings"><span>设置</span></button>
+          <button class="nav-item" type="button" data-page="cron"><span>定时任务</span></button>
+          <button class="nav-item" type="button" data-page="group"><span>群聊设置</span></button>
+          <button class="nav-item" type="button" data-page="tools"><span>工具</span></button>
+          <button class="nav-item" type="button" data-page="control"><span>控制</span></button>
+          <button class="nav-item" type="button" data-page="skills"><span>技能</span></button>
         </nav>
       </aside>
 
       <section class="workspace">
         <header class="target-bar">
-          <label class="target-select">
-            <span>选择目标</span>
-            <select id="target-select" aria-label="选择执行目标"></select>
-          </label>
-          <label class="sync-toggle">
-            <input id="sync-to-feishu" type="checkbox" />
-            <span>同步结果到飞书</span>
-          </label>
+          <div class="target-summary" aria-live="polite">
+            <span id="target-kind">当前目标</span>
+            <strong id="target-name">未选择目标</strong>
+            <small id="target-detail">--</small>
+          </div>
+          <div class="target-actions">
+            <label class="target-select">
+              <span>选择目标</span>
+              <select id="target-select" aria-label="选择执行目标"></select>
+            </label>
+            <label class="sync-toggle">
+              <input class="switch-input" id="sync-to-feishu" type="checkbox" />
+              <span>同步到飞书</span>
+            </label>
+          </div>
         </header>
 
         <div class="content" id="content">
-          <section class="page-view" id="page-sessions" data-page-view="sessions">
-          <div class="page-title">
-            <div>
-              <h1>会话</h1>
-            </div>
-            <button class="button" type="button" id="refresh-button">刷新</button>
-          </div>
-
-          <div class="empty-state is-hidden" id="empty-state">请先选择私聊或群聊。</div>
-
-          <section class="status-grid" id="session-status"></section>
-
-          <div class="layout-stack">
-            <section class="panel">
-              <div>
-                <h2>已加载上下文</h2>
-              </div>
-              <div class="chips" id="context-files"></div>
-            </section>
-
-            <section class="panel flush">
-              <div class="panel-head padded">
-                <div>
-                  <h2>历史会话</h2>
-                </div>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>会话</th>
-                      <th>消息</th>
-                      <th>最后活动</th>
-                      <th>状态</th>
-                    </tr>
-                  </thead>
-                  <tbody id="sessions-table"></tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-          </section>
-
-          <section class="page-view is-hidden" id="page-models" data-page-view="models">
+          <section class="page-view session-page" id="page-sessions" data-page-view="sessions">
             <div class="page-title">
               <div>
+                <span class="page-kicker">当前目标</span>
+                <h1>会话</h1>
+              </div>
+              <button class="button" type="button" id="refresh-button">刷新</button>
+            </div>
+
+            <div class="empty-state is-hidden" id="empty-state">请先选择私聊或群聊。</div>
+
+            <section class="status-grid" id="session-status"></section>
+
+            <div class="dashboard-grid">
+              <section class="panel flush table-panel">
+                <div class="panel-head padded">
+                  <div>
+                    <h2>历史会话</h2>
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>会话</th>
+                        <th>消息</th>
+                        <th>最后活动</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody id="sessions-table"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="panel context-panel">
+                <div class="panel-head">
+                  <div>
+                    <h2>已加载上下文</h2>
+                  </div>
+                </div>
+                <div class="chips" id="context-files"></div>
+              </section>
+            </div>
+          </section>
+
+          <section class="page-view" id="page-models" data-page-view="models">
+            <div class="page-title">
+              <div>
+                <span class="page-kicker">模型路由</span>
                 <h1>模型</h1>
               </div>
             </div>
 
             <div class="layout-two">
-              <section class="panel">
+              <section class="panel primary-panel">
                 <div class="panel-head">
                   <div>
                     <h2>当前模型</h2>
                   </div>
                   <label class="inline-check">
-                    <input id="route-enabled" type="checkbox" />
+                    <input class="switch-input" id="route-enabled" type="checkbox" />
                     <span>模型路由</span>
                   </label>
                 </div>
@@ -130,25 +145,30 @@
               </section>
 
               <section class="panel">
-                <div>
-                  <h2>可用模型</h2>
+                <div class="panel-head">
+                  <div>
+                    <h2>可用模型</h2>
+                  </div>
                 </div>
                 <div class="data-list" id="available-models"></div>
               </section>
             </div>
           </section>
 
-          <section class="page-view is-hidden" id="page-settings" data-page-view="settings">
+          <section class="page-view" id="page-settings" data-page-view="settings">
             <div class="page-title">
               <div>
+                <span class="page-kicker">回复方式</span>
                 <h1>设置</h1>
               </div>
             </div>
 
             <div class="layout-single">
               <section class="panel">
-                <div>
-                  <h2>回复设置</h2>
+                <div class="panel-head">
+                  <div>
+                    <h2>回复设置</h2>
+                  </div>
                 </div>
                 <div class="setting-list">
                   <label class="setting-item">
@@ -156,7 +176,7 @@
                       <strong>流式回复</strong>
                       <small>回复过程中持续显示新内容</small>
                     </span>
-                    <input id="setting-stream" type="checkbox" />
+                    <input class="switch-input" id="setting-stream" type="checkbox" />
                   </label>
                   <label class="setting-item">
                     <span>
@@ -174,7 +194,7 @@
                       <strong>表情反馈</strong>
                       <small>处理消息时用表情提示状态</small>
                     </span>
-                    <input id="setting-reaction" type="checkbox" />
+                    <input class="switch-input" id="setting-reaction" type="checkbox" />
                   </label>
                   <label class="setting-item">
                     <span>
@@ -192,23 +212,24 @@
                       <strong>技能目录</strong>
                       <small>新会话读取 ~/.agents/skills</small>
                     </span>
-                    <input id="setting-skill-folder" type="checkbox" />
+                    <input class="switch-input" id="setting-skill-folder" type="checkbox" />
                   </label>
                 </div>
               </section>
             </div>
           </section>
 
-          <section class="page-view is-hidden" id="page-cron" data-page-view="cron">
+          <section class="page-view" id="page-cron" data-page-view="cron">
             <div class="page-title">
               <div>
+                <span class="page-kicker">定时执行</span>
                 <h1>定时任务</h1>
               </div>
               <button class="button" type="button" id="cron-refresh-button">刷新列表</button>
             </div>
 
-            <div class="layout-single">
-              <section class="panel flush">
+            <div class="layout-single wide">
+              <section class="panel flush table-panel">
                 <div class="panel-head padded">
                   <div>
                     <h2>任务列表</h2>
@@ -232,15 +253,16 @@
             </div>
           </section>
 
-          <section class="page-view is-hidden" id="page-group" data-page-view="group">
+          <section class="page-view" id="page-group" data-page-view="group">
             <div class="page-title">
               <div>
+                <span class="page-kicker">当前群聊</span>
                 <h1>群聊设置</h1>
               </div>
             </div>
 
             <div class="layout-two">
-              <section class="panel">
+              <section class="panel primary-panel">
                 <div class="panel-head">
                   <div>
                     <h2>触发规则</h2>
@@ -284,8 +306,10 @@
               </section>
 
               <section class="panel">
-                <div>
-                  <h2>白名单</h2>
+                <div class="panel-head">
+                  <div>
+                    <h2>白名单</h2>
+                  </div>
                 </div>
                 <div class="data-list" id="group-allowlist"></div>
                 <div class="button-row">
@@ -296,14 +320,15 @@
             </div>
           </section>
 
-          <section class="page-view is-hidden" id="page-tools" data-page-view="tools">
+          <section class="page-view" id="page-tools" data-page-view="tools">
             <div class="page-title">
               <div>
+                <span class="page-kicker">当前会话</span>
                 <h1>工具</h1>
               </div>
             </div>
 
-            <div class="layout-single">
+            <div class="layout-single wide">
               <section class="panel">
                 <div class="panel-head">
                   <div>
@@ -311,20 +336,21 @@
                   </div>
                   <span class="badge" id="tools-count">0 个启用</span>
                 </div>
-                <div class="setting-list" id="tools-list"></div>
+                <div class="setting-list card-grid" id="tools-list"></div>
               </section>
             </div>
           </section>
 
-          <section class="page-view is-hidden" id="page-control" data-page-view="control">
+          <section class="page-view" id="page-control" data-page-view="control">
             <div class="page-title">
               <div>
+                <span class="page-kicker">运行状态</span>
                 <h1>控制</h1>
               </div>
             </div>
 
             <div class="layout-single">
-              <section class="panel">
+              <section class="panel primary-panel">
                 <div class="panel-head">
                   <div>
                     <h2>当前状态</h2>
@@ -344,15 +370,16 @@
                 <div class="button-row">
                   <button class="button" type="button" id="control-stop">停止当前任务</button>
                   <button class="button" type="button" id="control-next">处理下一条</button>
-                  <button class="button" type="button" id="control-restart">重启服务</button>
+                  <button class="button danger" type="button" id="control-restart">重启服务</button>
                 </div>
               </section>
             </div>
           </section>
 
-          <section class="page-view is-hidden" id="page-skills" data-page-view="skills">
+          <section class="page-view" id="page-skills" data-page-view="skills">
             <div class="page-title">
               <div>
+                <span class="page-kicker">技能目录</span>
                 <h1>技能</h1>
               </div>
               <button class="button" type="button" id="skills-refresh-button">刷新列表</button>
@@ -370,8 +397,10 @@
               </section>
 
               <section class="panel">
-                <div>
-                  <h2>使用统计</h2>
+                <div class="panel-head">
+                  <div>
+                    <h2>使用统计</h2>
+                  </div>
                 </div>
                 <div class="data-list" id="skills-usage-list"></div>
               </section>
