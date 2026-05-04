@@ -9,4 +9,4 @@
 AI agent 编排要两手抓：一手抓 prompt engineering，一手抓 harness。遇到 agent 行为偏差时，先判断是否应通过对应工具的 description、promptGuidelines 或 skill 指令修正；不要低估提示词对 agent 的约束力。harness 负责硬性兜底、错误暴露和安全边界，但不要把具体场景规则硬塞进通用工具，尤其不要为了 cron、飞书卡片、文档等特定场景污染通用 extension tool。
 
 ## Pi Skills
-涉及 Pi 的 skill、技能目录、`/skills`、`SKILL.md` 或“有没有配套 skill”这类问题时，默认先检查 `~/.pi/agent/skills`，不要只看项目目录。项目内和全局目录都可能有 skills；如果没有特别说明，优先认为 `~/.pi/agent/skills` 是有效技能来源之一。
+涉及 Pi 的 skill、技能目录、`/skills`、`SKILL.md` 或“有没有配套 skill”这类问题时，默认先检查全局目录 `~/.pi/agent/skills`，也要检查当前群聊/私聊 workspace 下的 skills 目录（如 `.pi/skills` 或 `skills`），不要只看项目目录。项目内、全局目录和会话工作目录都可能有 skills；如果没有特别说明，优先认为 `~/.pi/agent/skills` 和当前会话 workspace 的 skills 目录都是有效技能来源。
