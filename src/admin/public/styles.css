@@ -689,6 +689,29 @@ tr:last-child td {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
+.tool-card {
+  min-height: 132px;
+  max-height: 132px;
+  align-items: center;
+}
+
+.tool-card span {
+  align-self: start;
+}
+
+.tool-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-card small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .data-item > div,
 .setting-item span,
 .skill-group summary > span:first-child {

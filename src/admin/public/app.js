@@ -728,7 +728,7 @@ function renderTools(data) {
 
   for (const tool of tools) {
     const item = document.createElement("label");
-    item.className = "setting-item";
+    item.className = "setting-item tool-card";
     item.innerHTML = `
       <span>
         <strong></strong>
