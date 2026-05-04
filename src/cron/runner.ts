@@ -104,6 +104,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
           text: buildCronPrompt(job),
           displayHeaderText: formatCronResultHeader(job, startedAtMs, deps.config.CRON_DEFAULT_TZ),
           footerLabel: CRON_RESULT_FOOTER_LABEL,
+          includeFooter: false,
         },
         openId,
         syntheticMessageId,
@@ -208,7 +209,14 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
 }
 
 function buildCronPrompt(job: CronJob): string {
-  return `[cron:${job.id} ${job.name}]\n${job.prompt}`;
+  return [
+    `[cron:${job.id} ${job.name}]`,
+    "这是一次定时任务执行。系统会把你的最终回复作为唯一的定时任务结果发回当前飞书会话，并自动在最前面加上「【定时任务结果】」。",
+    "普通提醒、播报、总结等文本结果，请直接输出最终正文；不要调用 feishu_message_send 发送普通文本结果，也不要在完成后再输出“已播报”“已发送”“已完成”等确认话术。",
+    "如果任务要求创建飞书文档、发送文件或图片，必须实际调用对应工具；成功后最终回复只给必要结果或链接，失败时最终回复直接说明失败原因。",
+    "",
+    job.prompt,
+  ].join("\n");
 }
 
 function createSyntheticMessageIdPrefix(jobId: string): string {

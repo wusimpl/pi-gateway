@@ -88,6 +88,15 @@ describe("cron task extension", () => {
     expect(tools.map((tool) => tool.name)).toEqual(["cron_task"]);
   });
 
+  it("工具说明会约束定时任务 prompt 的最终交付方式", () => {
+    const { tools } = collectTools();
+    const tool = tools[0];
+
+    expect(tool.description).toContain("触发后可直接执行");
+    expect(tool.promptGuidelines.join("\n")).toContain("不要要求执行端调用 feishu_message_send");
+    expect(tool.promptGuidelines.join("\n")).toContain("失败时最终回复直接说明失败原因");
+  });
+
   it("add 会把相对时间解析成一次性任务再交给 cron service", async () => {
     const { tools, cronService } = collectTools();
     const tool = tools[0];

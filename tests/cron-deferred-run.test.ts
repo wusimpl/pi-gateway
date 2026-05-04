@@ -95,7 +95,7 @@ describe("deferred cron run service", () => {
     expect(runJobNow).toHaveBeenCalledTimes(1);
   });
 
-  it("排队任务后来不存在时，会把通知标成定时任务结果", async () => {
+  it("排队任务后来不存在时，会把通知标成定时任务异常", async () => {
     const job = createJob("cron_1");
     const sendTextMessage = vi.fn().mockResolvedValue(undefined);
     const service = createDeferredCronRunService({
@@ -117,7 +117,7 @@ describe("deferred cron run service", () => {
 
     expect(sendTextMessage).toHaveBeenCalledWith(
       "ou_1",
-      expect.stringContaining("【定时任务结果】\n任务：任务 cron_1"),
+      expect.stringContaining("【定时任务异常】\n任务：任务 cron_1"),
     );
   });
 });

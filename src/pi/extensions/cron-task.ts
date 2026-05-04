@@ -53,7 +53,7 @@ export function createCronTaskExtension(
     name: "cron_task",
     label: "Cron Task",
     description:
-      "创建、查看、更新、删除、暂停、恢复、停止、立即执行当前飞书用户的定时任务。提醒、定时、每天几点这类需求必须调用它，不能只口头答应。",
+      "创建、查看、更新、删除、暂停、恢复、停止、立即执行当前飞书用户的定时任务。提醒、定时、每天几点这类需求必须调用它，不能只口头答应。创建或更新任务时，prompt 必须写成触发后可直接执行的最终任务说明。",
     promptSnippet:
       "cron_task: 创建、查看、更新、删除、暂停、恢复、停止、立即执行当前飞书用户的定时任务。涉及提醒/定时时必须调用。",
     promptGuidelines: [
@@ -62,6 +62,9 @@ export function createCronTaskExtension(
       "action=update 时必须提供 job_id，并至少提供 name、prompt、time 之一；只传 tz 不算更新。",
       "time 支持相对时间（如 20m、1h30m）、ISO 时间、cron 表达式（如 0 9 * * *）。",
       "cron 表达式默认使用网关时区；如果用户明确给了时区，再传 tz。",
+      "写 prompt 时要明确最终交付方式：普通提醒、播报、总结等文本结果直接输出最终正文，不要要求执行端调用 feishu_message_send 发送普通文本。",
+      "写 prompt 时不要让执行端在完成后再输出“已播报”“已发送”“已完成”等确认话术；最终回复本身就是定时任务结果。",
+      "如果 prompt 要求创建飞书文档、发送文件或图片，必须要求执行端实际调用对应工具；成功后最终回复只给必要结果或链接，失败时最终回复直接说明失败原因。",
       "删除、暂停、恢复、更新、停止或立即执行时，先用 list 拿到 job_id，再调用对应 action。",
       "action=resume_all 只恢复当前会话范围里已暂停的任务。",
       "action=run 只代表已安排执行；当前回复结束后才会真正开始跑，不能声称已经拿到了执行结果。",
@@ -75,7 +78,10 @@ export function createCronTaskExtension(
         }),
       ),
       tz: Type.Optional(Type.String({ description: "cron 表达式的 IANA 时区，可不传。" })),
-      prompt: Type.Optional(Type.String({ description: "到时要执行的提示词。add/update 时可传。" })),
+      prompt: Type.Optional(Type.String({
+        description:
+          "到时要执行的提示词。add/update 时可传。应写清最终交付方式：普通文本结果直接输出正文；文档/文件/图片任务先调用对应工具，成功后输出链接或结果，失败时说明原因。",
+      })),
       job_id: Type.Optional(Type.String({ description: "已有任务的 job_id。update/remove/pause/resume/stop/run 时需要。" })),
     }),
     prepareArguments: normalizeArgs as any,

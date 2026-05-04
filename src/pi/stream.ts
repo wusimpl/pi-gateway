@@ -35,6 +35,7 @@ export interface PromptInput {
   text: string;
   displayHeaderText?: string;
   footerLabel?: string;
+  includeFooter?: boolean;
   preludeText?: string;
   images?: ImageContent[];
 }
@@ -190,6 +191,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const streamingAllowed = streamingEnabled && isStreamingTargetSupported(target);
       const displayHeaderText = normalizedPrompt.displayHeaderText ?? "";
       const footerLabel = normalizedPrompt.footerLabel ?? "";
+      const includeFooter = normalizedPrompt.includeFooter ?? true;
 
       function formatDisplayBody(text: string = fullText): string {
         return prependMessageHeader(stripLeadingBlankLines(text), displayHeaderText);
@@ -539,7 +541,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               ? `${fullText}\n\n⚠️ 回复中断: ${lastError}`
               : (preludeText ? `⚠️ 回复中断: ${lastError}` : ""))
           : fullText;
-      const footer = formatLabeledFooter(formatPromptFooter(session), footerLabel);
+      const footer = includeFooter ? formatLabeledFooter(formatPromptFooter(session), footerLabel) : undefined;
       const finalText = appendMessageFooter(formatDisplayBody(displayText), footer);
       const finalToolsText = showToolCallsInReply ? formatToolCallsSection(toolCallMap, normalizedToolCallsDisplayMode) : "";
       const finalOutputText = abortedByUser

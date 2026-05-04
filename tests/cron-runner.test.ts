@@ -80,9 +80,10 @@ describe("cron runner", () => {
     expect(promptSession).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        text: "[cron:cron_1 早报]\n总结今天的待办。",
-        displayHeaderText: expect.stringContaining("任务：早报"),
+        text: expect.stringContaining("总结今天的待办。"),
+        displayHeaderText: "【定时任务结果】",
         footerLabel: "定时任务会话：",
+        includeFooter: false,
       }),
       "ou_1",
       expect.stringMatching(/^cron:cron_1:/),
@@ -173,9 +174,10 @@ describe("cron runner", () => {
     expect(promptSession).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        text: "[cron:cron_group_1 群早报]\n总结群里的待办。",
-        displayHeaderText: expect.stringContaining("任务：群早报"),
+        text: expect.stringContaining("总结群里的待办。"),
+        displayHeaderText: "【定时任务结果】",
         footerLabel: "定时任务会话：",
+        includeFooter: false,
       }),
       "ou_1",
       expect.stringMatching(/^cron:cron_group_1:/),
@@ -296,7 +298,7 @@ describe("cron runner", () => {
     expect(requestStop).toHaveBeenCalledWith("ou_1", "cron:cron_1:");
   });
 
-  it("任务失败且没有可展示正文时，会把失败通知标成定时任务结果", async () => {
+  it("任务失败且没有可展示正文时，会把失败通知标成定时任务异常", async () => {
     const abort = vi.fn().mockResolvedValue(undefined);
     const dispose = vi.fn();
     const sendTextMessage = vi.fn().mockResolvedValue(undefined);
@@ -360,7 +362,7 @@ describe("cron runner", () => {
     });
     expect(sendTextMessage).toHaveBeenCalledWith(
       "ou_1",
-      expect.stringContaining("【定时任务结果】\n任务：早报"),
+      expect.stringContaining("【定时任务异常】\n任务：早报"),
     );
   });
 });

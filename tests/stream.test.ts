@@ -139,6 +139,34 @@ describe("promptSession", () => {
     );
   });
 
+  it("调用方可以关闭最终消息里的状态页脚", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello" } },
+      { type: "message_end" },
+    ], undefined, { percent: 4.1, contextWindow: 200000 }, { provider: "rightcodes", id: "gpt-5.4-high" });
+
+    const result = await promptSession(
+      session as any,
+      {
+        text: "hi",
+        displayHeaderText: "HEADER",
+        includeFooter: false,
+      },
+      "ou_1",
+      "om_source_1",
+      undefined,
+      false,
+    );
+
+    expect(result).toEqual({ text: "hello", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "HEADER\n\nhello",
+      2000,
+    );
+  });
+
   it("文档工具创建成功后，应在正文后补发飞书文档卡片", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([
