@@ -3,7 +3,7 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import type { ToolCallsDisplayMode } from "../types.js";
 import type { ConversationTarget } from "../conversation.js";
 import { logger } from "../app/logger.js";
-import { BridgeError, withTimeout } from "../app/errors.js";
+import { BridgeError } from "../app/errors.js";
 import { formatModelLabel } from "./models.js";
 import {
   sendRenderedMessage,
@@ -42,8 +42,8 @@ export interface PromptInput {
 
 /** Pi prompt 空闲超时：连续无活动超过此时间则中断（5 分钟） */
 const PROMPT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-/** Pi prompt 总超时兜底：即使模型一直有活动，总时长也不应超过此值（30 分钟） */
-const PROMPT_TOTAL_TIMEOUT_MS = 30 * 60 * 1000;
+/** Pi prompt 绝对超时兜底：即使持续有进度，也不能无限运行（2 小时） */
+const PROMPT_ABSOLUTE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const STREAMING_UPDATE_INTERVAL_MS = 300;
 const MAX_VISIBLE_TOOL_CALLS = 5;
 const TOOL_CALL_NAMES_PER_LINE = 3;
@@ -360,23 +360,66 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         }
       }
 
-      // ---- 双层超时机制 ----
-      // 1. 空闲超时（idle timeout）：连续无活动超过 timeoutMs 则中断
-      //    每次收到 text_delta / tool_execution 事件时重置
-      // 2. 总超时兜底（hard timeout）：即使一直有活动，总时长也不超过 PROMPT_TOTAL_TIMEOUT_MS
-      //    防止 session.abort() 无法终止 prompt 导致永远卡住
+      // ---- 进度感知超时机制 ----
+      // 1. 空闲超时：连续无模型/工具事件超过 timeoutMs 则中断
+      // 2. 绝对超时：即使持续有进度，最多也只能运行 PROMPT_ABSOLUTE_TIMEOUT_MS
       let idleTimer: NodeJS.Timeout | null = null;
+      let absoluteTimer: NodeJS.Timeout | null = null;
       let idleTimedOut = false;
-      let hardTimedOut = false;
+      let absoluteTimedOut = false;
+      let rejectWatchdog: ((error: BridgeError) => void) | null = null;
+
+      const watchdogPromise = new Promise<never>((_resolve, reject) => {
+        rejectWatchdog = reject;
+      });
+
+      function rejectPromptWatchdog(error: BridgeError): void {
+        const reject = rejectWatchdog;
+        if (!reject) return;
+        rejectWatchdog = null;
+        reject(error);
+      }
+
+      function abortPromptAfterTimeout(): void {
+        try {
+          void session.abort().catch((error) => {
+            logger.warn("Pi prompt 超时后 abort 失败", {
+              ...getPromptDiagnostics(),
+              error: String(error),
+            });
+          });
+        } catch (error) {
+          logger.warn("Pi prompt 超时后 abort 失败", {
+            ...getPromptDiagnostics(),
+            error: String(error),
+          });
+        }
+      }
 
       function resetIdleTimer(): void {
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
           idleTimedOut = true;
-          try { session.abort(); } catch { /* abort 可能失败 */ }
+          rejectPromptWatchdog(new BridgeError("Pi prompt 空闲超时", "pi_prompt_timeout"));
+          abortPromptAfterTimeout();
         }, timeoutMs);
         if (typeof idleTimer.unref === "function") {
           idleTimer.unref();
+        }
+      }
+
+      function markPromptActivity(): void {
+        resetIdleTimer();
+      }
+
+      function startAbsoluteTimer(): void {
+        absoluteTimer = setTimeout(() => {
+          absoluteTimedOut = true;
+          rejectPromptWatchdog(new BridgeError("Pi prompt 绝对超时", "pi_prompt_timeout"));
+          abortPromptAfterTimeout();
+        }, PROMPT_ABSOLUTE_TIMEOUT_MS);
+        if (typeof absoluteTimer.unref === "function") {
+          absoluteTimer.unref();
         }
       }
 
@@ -384,6 +427,13 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         if (idleTimer) {
           clearTimeout(idleTimer);
           idleTimer = null;
+        }
+      }
+
+      function clearAbsoluteTimer(): void {
+        if (absoluteTimer) {
+          clearTimeout(absoluteTimer);
+          absoluteTimer = null;
         }
       }
 
@@ -424,8 +474,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         });
       }
 
-      // 启动初始空闲计时器
+      // 启动超时计时器
       resetIdleTimer();
+      startAbsoluteTimer();
 
       if (preludeText) {
         await ensureStreamingMessage("", "", preludeText);
@@ -435,6 +486,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         switch (event.type) {
           case "message_start":
             {
+              markPromptActivity();
               const messageText = extractUserMessageText(event.message);
               if (messageText) {
                 queueDeliveredReactionSwitch(messageText);
@@ -442,6 +494,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             }
             break;
           case "message_update":
+            markPromptActivity();
             if (event.assistantMessageEvent.type === "text_delta") {
               textDeltaCount += 1;
               textDeltaChars += event.assistantMessageEvent.delta.length;
@@ -456,8 +509,6 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               }
               fullText += event.assistantMessageEvent.delta;
               queueStreamingFlush();
-              // 收到新 token，重置空闲计时器
-              resetIdleTimer();
             } else {
               const update = event.assistantMessageEvent as Record<string, unknown>;
               const updateType = readStringField(update, "type") ?? "unknown";
@@ -549,6 +600,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             break;
           case "message_end":
             {
+              markPromptActivity();
               messageEndCount += 1;
               const assistantSummary = summarizeAssistantMessageForLog(event.message);
               lastAssistantStopReason = assistantSummary?.stopReason;
@@ -569,9 +621,11 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             }
             break;
           case "agent_end":
+            markPromptActivity();
             logger.info("Pi agent_end", getPromptDiagnostics());
             break;
           case "auto_retry_start":
+            markPromptActivity();
             logger.info("Pi prompt 自动重试开始", {
               openId,
               sourceMessageId,
@@ -581,6 +635,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             });
             break;
           case "auto_retry_end":
+            markPromptActivity();
             if (event.success) {
               lastError = undefined;
               logger.info("Pi prompt 自动重试成功", {
@@ -599,6 +654,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             }
             break;
           case "tool_execution_start":
+            markPromptActivity();
             toolExecutionStartCount += 1;
             logger.info("Pi tool_execution_start", {
               ...getPromptDiagnostics(),
@@ -619,10 +675,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               });
               queueStreamingFlush(true);
             }
-            // 工具调用开始也说明模型在活跃，重置空闲计时器
-            resetIdleTimer();
             break;
           case "tool_execution_update":
+            markPromptActivity();
             logger.debug("Pi tool_execution_update", {
               ...getPromptDiagnostics(),
               toolCallId: event.toolCallId,
@@ -636,9 +691,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
                 queueStreamingFlush(!hasVisibleAssistantText(fullText));
               }
             }
-            resetIdleTimer();
             break;
           case "tool_execution_end":
+            markPromptActivity();
             toolExecutionEndCount += 1;
             if (event.isError) {
               toolExecutionErrorCount += 1;
@@ -662,34 +717,27 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               }
             }
             collectDocPreviewCardInput(docPreviewMap, event.toolName, event.result, event.isError);
-            // 工具调用结束也说明模型在活跃，重置空闲计时器
-            resetIdleTimer();
             break;
           default:
+            markPromptActivity();
             logger.debug("Pi event", { type: event.type });
         }
       });
 
       try {
         const promptOptions = normalizedPrompt.images?.length ? { images: normalizedPrompt.images } : undefined;
-        // 使用 withTimeout 做总超时兜底，防止 abort 失败导致永远卡住
-        await withTimeout(
+        await Promise.race([
           session.prompt(normalizedPrompt.text, promptOptions),
-          PROMPT_TOTAL_TIMEOUT_MS,
-          "Pi prompt 总超时",
-        );
+          watchdogPromise,
+        ]);
       } catch (err) {
-        if (err instanceof BridgeError && err.category === "pi_prompt_timeout") {
-          // 总超时兜底触发（极罕见）
-          hardTimedOut = true;
+        if (absoluteTimedOut) {
           lastError = "处理超时，请稍后重试或使用 /new 新建会话";
-          logger.error("Pi prompt 总超时兜底触发", {
+          logger.error("Pi prompt 绝对超时兜底触发", {
             ...getPromptDiagnostics(),
-            totalTimeoutMs: PROMPT_TOTAL_TIMEOUT_MS,
+            absoluteTimeoutMs: PROMPT_ABSOLUTE_TIMEOUT_MS,
           });
-          try { await session.abort(); } catch { /* abort 也可能失败 */ }
-        } else if (idleTimedOut && !hardTimedOut) {
-          // 空闲超时触发：仅在 idleTimedOut=true 且不是总超时的情况下
+        } else if (idleTimedOut) {
           lastError = "回复生成超时（长时间无响应）";
           logger.error("Pi prompt 空闲超时", {
             ...getPromptDiagnostics(),
@@ -707,6 +755,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         }
       } finally {
         clearIdleTimer();
+        clearAbsoluteTimer();
+        rejectWatchdog = null;
         unsubscribe();
         if (pendingTimer) {
           clearTimeout(pendingTimer);
@@ -1374,11 +1424,25 @@ function extractToolContentText(result: unknown): string | undefined {
 
     const text = (item as Record<string, unknown>).text;
     if (typeof text === "string" && text.trim()) {
-      return normalizeToolSummary(text);
+      return normalizeToolSummary(takeLatestToolOutputLines(text));
     }
   }
 
   return undefined;
+}
+
+function takeLatestToolOutputLines(text: string, maxLines: number = 2): string {
+  const lines = text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length <= maxLines) {
+    return text;
+  }
+
+  return lines.slice(-maxLines).join("\n");
 }
 
 function readPreferredSummaryField(

@@ -523,6 +523,51 @@ describe("promptSession", () => {
     );
   });
 
+  it("工具运行输出为累计文本时，应在流式卡片里展示最新进度", async () => {
+    const mockStreamingMessage = {
+      updateBody: vi.fn().mockResolvedValue(undefined),
+      updateTools: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+    };
+    mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_1",
+        toolName: "bash",
+        args: { command: "for i in $(seq 1 27); do translate $i; done" },
+      } as any,
+      {
+        type: "tool_execution_update",
+        toolCallId: "call_1",
+        toolName: "bash",
+        partialResult: {
+          content: [{ type: "text", text: "DONE chunk 1/27\nfile=001.md" }],
+        },
+      } as any,
+      {
+        type: "tool_execution_update",
+        toolCallId: "call_1",
+        toolName: "bash",
+        partialResult: {
+          content: [{
+            type: "text",
+            text: "DONE chunk 1/27\nfile=001.md\nDONE chunk 2/27\nfile=002.md",
+          }],
+        },
+      } as any,
+      { type: "message_end" },
+    ]);
+
+    await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, true, 2000, true);
+
+    const latestTools = mockStreamingMessage.updateTools.mock.calls.at(-1)?.[0] ?? "";
+    expect(latestTools).toContain("DONE chunk 2/27");
+    expect(latestTools).toContain("file=002.md");
+    expect(latestTools).not.toContain("DONE chunk 1/27");
+  });
+
   it("非流式时应把预处理结果放在正文后面", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([
@@ -1484,34 +1529,28 @@ describe("promptSession", () => {
     vi.useRealTimers();
   });
 
-  it("总超时兜底：空闲超时未触发但总时间超限时应中断", async () => {
+  it("进度感知超时：持续有工具进度时不应因为超过 30 分钟中断", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     vi.useFakeTimers();
 
     let subscriber: ((event: StreamEvent) => void) | undefined;
+    let promptResolve: (() => void) | undefined;
     const session = {
       prompt: vi.fn(async (..._args: unknown[]) => {
-        // 持续产出 token，永远不会自行结束（模拟超长生成）
         subscriber?.({
           type: "message_update",
           assistantMessageEvent: { type: "text_delta", delta: "start" },
         });
-        // 永远挂起
-        await new Promise<void>(() => {});
+        await new Promise<void>((resolve) => { promptResolve = resolve; });
       }),
       subscribe(callback: (event: StreamEvent) => void) {
         subscriber = callback;
         return () => { subscriber = undefined; };
       },
       getContextUsage: vi.fn().mockReturnValue({ percent: null, contextWindow: 200000 }),
-      abort: vi.fn().mockImplementation(async () => {
-        // abort 后让 prompt 抛出错误
-        throw new Error("force-abort");
-      }),
+      abort: vi.fn().mockResolvedValue(undefined),
     };
 
-    // 使用很小的 idle 超时来测试，但关键是 withTimeout 的总超时兜底
-    // 实际 PROMPT_TOTAL_TIMEOUT_MS 是 30 分钟，这里我们用较短的时间模拟
     const resultPromise = promptSession(
       session as any,
       "hi",
@@ -1521,24 +1560,71 @@ describe("promptSession", () => {
       false,
       2000,
       false,
-      500, // 短 idle 超时
+      5 * 60 * 1000,
     );
 
-    // 等待 prompt 开始
     await vi.advanceTimersByTimeAsync(100);
 
-    // 持续发送 text_delta 防止 idle 超时
-    for (let i = 0; i < 180; i++) {
-      await vi.advanceTimersByTimeAsync(300);
+    for (let i = 0; i < 31; i++) {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
       subscriber?.({
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "x" },
-      });
+        type: "tool_execution_update",
+        toolCallId: "call_1",
+        toolName: "bash",
+        partialResult: { content: [{ type: "text", text: `DONE chunk ${i + 1}` }] },
+      } as any);
     }
 
-    // 此时已经过了 54s+，idle 超时被不断重置
-    // 但还未触发总超时（30 分钟）
     expect(session.abort).not.toHaveBeenCalled();
+
+    promptResolve?.();
+    const result = await resultPromise;
+    expect(result.error).toBeUndefined();
+
+    vi.useRealTimers();
+  });
+
+  it("绝对超时兜底：prompt 不响应 abort 时也应返回超时结果", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    vi.useFakeTimers();
+
+    let subscriber: ((event: StreamEvent) => void) | undefined;
+    const session = {
+      prompt: vi.fn(async (..._args: unknown[]) => {
+        subscriber?.({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "start" },
+        });
+        await new Promise<void>(() => {});
+      }),
+      subscribe(callback: (event: StreamEvent) => void) {
+        subscriber = callback;
+        return () => { subscriber = undefined; };
+      },
+      getContextUsage: vi.fn().mockReturnValue({ percent: null, contextWindow: 200000 }),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const resultPromise = promptSession(
+      session as any,
+      "hi",
+      "ou_1",
+      "om_source_1",
+      undefined,
+      false,
+      2000,
+      false,
+      3 * 60 * 60 * 1000,
+    );
+
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000 + 1000);
+
+    expect(session.abort).toHaveBeenCalled();
+
+    const result = await resultPromise;
+    expect(result.text).toBe("start");
+    expect(result.error).toBe("处理超时，请稍后重试或使用 /new 新建会话");
 
     vi.useRealTimers();
   });
