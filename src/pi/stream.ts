@@ -153,6 +153,15 @@ interface ToolCallState {
   showOutputSummary?: boolean;
 }
 
+interface ToolCallBuildState {
+  contentIndex: number;
+  chunks: number;
+  chars: number;
+  lastLoggedChars: number;
+  toolCallId?: string;
+  toolName?: string;
+}
+
 export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
   return {
     async promptSession(
@@ -193,10 +202,65 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       const displayHeaderText = normalizedPrompt.displayHeaderText ?? "";
       const footerLabel = normalizedPrompt.footerLabel ?? "";
       const includeFooter = normalizedPrompt.includeFooter ?? true;
+      const promptStartedAt = Date.now();
+      let textDeltaCount = 0;
+      let textDeltaChars = 0;
+      let messageEndCount = 0;
+      let toolCallStreamStartCount = 0;
+      let toolCallStreamEndCount = 0;
+      let toolExecutionStartCount = 0;
+      let toolExecutionEndCount = 0;
+      let toolExecutionErrorCount = 0;
+      let lastAssistantStopReason: string | undefined;
+      let lastAssistantErrorMessage: string | undefined;
+      const toolCallBuildMap = new Map<number, ToolCallBuildState>();
 
       function formatDisplayBody(text: string = fullText): string {
         return prependMessageHeader(stripLeadingBlankLines(text), displayHeaderText);
       }
+
+      function getPromptDiagnostics() {
+        return {
+          openId,
+          sourceMessageId,
+          targetKind: target.kind,
+          elapsedMs: Date.now() - promptStartedAt,
+          model: formatModelForLog(session.model, session.thinkingLevel),
+          contextUsage: summarizeContextUsageForLog(session.getContextUsage()),
+          textDeltaCount,
+          textDeltaChars,
+          visibleTextChars: fullText.length,
+          messageEndCount,
+          lastAssistantStopReason,
+          lastAssistantErrorMessage,
+          toolCallStreamStartCount,
+          toolCallStreamEndCount,
+          toolExecutionStartCount,
+          toolExecutionEndCount,
+          toolExecutionErrorCount,
+          trackedToolCallBuilds: Array.from(toolCallBuildMap.values()).map((state) => ({
+            contentIndex: state.contentIndex,
+            toolCallId: state.toolCallId,
+            toolName: state.toolName,
+            chunks: state.chunks,
+            chars: state.chars,
+          })),
+        };
+      }
+
+      logger.info("Pi prompt 开始", {
+        openId,
+        sourceMessageId,
+        targetKind: target.kind,
+        streamingEnabled,
+        streamingAllowed,
+        toolCallsDisplayMode: normalizedToolCallsDisplayMode,
+        promptChars: normalizedPrompt.text.length,
+        imageCount: normalizedPrompt.images?.length ?? 0,
+        hasPrelude: Boolean(preludeText),
+        model: formatModelForLog(session.model, session.thinkingLevel),
+        contextUsage: summarizeContextUsageForLog(session.getContextUsage()),
+      });
 
       try {
         const reactionId = await messenger.addProcessingReaction(sourceMessageId, processingReactionType);
@@ -379,6 +443,8 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             break;
           case "message_update":
             if (event.assistantMessageEvent.type === "text_delta") {
+              textDeltaCount += 1;
+              textDeltaChars += event.assistantMessageEvent.delta.length;
               if (pendingReplySeparator) {
                 fullText += pendingReplySeparator;
                 pendingReplySeparator = "";
@@ -392,11 +458,105 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               queueStreamingFlush();
               // 收到新 token，重置空闲计时器
               resetIdleTimer();
+            } else {
+              const update = event.assistantMessageEvent as Record<string, unknown>;
+              const updateType = readStringField(update, "type") ?? "unknown";
+              if (updateType === "toolcall_start") {
+                const contentIndex = readNumberField(update, "contentIndex") ?? toolCallBuildMap.size;
+                const toolCallSummary = summarizeToolCallFromAssistantUpdate(update);
+                toolCallStreamStartCount += 1;
+                toolCallBuildMap.set(contentIndex, {
+                  contentIndex,
+                  chunks: 0,
+                  chars: 0,
+                  lastLoggedChars: 0,
+                  toolCallId: toolCallSummary.toolCallId,
+                  toolName: toolCallSummary.toolName,
+                });
+                logger.info("Pi toolcall 生成开始", {
+                  ...getPromptDiagnostics(),
+                  contentIndex,
+                  toolCallId: toolCallSummary.toolCallId,
+                  toolName: toolCallSummary.toolName,
+                });
+              } else if (updateType === "toolcall_delta") {
+                const contentIndex = readNumberField(update, "contentIndex") ?? -1;
+                const deltaChars = typeof update.delta === "string" ? update.delta.length : 0;
+                const toolCallSummary = summarizeToolCallFromAssistantUpdate(update);
+                const state = toolCallBuildMap.get(contentIndex) ?? {
+                  contentIndex,
+                  chunks: 0,
+                  chars: 0,
+                  lastLoggedChars: 0,
+                };
+                state.chunks += 1;
+                state.chars += deltaChars;
+                state.toolCallId = toolCallSummary.toolCallId ?? state.toolCallId;
+                state.toolName = toolCallSummary.toolName ?? state.toolName;
+                toolCallBuildMap.set(contentIndex, state);
+
+                const shouldLogProgress =
+                  state.chunks === 1 ||
+                  state.chunks % 50 === 0 ||
+                  state.chars - state.lastLoggedChars >= 20_000;
+                if (shouldLogProgress) {
+                  state.lastLoggedChars = state.chars;
+                  logger.info("Pi toolcall 参数生成中", {
+                    ...getPromptDiagnostics(),
+                    contentIndex,
+                    toolCallId: state.toolCallId,
+                    toolName: state.toolName,
+                    chunks: state.chunks,
+                    chars: state.chars,
+                  });
+                }
+              } else if (updateType === "toolcall_end") {
+                const contentIndex = readNumberField(update, "contentIndex") ?? -1;
+                const toolCallSummary = summarizeToolCallFromAssistantUpdate(update);
+                const state = toolCallBuildMap.get(contentIndex);
+                toolCallStreamEndCount += 1;
+                if (state) {
+                  state.toolCallId = toolCallSummary.toolCallId ?? state.toolCallId;
+                  state.toolName = toolCallSummary.toolName ?? state.toolName;
+                }
+                logger.info("Pi toolcall 生成结束", {
+                  ...getPromptDiagnostics(),
+                  contentIndex,
+                  toolCallId: toolCallSummary.toolCallId ?? state?.toolCallId,
+                  toolName: toolCallSummary.toolName ?? state?.toolName,
+                  argsSummary: toolCallSummary.argsSummary,
+                  chunks: state?.chunks,
+                  chars: state?.chars,
+                });
+              } else if (updateType === "error") {
+                logger.warn("Pi message_update 返回错误事件", {
+                  ...getPromptDiagnostics(),
+                  reason: readStringField(update, "reason"),
+                  message: summarizeAssistantMessageForLog(update.error),
+                });
+              } else if (updateType === "done") {
+                logger.info("Pi message_update 完成事件", {
+                  ...getPromptDiagnostics(),
+                  reason: readStringField(update, "reason"),
+                });
+              } else if (!updateType.startsWith("thinking_")) {
+                logger.debug("Pi message_update 非文本事件", {
+                  ...getPromptDiagnostics(),
+                  updateType,
+                });
+              }
             }
             break;
           case "message_end":
-            logger.debug("Pi message_end");
             {
+              messageEndCount += 1;
+              const assistantSummary = summarizeAssistantMessageForLog(event.message);
+              lastAssistantStopReason = assistantSummary?.stopReason;
+              lastAssistantErrorMessage = assistantSummary?.errorMessage;
+              logger.info("Pi message_end", {
+                ...getPromptDiagnostics(),
+                message: assistantSummary,
+              });
               const assistantError = extractAssistantErrorMessage(event.message);
               if (assistantError) {
                 lastError = assistantError;
@@ -409,7 +569,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             }
             break;
           case "agent_end":
-            logger.debug("Pi agent_end");
+            logger.info("Pi agent_end", getPromptDiagnostics());
             break;
           case "auto_retry_start":
             logger.info("Pi prompt 自动重试开始", {
@@ -439,7 +599,13 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             }
             break;
           case "tool_execution_start":
-            logger.debug("Pi tool_execution_start", { toolName: event.toolName });
+            toolExecutionStartCount += 1;
+            logger.info("Pi tool_execution_start", {
+              ...getPromptDiagnostics(),
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              argsSummary: summarizeToolArgs(event.args),
+            });
             if (hasVisibleAssistantText(fullText)) {
               separateNextAssistantText = true;
             }
@@ -457,6 +623,12 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             resetIdleTimer();
             break;
           case "tool_execution_update":
+            logger.debug("Pi tool_execution_update", {
+              ...getPromptDiagnostics(),
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              progressSummary: summarizeToolProgress(event.partialResult),
+            });
             if (showToolCallsInReply) {
               const toolCall = toolCallMap.get(event.toolCallId);
               if (toolCall) {
@@ -467,9 +639,16 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             resetIdleTimer();
             break;
           case "tool_execution_end":
-            logger.debug("Pi tool_execution_end", {
+            toolExecutionEndCount += 1;
+            if (event.isError) {
+              toolExecutionErrorCount += 1;
+            }
+            logger.info("Pi tool_execution_end", {
+              ...getPromptDiagnostics(),
+              toolCallId: event.toolCallId,
               toolName: event.toolName,
               isError: event.isError,
+              resultSummary: summarizeToolProgress(event.result),
             });
             if (hasVisibleAssistantText(fullText)) {
               separateNextAssistantText = true;
@@ -504,18 +683,27 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           // 总超时兜底触发（极罕见）
           hardTimedOut = true;
           lastError = "处理超时，请稍后重试或使用 /new 新建会话";
-          logger.error("Pi prompt 总超时兜底触发", { openId, totalTimeoutMs: PROMPT_TOTAL_TIMEOUT_MS });
+          logger.error("Pi prompt 总超时兜底触发", {
+            ...getPromptDiagnostics(),
+            totalTimeoutMs: PROMPT_TOTAL_TIMEOUT_MS,
+          });
           try { await session.abort(); } catch { /* abort 也可能失败 */ }
         } else if (idleTimedOut && !hardTimedOut) {
           // 空闲超时触发：仅在 idleTimedOut=true 且不是总超时的情况下
           lastError = "回复生成超时（长时间无响应）";
-          logger.error("Pi prompt 空闲超时", { openId, timeoutMs });
+          logger.error("Pi prompt 空闲超时", {
+            ...getPromptDiagnostics(),
+            timeoutMs,
+          });
         } else if (isAbortRequested?.()) {
           abortedByUser = true;
-          logger.info("Pi prompt 已按用户请求停止", { openId, sourceMessageId });
+          logger.info("Pi prompt 已按用户请求停止", getPromptDiagnostics());
         } else {
           lastError = err instanceof Error ? err.message : String(err);
-          logger.error("Pi prompt 执行失败", { error: lastError });
+          logger.error("Pi prompt 执行失败", {
+            ...getPromptDiagnostics(),
+            error: lastError,
+          });
         }
       } finally {
         clearIdleTimer();
@@ -593,6 +781,19 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
         }
       }
       await sendCollectedDocPreviewCards(messenger, openId, docPreviewMap, conversationTarget);
+
+      logger.info("Pi prompt 结果", {
+        ...getPromptDiagnostics(),
+        hasError: Boolean(lastError),
+        error: lastError,
+        abortedByUser,
+        shouldFinalize,
+        streamingBroken,
+        streamingMessageCreated: Boolean(streamingMessage),
+        finalOutputChars: finalOutputText.length,
+        finalToolsChars: finalToolsText.length,
+        docPreviewCount: docPreviewMap.size,
+      });
 
       return {
         text: fullText,
@@ -826,6 +1027,57 @@ function extractUserMessageText(message: unknown): string | undefined {
   return text || undefined;
 }
 
+function summarizeAssistantMessageForLog(message: unknown) {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return undefined;
+  }
+
+  const record = message as Record<string, unknown>;
+  const content = record.content;
+  const summary = {
+    role: readStringField(record, "role"),
+    stopReason: readStringField(record, "stopReason"),
+    errorMessage: readStringField(record, "errorMessage"),
+    responseId: readStringField(record, "responseId"),
+    contentTypes: [] as string[],
+    textChars: 0,
+    toolCallCount: 0,
+    toolCalls: [] as Array<{
+      toolCallId?: string;
+      toolName?: string;
+      argsSummary?: string;
+    }>,
+  };
+
+  if (typeof content === "string") {
+    summary.contentTypes.push("text");
+    summary.textChars = content.length;
+    return summary;
+  }
+
+  if (!Array.isArray(content)) {
+    return summary;
+  }
+
+  for (const item of content) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const block = item as Record<string, unknown>;
+    const type = readStringField(block, "type") ?? "unknown";
+    summary.contentTypes.push(type);
+    if (type === "text" && typeof block.text === "string") {
+      summary.textChars += block.text.length;
+    }
+    if (type === "toolCall") {
+      summary.toolCallCount += 1;
+      summary.toolCalls.push(summarizeToolCallBlock(block));
+    }
+  }
+
+  return summary;
+}
+
 function extractAssistantErrorMessage(message: unknown): string | undefined {
   if (!message || typeof message !== "object" || Array.isArray(message)) {
     return undefined;
@@ -839,6 +1091,69 @@ function extractAssistantErrorMessage(message: unknown): string | undefined {
   return readStringField(record, "errorMessage") ?? "处理失败，请稍后重试";
 }
 
+function summarizeToolCallFromAssistantUpdate(
+  update: Record<string, unknown>,
+): {
+  toolCallId?: string;
+  toolName?: string;
+  argsSummary?: string;
+} {
+  const direct = summarizeToolCallBlock(update.toolCall);
+  if (direct.toolCallId || direct.toolName || direct.argsSummary) {
+    return direct;
+  }
+
+  const contentIndex = readNumberField(update, "contentIndex");
+  const partialToolCall = findToolCallBlockInPartial(update.partial, contentIndex);
+  return summarizeToolCallBlock(partialToolCall);
+}
+
+function summarizeToolCallBlock(toolCall: unknown): {
+  toolCallId?: string;
+  toolName?: string;
+  argsSummary?: string;
+} {
+  if (!toolCall || typeof toolCall !== "object" || Array.isArray(toolCall)) {
+    return {};
+  }
+
+  const record = toolCall as Record<string, unknown>;
+  return {
+    toolCallId: readStringField(record, "id") ?? readStringField(record, "toolCallId"),
+    toolName: readStringField(record, "name") ?? readStringField(record, "toolName"),
+    argsSummary: summarizeToolArgs(record.arguments ?? record.args),
+  };
+}
+
+function findToolCallBlockInPartial(
+  partial: unknown,
+  contentIndex?: number,
+): unknown {
+  if (!partial || typeof partial !== "object" || Array.isArray(partial)) {
+    return undefined;
+  }
+
+  const content = (partial as Record<string, unknown>).content;
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  if (
+    typeof contentIndex === "number" &&
+    contentIndex >= 0 &&
+    contentIndex < content.length
+  ) {
+    return content[contentIndex];
+  }
+
+  return content.find((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return false;
+    }
+    return (item as Record<string, unknown>).type === "toolCall";
+  });
+}
+
 function readStringField(
   value: Record<string, unknown> | undefined,
   key: string,
@@ -850,6 +1165,14 @@ function readStringField(
 
   const trimmed = raw.trim();
   return trimmed || undefined;
+}
+
+function readNumberField(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const raw = value?.[key];
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
 }
 
 function stripLeadingBlankLines(text: string): string {
@@ -1168,6 +1491,50 @@ function formatPromptFooter(
   ].filter((line): line is string => Boolean(line));
 
   return lines.length > 0 ? lines.join(" | ") : undefined;
+}
+
+function formatModelForLog(
+  model: AgentSession["model"],
+  thinkingLevel?: AgentSession["thinkingLevel"],
+): { provider: string; id: string; label: string; thinkingLevel?: AgentSession["thinkingLevel"] } | undefined {
+  if (!model) {
+    return undefined;
+  }
+
+  const provider = model.provider?.trim();
+  const id = model.id?.trim();
+  if (!provider || !id) {
+    return undefined;
+  }
+
+  return {
+    provider,
+    id,
+    label: formatModelLabel(provider, id),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
+  };
+}
+
+function summarizeContextUsageForLog(
+  contextUsage: ReturnType<AgentSession["getContextUsage"]>
+): { percent: number; contextWindow: number; usedTokens: number } | undefined {
+  if (
+    !contextUsage ||
+    contextUsage.percent === null ||
+    !Number.isFinite(contextUsage.percent) ||
+    contextUsage.contextWindow <= 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    percent: Number(contextUsage.percent.toFixed(1)),
+    contextWindow: contextUsage.contextWindow,
+    usedTokens: Math.max(
+      0,
+      Math.round((contextUsage.contextWindow * contextUsage.percent) / 100),
+    ),
+  };
 }
 
 function formatContextUsageFooter(

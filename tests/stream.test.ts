@@ -27,7 +27,18 @@ type StreamEvent =
         content?: string | Array<{ type: string; text?: string }>;
       };
     }
-  | { type: "message_update"; assistantMessageEvent: { type: "text_delta"; delta: string } }
+  | {
+      type: "message_update";
+      assistantMessageEvent: {
+        type: string;
+        delta?: string;
+        contentIndex?: number;
+        partial?: unknown;
+        toolCall?: unknown;
+        reason?: string;
+        error?: unknown;
+      };
+    }
   | {
       type: "message_end";
       message?: {
@@ -109,6 +120,52 @@ describe("promptSession", () => {
       "hello world\n\n4.1% 8.2k/200k | 模型: rightcodes/gpt-5.4-high",
       2000,
     );
+  });
+
+  it("工具调用生成阶段的诊断日志不改变最终输出", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_start",
+          contentIndex: 0,
+          partial: {
+            content: [{ type: "toolCall", id: "call_1", name: "feishu_doc_create", arguments: {} }],
+          },
+        },
+      },
+      {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_delta",
+          contentIndex: 0,
+          delta: "{\"title\":\"demo\"}",
+          partial: {
+            content: [{ type: "toolCall", id: "call_1", name: "feishu_doc_create", arguments: { title: "demo" } }],
+          },
+        },
+      },
+      {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_end",
+          contentIndex: 0,
+          toolCall: {
+            type: "toolCall",
+            id: "call_1",
+            name: "feishu_doc_create",
+            arguments: { title: "demo" },
+          },
+        },
+      },
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1");
+
+    expect(result).toEqual({ text: "", error: undefined });
+    expect(mockSendRenderedMessage).not.toHaveBeenCalled();
   });
 
   it("支持调用方给最终消息加展示头和状态标签", async () => {
