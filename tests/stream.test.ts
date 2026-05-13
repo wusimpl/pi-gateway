@@ -379,6 +379,40 @@ describe("promptSession", () => {
     );
   });
 
+  it("工具调用前后都有正文时，应自动插入段落分隔", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "我先查看当前定时任务列表，找到和推特相关的任务；如果只有一个就直接触发，有多个再让你选。" } },
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_1",
+        toolName: "cron_task",
+        args: { action: "list" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_1",
+        toolName: "cron_task",
+        isError: false,
+        result: { details: { name: "推特推荐精选" } },
+      } as any,
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "已触发「推特推荐精选」定时任务，当前已排队。" } },
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, false, 2000, true);
+
+    expect(result).toEqual({
+      text: "我先查看当前定时任务列表，找到和推特相关的任务；如果只有一个就直接触发，有多个再让你选。\n\n已触发「推特推荐精选」定时任务，当前已排队。",
+      error: undefined,
+    });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "我先查看当前定时任务列表，找到和推特相关的任务；如果只有一个就直接触发，有多个再让你选。\n\n已触发「推特推荐精选」定时任务，当前已排队。\n\n ---\n**工具调用**\n🛠️ cron_task: 推特推荐精选",
+      2000,
+    );
+  });
+
   it("开启工具展示后，应在流式卡片里实时刷新简短工具状态", async () => {
     const mockStreamingMessage = {
       updateBody: vi.fn().mockResolvedValue(undefined),

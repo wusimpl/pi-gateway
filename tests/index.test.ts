@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     modelRegistry,
     modelRouter,
     startMessageConnection,
+    resolveFeishuBotOpenId: vi.fn().mockResolvedValue("ou_bot_1"),
     ensureDir: vi.fn().mockResolvedValue(undefined),
     setLogLevel: vi.fn(),
     logger: {
@@ -127,6 +128,7 @@ vi.mock("../src/config.js", () => ({
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
     FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
+    FEISHU_BOT_OPEN_ID: undefined,
     DATA_DIR: "/tmp/pi-gateway-data",
     PI_WORKSPACE_ROOT: "/tmp/pi-gateway-workspace",
     PI_DISABLE_GLOBAL_AGENTS: true,
@@ -153,6 +155,10 @@ vi.mock("../src/pi/runtime.js", () => ({
 
 vi.mock("../src/feishu/client.js", () => ({
   createFeishuConnection: mocks.createFeishuConnection,
+}));
+
+vi.mock("../src/feishu/bot-info.js", () => ({
+  resolveFeishuBotOpenId: mocks.resolveFeishuBotOpenId,
 }));
 
 vi.mock("../src/feishu/inbound/resource.js", () => ({
@@ -253,6 +259,7 @@ describe("index wiring", () => {
     mocks.logger.debug.mockClear();
     mocks.createPiRuntime.mockClear();
     mocks.createFeishuConnection.mockClear();
+    mocks.resolveFeishuBotOpenId.mockClear();
     mocks.createFeishuMessageReader.mockClear();
     mocks.createFeishuResourceDownloader.mockClear();
     mocks.createFeishuMessenger.mockClear();
@@ -297,6 +304,7 @@ describe("index wiring", () => {
       expect(mocks.createPromptService).toHaveBeenCalledTimes(1);
     });
 
+    expect(mocks.resolveFeishuBotOpenId).toHaveBeenCalledWith(mocks.client);
     expect(mocks.createFeishuMessageReader).toHaveBeenCalledWith(mocks.client);
     expect(mocks.createFeishuResourceDownloader).toHaveBeenCalledWith(mocks.client);
     expect(mocks.createPiRuntime).toHaveBeenCalledWith(
@@ -311,6 +319,7 @@ describe("index wiring", () => {
     );
     expect(mocks.createSkillStatsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
     expect(mocks.createGroupSettingsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
+    expect(mocks.createMessageRouter.mock.calls[0]?.[0]?.config.FEISHU_BOT_OPEN_ID).toBe("ou_bot_1");
     expect(mocks.createSkillStatsExtension).toHaveBeenCalledWith("skill-stats-store");
     expect(mocks.createCommandService.mock.calls[0]?.[0]?.skillStatsStore).toBe("skill-stats-store");
     expect(mocks.createCronRunner).toHaveBeenCalledTimes(1);

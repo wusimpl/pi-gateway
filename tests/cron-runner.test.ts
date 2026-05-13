@@ -83,7 +83,7 @@ describe("cron runner", () => {
         text: expect.stringContaining("总结今天的待办。"),
         displayHeaderText: "【定时任务结果】",
         footerLabel: "定时任务会话：",
-        includeFooter: false,
+        includeFooter: true,
       }),
       "ou_1",
       expect.stringMatching(/^cron:cron_1:/),
@@ -95,11 +95,12 @@ describe("cron runner", () => {
       expect.any(Function),
       undefined,
     );
-    expect(runtimeState.releaseLock).toHaveBeenCalledWith("ou_1");
+    expect(runtimeState.acquireLock).toHaveBeenCalledWith("cron:ou_1", expect.stringMatching(/^cron:cron_1:/));
+    expect(runtimeState.releaseLock).toHaveBeenCalledWith("cron:ou_1");
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("群聊任务会沿用当前群的锁、工作目录和回复目标", async () => {
+  it("群聊任务会沿用当前群的工作目录和回复目标，并使用独立 cron 锁", async () => {
     const abort = vi.fn().mockResolvedValue(undefined);
     const dispose = vi.fn();
     const createPiSession = vi.fn().mockResolvedValue({
@@ -177,7 +178,7 @@ describe("cron runner", () => {
         text: expect.stringContaining("总结群里的待办。"),
         displayHeaderText: "【定时任务结果】",
         footerLabel: "定时任务会话：",
-        includeFooter: false,
+        includeFooter: true,
       }),
       "ou_1",
       expect.stringMatching(/^cron:cron_group_1:/),
@@ -189,11 +190,11 @@ describe("cron runner", () => {
       expect.any(Function),
       groupTarget,
     );
-    expect(runtimeState.acquireLock).toHaveBeenCalledWith("oc_group_1", expect.stringMatching(/^cron:cron_group_1:/));
-    expect(runtimeState.releaseLock).toHaveBeenCalledWith("oc_group_1");
+    expect(runtimeState.acquireLock).toHaveBeenCalledWith("cron:oc_group_1", expect.stringMatching(/^cron:cron_group_1:/));
+    expect(runtimeState.releaseLock).toHaveBeenCalledWith("cron:oc_group_1");
   });
 
-  it("拿不到用户锁时会直接返回 busy", async () => {
+  it("拿不到 cron 锁时会直接返回 busy", async () => {
     const runner = createCronRunner({
       config: {
         DATA_DIR: "/tmp/pi-gateway-data",
@@ -243,7 +244,7 @@ describe("cron runner", () => {
     expect(result).toEqual({
       jobId: "cron_1",
       status: "busy",
-      error: "当前会话还有任务在跑",
+      error: "当前会话还有定时任务在跑",
     });
   });
 
@@ -295,7 +296,7 @@ describe("cron runner", () => {
       updatedAtMs: 1,
       state: {},
     })).resolves.toBe("requested");
-    expect(requestStop).toHaveBeenCalledWith("ou_1", "cron:cron_1:");
+    expect(requestStop).toHaveBeenCalledWith("cron:ou_1", "cron:cron_1:");
   });
 
   it("任务失败且没有可展示正文时，会把失败通知标成定时任务异常", async () => {

@@ -176,9 +176,9 @@ describe("command service /cron", () => {
     );
   });
 
-  it("run 在当前有任务时会改成稍后执行", async () => {
+  it("run 在同 scope 有定时任务时会改成稍后执行", async () => {
     const { service, messenger, cronService, deferredCronRunService, runtimeState } = createDeps();
-    runtimeState.isLocked.mockReturnValue(true);
+    runtimeState.isLocked.mockImplementation((key: string) => key === "cron:ou_1");
 
     await service.handleBridgeCommand(
       { openId: "ou_1", userId: "u_1" },
@@ -197,9 +197,9 @@ describe("command service /cron", () => {
     );
   });
 
-  it("群聊 run 在当前群有任务时会按群会话排队", async () => {
+  it("群聊 run 在当前群有定时任务时会按群会话排队", async () => {
     const { service, cronService, deferredCronRunService, runtimeState } = createDeps();
-    runtimeState.isLocked.mockImplementation((key: string) => key === "oc_group_1");
+    runtimeState.isLocked.mockImplementation((key: string) => key === "cron:oc_group_1");
 
     await service.handleBridgeCommand(
       { openId: "ou_1", userId: "u_1" },

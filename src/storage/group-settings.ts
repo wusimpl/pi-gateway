@@ -9,6 +9,7 @@ export type PersistedGroupRoutingConfig = Pick<
   | "FEISHU_GROUP_CHAT_ALLOWLIST"
   | "FEISHU_GROUP_MESSAGE_MODE"
   | "FEISHU_GROUP_MESSAGE_KEYWORDS"
+  | "FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"
 >;
 
 export interface GroupSettingsStore {
@@ -63,6 +64,9 @@ export function normalizePersistedGroupRoutingConfig(
     FEISHU_GROUP_CHAT_ALLOWLIST: normalizeStringList(config.FEISHU_GROUP_CHAT_ALLOWLIST ?? []),
     FEISHU_GROUP_MESSAGE_MODE: normalizeGroupMode(config.FEISHU_GROUP_MESSAGE_MODE),
     FEISHU_GROUP_MESSAGE_KEYWORDS: normalizeStringList(config.FEISHU_GROUP_MESSAGE_KEYWORDS ?? []),
+    FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: normalizeUnmatchedMessagePolicy(
+      config.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY,
+    ),
   };
 }
 
@@ -82,6 +86,12 @@ function normalizeGroupMode(
     return mode;
   }
   return "mention";
+}
+
+function normalizeUnmatchedMessagePolicy(
+  policy: Config["FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"] | undefined,
+): Config["FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"] {
+  return policy === "capture" ? "capture" : "ignore";
 }
 
 function normalizeStringList(items: string[]): string[] {

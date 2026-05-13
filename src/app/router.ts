@@ -1,7 +1,11 @@
 import { normalizeFeishuInboundMessage } from "../feishu/inbound/normalize.js";
 import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
 import { parseMessageEvent, isSupportedP2PMessage } from "../feishu/events.js";
-import { isSupportedFeishuMessage, type FeishuGroupRoutingConfig } from "../feishu/group-routing.js";
+import {
+  getFeishuMessageRoutingDecision,
+  type FeishuGroupRoutingConfig,
+  type FeishuMessageRoutingDecision,
+} from "../feishu/group-routing.js";
 import {
   addProcessingReaction,
   sendRenderedMessage,
@@ -27,6 +31,10 @@ import {
 import { getConversationWorkspaceDir, getUserWorkspaceDir } from "../pi/workspace.js";
 import { prepareFeishuPromptInput } from "../feishu/inbound/transform.js";
 import { createGroupSettingsStore, type GroupSettingsStore } from "../storage/group-settings.js";
+import {
+  createGroupUnmatchedMessageStore,
+  type GroupUnmatchedMessageStore,
+} from "../storage/group-unmatched-messages.js";
 import { readUserState, writeUserState } from "../storage/users.js";
 import { createP2PConversationTarget, getConversationTargetKey } from "../conversation.js";
 import {
@@ -77,12 +85,16 @@ interface MessageRouterDeps {
   promptService: Pick<PromptService, "handleUserPrompt" | "queueRunningPrompt">;
   config?: Partial<Config>;
   groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig">;
+  groupUnmatchedMessageStore?: Pick<GroupUnmatchedMessageStore, "append" | "drain">;
   runtimeConfig?: Pick<RuntimeConfigStore, "getGroupRoutingConfig">;
   parseMessageEvent?: typeof parseMessageEvent;
   isSupportedP2PMessage?: typeof isSupportedP2PMessage;
   isSupportedMessage?: (
     event: ReturnType<typeof parseMessageEvent> extends infer T ? NonNullable<T> : never,
   ) => boolean | Promise<boolean>;
+  getMessageRoutingDecision?: (
+    event: ReturnType<typeof parseMessageEvent> extends infer T ? NonNullable<T> : never,
+  ) => FeishuMessageRoutingDecision | Promise<FeishuMessageRoutingDecision>;
   normalizeFeishuInboundMessage?: typeof normalizeFeishuInboundMessage;
 }
 
@@ -95,8 +107,8 @@ interface QueuedPrompt {
 
 export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
   const parseEvent = deps.parseMessageEvent ?? parseMessageEvent;
-  const isSupportedMessage = deps.isSupportedMessage
-    ?? createSupportedMessagePredicate(
+  const resolveMessageRoutingDecision = deps.getMessageRoutingDecision
+    ?? createMessageRoutingDecisionResolver(
       deps.config,
       deps.groupSettingsStore,
       deps.runtimeConfig,
@@ -115,17 +127,30 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     const event = parseEvent(data);
     if (!event) return;
 
-    if (!await isSupportedMessage(event)) return;
+    const routingDecision = deps.isSupportedMessage
+      ? (await deps.isSupportedMessage(event) ? "route" : "ignore")
+      : await resolveMessageRoutingDecision(event);
+    if (routingDecision === "ignore") return;
 
     const message = normalizeMessage(event);
     if (!message) return;
 
-    const identity = message.identity;
+    if (routingDecision === "capture_unmatched") {
+      if (deps.stateStore.isDuplicate(message.messageId)) {
+        logger.debug("重复未触发消息已忽略", { messageId: message.messageId });
+        return;
+      }
+      await captureUnmatchedGroupMessage(message);
+      return;
+    }
+
+    const routedInputMessage = message;
+    const identity = routedInputMessage.identity;
     const openId = identity.openId;
-    const conversationTarget = message.conversationTarget ?? createP2PConversationTarget(openId);
+    const conversationTarget = routedInputMessage.conversationTarget ?? createP2PConversationTarget(openId);
     if (!conversationTarget) return;
-    const routedMessage = message.conversationTarget ? message : { ...message, conversationTarget };
-    const messageId = message.messageId;
+    const routedMessage = routedInputMessage.conversationTarget ? routedInputMessage : { ...routedInputMessage, conversationTarget };
+    const messageId = routedInputMessage.messageId;
 
     if (deps.stateStore.isDuplicate(messageId)) {
       logger.debug("重复消息已忽略", { openId, messageId });
@@ -137,17 +162,17 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       conversationKey: conversationTarget.key,
       chatId: conversationTarget.chatId,
       messageId,
-      messageType: message.messageType,
-      ...buildMessageLogPayload(message),
+      messageType: routedInputMessage.messageType,
+      ...buildMessageLogPayload(routedInputMessage),
     });
     logger.debug("消息内容", {
       openId,
-      messageType: message.messageType,
-      ...buildMessageLogPayload(message),
+      messageType: routedInputMessage.messageType,
+      ...buildMessageLogPayload(routedInputMessage),
     });
 
-    const commandText = message.kind === "text"
-      ? await normalizeKeywordPrefixedBridgeCommandText(message.text, event, resolveGroupRoutingConfig)
+    const commandText = routedInputMessage.kind === "text"
+      ? await normalizeKeywordPrefixedBridgeCommandText(routedInputMessage.text, event, resolveGroupRoutingConfig)
       : undefined;
     const hasSlashPrefix = commandText?.trim().startsWith("/") ?? false;
     const bridgeCommand = commandText ? parseBridgeCommand(commandText) : null;
@@ -162,7 +187,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
         return;
       }
 
-      await enqueuePrompt(identity, createTextPromptMessage(routedMessage, bridgeCommand.args), "followUp");
+      await enqueuePrompt(identity, await attachUnmatchedContext(createTextPromptMessage(routedMessage, bridgeCommand.args)), "followUp");
       return;
     }
 
@@ -181,7 +206,41 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       return;
     }
 
-    await enqueuePrompt(identity, routedMessage, "steer");
+    await enqueuePrompt(identity, await attachUnmatchedContext(routedMessage), "steer");
+  }
+
+  async function captureUnmatchedGroupMessage(message: FeishuInboundMessage): Promise<void> {
+    const chatId = message.conversationTarget.chatId;
+    if (!chatId || !deps.groupUnmatchedMessageStore) {
+      return;
+    }
+
+    const count = await deps.groupUnmatchedMessageStore.append(chatId, message);
+    logger.debug("未触发群消息已进入暂存队列", {
+      chatId,
+      messageId: message.messageId,
+      messageType: message.messageType,
+      count,
+    });
+  }
+
+  async function attachUnmatchedContext(message: FeishuInboundMessage): Promise<FeishuInboundMessage> {
+    const chatId = message.conversationTarget.chatId;
+    if (!chatId || !deps.groupUnmatchedMessageStore) {
+      return message;
+    }
+
+    const unmatchedContext = await deps.groupUnmatchedMessageStore.drain(chatId);
+    if (unmatchedContext.length === 0) {
+      return message;
+    }
+
+    logger.info("群消息已附加未触发上下文", {
+      chatId,
+      messageId: message.messageId,
+      count: unmatchedContext.length,
+    });
+    return { ...message, unmatchedContext };
   }
 
   function enqueuePrompt(
@@ -374,26 +433,26 @@ function isAsciiKeyword(keyword: string): boolean {
   return /^[a-z0-9][a-z0-9_-]*$/i.test(keyword);
 }
 
-function createSupportedMessagePredicate(
+function createMessageRoutingDecisionResolver(
   config: Partial<Config> | undefined,
   groupSettingsStore: Pick<GroupSettingsStore, "readGroupRoutingConfig"> | undefined,
   runtimeConfig: Pick<RuntimeConfigStore, "getGroupRoutingConfig"> | undefined,
   fallback: typeof isSupportedP2PMessage,
-): (event: NonNullable<ReturnType<typeof parseMessageEvent>>) => Promise<boolean> {
+): (event: NonNullable<ReturnType<typeof parseMessageEvent>>) => Promise<FeishuMessageRoutingDecision> {
   const resolveGroupRoutingConfig = createGroupRoutingConfigResolver(config, groupSettingsStore, runtimeConfig);
   if (!groupSettingsStore && !runtimeConfig && !config?.FEISHU_GROUP_CHAT_POLICY) {
-    return async (event) => fallback(event);
+    return async (event) => fallback(event) ? "route" : "ignore";
   }
 
   return async (event) => {
     if (event.message.chatType !== "group") {
-      return fallback(event);
+      return fallback(event) ? "route" : "ignore";
     }
 
     const groupRoutingConfig = await resolveGroupRoutingConfig(event);
     return groupRoutingConfig
-      ? isSupportedFeishuMessage(event, groupRoutingConfig)
-      : false;
+      ? getFeishuMessageRoutingDecision(event, groupRoutingConfig)
+      : "ignore";
   };
 }
 
@@ -402,9 +461,11 @@ let defaultRouter: MessageRouter | null = null;
 export function initRouter(cfg: Config): void {
   const runtimeConfig = createRuntimeConfigStore(cfg);
   const groupSettingsStore = createGroupSettingsStore(cfg.DATA_DIR ?? "./data");
+  const groupUnmatchedMessageStore = createGroupUnmatchedMessageStore(cfg.DATA_DIR ?? "./data");
   const commandService = createCommandService({
     config: cfg,
     groupSettingsStore,
+    groupUnmatchedMessageStore,
     runtimeConfig,
     messenger: {
       sendRenderedMessage: (...args) => sendRenderedMessage(...args),
@@ -488,6 +549,7 @@ export function initRouter(cfg: Config): void {
     promptService,
     config: cfg,
     groupSettingsStore,
+    groupUnmatchedMessageStore,
     runtimeConfig,
   });
 }

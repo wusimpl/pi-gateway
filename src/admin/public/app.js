@@ -29,6 +29,7 @@ const cronCount = document.querySelector("#cron-count");
 const cronTable = document.querySelector("#cron-table");
 const groupPolicy = document.querySelector("#group-policy");
 const groupMode = document.querySelector("#group-mode");
+const groupUnmatched = document.querySelector("#group-unmatched");
 const groupPolicyBadge = document.querySelector("#group-policy-badge");
 const groupKeywordForm = document.querySelector("#group-keyword-form");
 const groupKeywords = document.querySelector("#group-keywords");
@@ -120,6 +121,10 @@ groupPolicy?.addEventListener("change", async () => {
 
 groupMode?.addEventListener("change", async () => {
   await runRawCommand(`/group mode ${groupMode.value}`);
+});
+
+groupUnmatched?.addEventListener("change", async () => {
+  await runRawCommand(`/group unmatched ${groupUnmatched.value}`);
 });
 
 groupKeywordForm?.addEventListener("submit", async (event) => {
@@ -642,6 +647,7 @@ function renderGroup(data) {
   const keywords = data.keywords ?? [];
   groupPolicy.value = data.policy ?? "disabled";
   groupMode.value = data.mode ?? "mention";
+  groupUnmatched.value = data.unmatchedPolicy ?? "ignore";
   groupKeywords.value = keywords.join(" ");
   renderGroupPolicyBadge(data.policy);
   renderGroupKeywords(keywords);

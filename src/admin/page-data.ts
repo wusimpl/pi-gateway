@@ -91,6 +91,7 @@ export interface AdminGroupPageData {
   mode: PersistedGroupRoutingConfig["FEISHU_GROUP_MESSAGE_MODE"];
   allowlist: string[];
   keywords: string[];
+  unmatchedPolicy: PersistedGroupRoutingConfig["FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"];
   currentInAllowlist: boolean;
 }
 
@@ -277,6 +278,7 @@ export function createAdminPageDataService(deps: {
       mode: settings.FEISHU_GROUP_MESSAGE_MODE,
       allowlist: [...settings.FEISHU_GROUP_CHAT_ALLOWLIST],
       keywords: [...settings.FEISHU_GROUP_MESSAGE_KEYWORDS],
+      unmatchedPolicy: settings.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY,
       currentInAllowlist: settings.FEISHU_GROUP_CHAT_ALLOWLIST.includes(chatId),
     };
   }
@@ -367,6 +369,7 @@ export function createAdminPageDataService(deps: {
       FEISHU_GROUP_CHAT_ALLOWLIST: [...(config?.FEISHU_GROUP_CHAT_ALLOWLIST ?? [])],
       FEISHU_GROUP_MESSAGE_MODE: config?.FEISHU_GROUP_MESSAGE_MODE ?? "mention",
       FEISHU_GROUP_MESSAGE_KEYWORDS: [...(config?.FEISHU_GROUP_MESSAGE_KEYWORDS ?? [])],
+      FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: config?.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY ?? "ignore",
     };
   }
 

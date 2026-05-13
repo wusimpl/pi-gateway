@@ -292,6 +292,16 @@
                       <option value="keyword">包含关键词时响应</option>
                     </select>
                   </label>
+                  <label class="setting-item">
+                    <span>
+                      <strong>未触发消息</strong>
+                      <small>未 @ / 未命中关键词时，是否暂存到下次触发</small>
+                    </span>
+                    <select id="group-unmatched">
+                      <option value="ignore">直接忽略</option>
+                      <option value="capture">暂存为上下文</option>
+                    </select>
+                  </label>
                 </div>
 
                 <form class="keyword-form" id="group-keyword-form">

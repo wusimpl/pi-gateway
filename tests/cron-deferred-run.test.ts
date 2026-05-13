@@ -61,6 +61,7 @@ describe("deferred cron run service", () => {
       status: "queued",
       queued: true,
     });
+    expect(isLocked).toHaveBeenCalledWith("cron:ou_1");
     expect(runJobNow).toHaveBeenCalledWith({ scopeKey: "ou_1", scopeType: "dm" }, "cron_1");
     expect(sendTextMessage).not.toHaveBeenCalled();
   });

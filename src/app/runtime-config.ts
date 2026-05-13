@@ -3,6 +3,7 @@ import type { Config } from "../config.js";
 type AudioTranscribeProvider = Config["FEISHU_AUDIO_TRANSCRIBE_PROVIDER"];
 type GroupChatPolicy = Config["FEISHU_GROUP_CHAT_POLICY"];
 type GroupMessageMode = Config["FEISHU_GROUP_MESSAGE_MODE"];
+type GroupUnmatchedMessagePolicy = Config["FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"];
 
 export interface RuntimeConfigStore {
   getAudioTranscribeProvider(): AudioTranscribeProvider;
@@ -17,12 +18,15 @@ export interface RuntimeConfigStore {
   setGroupMessageMode(mode: GroupMessageMode): void;
   getGroupMessageKeywords(): string[];
   setGroupMessageKeywords(keywords: string[]): void;
+  getGroupUnmatchedMessagePolicy(): GroupUnmatchedMessagePolicy;
+  setGroupUnmatchedMessagePolicy(policy: GroupUnmatchedMessagePolicy): void;
   getGroupRoutingConfig(): Pick<
     Config,
     | "FEISHU_GROUP_CHAT_POLICY"
     | "FEISHU_GROUP_CHAT_ALLOWLIST"
     | "FEISHU_GROUP_MESSAGE_MODE"
     | "FEISHU_GROUP_MESSAGE_KEYWORDS"
+    | "FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"
     | "FEISHU_BOT_OPEN_ID"
   >;
   getProcessingReactionType(): string | undefined;
@@ -41,6 +45,7 @@ export function createRuntimeConfigStore(
       | "FEISHU_GROUP_CHAT_ALLOWLIST"
       | "FEISHU_GROUP_MESSAGE_MODE"
       | "FEISHU_GROUP_MESSAGE_KEYWORDS"
+      | "FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"
       | "FEISHU_BOT_OPEN_ID"
       | "FEISHU_PROCESSING_REACTION_TYPE"
       | "FEISHU_STEERING_REACTION_TYPE"
@@ -54,6 +59,7 @@ export function createRuntimeConfigStore(
   let groupChatAllowlist = normalizeStringList(config.FEISHU_GROUP_CHAT_ALLOWLIST ?? []);
   let groupMessageMode: GroupMessageMode = config.FEISHU_GROUP_MESSAGE_MODE ?? "mention";
   let groupMessageKeywords = normalizeStringList(config.FEISHU_GROUP_MESSAGE_KEYWORDS ?? []);
+  let groupUnmatchedMessagePolicy: GroupUnmatchedMessagePolicy = config.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY ?? "ignore";
   const groupBotOpenId = config.FEISHU_BOT_OPEN_ID;
   const defaultProcessingReactionType = config.FEISHU_PROCESSING_REACTION_TYPE;
   const steeringReactionType = config.FEISHU_STEERING_REACTION_TYPE;
@@ -107,12 +113,21 @@ export function createRuntimeConfigStore(
     groupMessageKeywords = normalizeStringList(keywords);
   }
 
+  function getGroupUnmatchedMessagePolicy(): GroupUnmatchedMessagePolicy {
+    return groupUnmatchedMessagePolicy;
+  }
+
+  function setGroupUnmatchedMessagePolicy(policy: GroupUnmatchedMessagePolicy): void {
+    groupUnmatchedMessagePolicy = policy === "capture" ? "capture" : "ignore";
+  }
+
   function getGroupRoutingConfig(): Pick<
     Config,
     | "FEISHU_GROUP_CHAT_POLICY"
     | "FEISHU_GROUP_CHAT_ALLOWLIST"
     | "FEISHU_GROUP_MESSAGE_MODE"
     | "FEISHU_GROUP_MESSAGE_KEYWORDS"
+    | "FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"
     | "FEISHU_BOT_OPEN_ID"
   > {
     return {
@@ -120,6 +135,7 @@ export function createRuntimeConfigStore(
       FEISHU_GROUP_CHAT_ALLOWLIST: getGroupChatAllowlist(),
       FEISHU_GROUP_MESSAGE_MODE: groupMessageMode,
       FEISHU_GROUP_MESSAGE_KEYWORDS: getGroupMessageKeywords(),
+      FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: getGroupUnmatchedMessagePolicy(),
       FEISHU_BOT_OPEN_ID: groupBotOpenId,
     };
   }
@@ -157,6 +173,8 @@ export function createRuntimeConfigStore(
     setGroupMessageMode,
     getGroupMessageKeywords,
     setGroupMessageKeywords,
+    getGroupUnmatchedMessagePolicy,
+    setGroupUnmatchedMessagePolicy,
     getGroupRoutingConfig,
     getProcessingReactionType,
     getSteeringReactionType,

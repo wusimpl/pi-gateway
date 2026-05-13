@@ -223,7 +223,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       }
 
       const promptIdentity = await enrichGroupSenderIdentity(identity, conversationTarget);
-      const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
+      const messageWithSenderNames = await enrichUnmatchedContextSenderIdentities(message, conversationTarget);
+      const enrichedMessage = await attachQuotedMessage(messageWithSenderNames, quotedMessageStore, readQuotedMessage);
       const routingLogContext = {
         openId,
         conversationKey,
@@ -360,7 +361,8 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     let promptText: string;
     try {
       const promptIdentity = await enrichGroupSenderIdentity(identity, conversationTarget);
-      const enrichedMessage = await attachQuotedMessage(message, quotedMessageStore, readQuotedMessage);
+      const messageWithSenderNames = await enrichUnmatchedContextSenderIdentities(message, conversationTarget);
+      const enrichedMessage = await attachQuotedMessage(messageWithSenderNames, quotedMessageStore, readQuotedMessage);
       const promptInput = addConversationPromptContext(
         await preparePromptInput(enrichedMessage, piSession, buildPromptPreparationOptions(identity, conversationTarget), {
           downloadResource: deps.downloadResource,
@@ -444,6 +446,24 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
     }
   }
 
+  async function enrichUnmatchedContextSenderIdentities(
+    message: FeishuInboundMessage,
+    conversationTarget?: ConversationTarget,
+  ): Promise<FeishuInboundMessage> {
+    const context = message.unmatchedContext;
+    if (!context?.length || !conversationTarget || conversationTarget.kind === "p2p") {
+      return message;
+    }
+
+    const enrichedContext = await Promise.all(
+      context.map(async (item) => ({
+        ...item,
+        identity: await enrichGroupSenderIdentity(item.identity, conversationTarget),
+      })),
+    );
+    return { ...message, unmatchedContext: enrichedContext };
+  }
+
   return {
     handleUserPrompt,
     queueRunningPrompt,
@@ -486,6 +506,7 @@ function summarizeRoutingMessage(message: FeishuInboundMessage): Record<string, 
     hasFile: message.kind === "file",
     hasAudio: message.kind === "audio",
     hasQuotedMessage: Boolean(message.quotedMessage),
+    unmatchedContextCount: message.unmatchedContext?.length ?? 0,
   };
 }
 

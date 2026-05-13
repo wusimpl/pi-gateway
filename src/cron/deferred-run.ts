@@ -3,7 +3,7 @@ import type { FeishuMessenger } from "../feishu/send.js";
 import type { RuntimeStateStore } from "../app/state.js";
 import type { CronService } from "./service.js";
 import type { CronJob, CronManualRunResult, CronScopeInput, CronScopeSelector } from "./types.js";
-import { resolveCronScopeInput } from "./scope.js";
+import { getCronRuntimeLockKey, resolveCronScopeInput } from "./scope.js";
 import { formatCronResultMessage } from "./result-message.js";
 
 export interface DeferredCronRunService {
@@ -64,7 +64,8 @@ export function createDeferredCronRunService(
 
     flushingScopeKeys.add(scopeKey);
     try {
-      while (!deps.runtimeState.isLocked(scopeKey)) {
+      const lockKey = getCronRuntimeLockKey(scopeKey);
+      while (!deps.runtimeState.isLocked(lockKey)) {
         const queuedJob = shiftPendingRun(scopeKey);
         if (!queuedJob) {
           break;

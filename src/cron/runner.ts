@@ -17,6 +17,7 @@ import {
   formatCronResultHeader,
   formatCronResultMessage,
 } from "./result-message.js";
+import { getCronRuntimeLockKey } from "./scope.js";
 import type { CronJob, CronJobRunResult } from "./types.js";
 
 export interface CronRunner {
@@ -49,18 +50,20 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
     const syntheticMessageId = `${createSyntheticMessageIdPrefix(job.id)}${startedAtMs}`;
     const openId = job.openId;
     const scopeKey = job.scopeKey?.trim() || job.conversationTarget?.key.trim() || openId;
+    const lockKey = getCronRuntimeLockKey(scopeKey);
     const conversationTarget = job.conversationTarget?.kind === "p2p" ? undefined : job.conversationTarget;
 
-    if (!deps.runtimeState.acquireLock(scopeKey, syntheticMessageId)) {
-      logger.info("cron 任务因当前会话仍有运行中任务而顺延", {
+    if (!deps.runtimeState.acquireLock(lockKey, syntheticMessageId)) {
+      logger.info("cron 任务因同 scope 定时任务仍在运行而顺延", {
         openId,
         scopeKey,
+        lockKey,
         jobId: job.id,
       });
       return {
         jobId: job.id,
         status: "busy",
-        error: "当前会话还有任务在跑",
+        error: "当前会话还有定时任务在跑",
       };
     }
 
@@ -80,7 +83,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
 
       session = await deps.runtime.createPiSession(workspaceDir, sessionDir);
       const stoppedBeforePrompt = await deps.runtimeState.setAbortHandler(
-        scopeKey,
+        lockKey,
         syntheticMessageId,
         async () => {
           await session?.abort();
@@ -104,7 +107,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
           text: buildCronPrompt(job),
           displayHeaderText: formatCronResultHeader(job, startedAtMs, deps.config.CRON_DEFAULT_TZ),
           footerLabel: CRON_RESULT_FOOTER_LABEL,
-          includeFooter: false,
+          includeFooter: true,
         },
         openId,
         syntheticMessageId,
@@ -113,7 +116,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
         deps.config.TEXT_CHUNK_LIMIT,
         false,
         deps.config.CRON_JOB_TIMEOUT_MS,
-        () => deps.runtimeState.isStopRequested(scopeKey, syntheticMessageId),
+        () => deps.runtimeState.isStopRequested(lockKey, syntheticMessageId),
         conversationTarget,
       );
 
@@ -152,6 +155,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       logger.error("cron 任务执行失败", {
         openId,
         scopeKey,
+        lockKey,
         jobId: job.id,
         error: message,
       });
@@ -175,14 +179,14 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       } catch {
         // ignore
       }
-      deps.runtimeState.releaseLock(scopeKey);
+      deps.runtimeState.releaseLock(lockKey);
       await deps.deferredCronRunService?.flush(scopeKey);
     }
   }
 
   async function stop(job: CronJob): Promise<StopRequestResult> {
     const scopeKey = job.scopeKey?.trim() || job.conversationTarget?.key.trim() || job.openId;
-    return deps.runtimeState.requestStop(scopeKey, createSyntheticMessageIdPrefix(job.id));
+    return deps.runtimeState.requestStop(getCronRuntimeLockKey(scopeKey), createSyntheticMessageIdPrefix(job.id));
   }
 
   return {

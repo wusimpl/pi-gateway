@@ -21,6 +21,7 @@ interface FeishuInboundMessageBase {
   parentMessageId?: string;
   threadId?: string;
   quotedMessage?: FeishuQuotedMessage;
+  unmatchedContext?: FeishuInboundMessage[];
   createTime: string;
   rawContent: string;
 }

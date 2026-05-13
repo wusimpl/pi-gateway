@@ -180,12 +180,14 @@ describe("group settings persistence", () => {
       "👥 群聊设置\n" +
         "群聊开关：allowlist\n" +
         "触发方式：keyword\n" +
+        "未触发消息：ignore\n" +
         "白名单：1 个\n" +
         "关键词：pi\n" +
         "当前群：oc_1（已在白名单）\n" +
         "\n" +
         "查看白名单：/group allowlist show\n" +
-        "查看关键词：/group keywords show",
+        "查看关键词：/group keywords show\n" +
+        "设置未触发消息：/group unmatched capture|ignore",
       2000,
     );
     expect(second.messenger.sendRenderedMessageToTarget).toHaveBeenNthCalledWith(
@@ -194,12 +196,14 @@ describe("group settings persistence", () => {
       "👥 群聊设置\n" +
         "群聊开关：disabled\n" +
         "触发方式：mention\n" +
+        "未触发消息：ignore\n" +
         "白名单：0 个\n" +
         "关键词：（无）\n" +
         "当前群：oc_2（未在白名单）\n" +
         "\n" +
         "查看白名单：/group allowlist show\n" +
-        "查看关键词：/group keywords show",
+        "查看关键词：/group keywords show\n" +
+        "设置未触发消息：/group unmatched capture|ignore",
       2000,
     );
   });

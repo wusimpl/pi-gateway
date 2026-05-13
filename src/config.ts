@@ -20,6 +20,7 @@ const envSchema = z.object({
   FEISHU_GROUP_CHAT_ALLOWLIST: z.string().default("").transform(parseCommaSeparatedList),
   FEISHU_GROUP_MESSAGE_MODE: z.enum(["mention", "all", "keyword"]).default("mention"),
   FEISHU_GROUP_MESSAGE_KEYWORDS: z.string().default("").transform(parseWhitespaceSeparatedList),
+  FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: z.enum(["ignore", "capture"]).default("ignore"),
   FEISHU_BOT_OPEN_ID: z.string().default("").transform((value) => value.trim() || undefined),
   FEISHU_OWNER_OPEN_IDS: z.string().default("").transform(parseCommaSeparatedList),
   DATA_DIR: z.string().default("./data"),

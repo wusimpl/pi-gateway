@@ -21,6 +21,7 @@ import {
 import type { SkillStatsStore } from "../pi/skill-stats.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { GroupSettingsStore, PersistedGroupRoutingConfig } from "../storage/group-settings.js";
+import type { GroupUnmatchedMessageStore } from "../storage/group-unmatched-messages.js";
 import type { UserStateStore } from "../storage/users.js";
 import type { ModelPreference, ModelRouteSlot, ThinkingLevel, ToolCallsDisplayMode, UserIdentity, UserState } from "../types.js";
 import { handleBridgeCommand, formatUnsupportedSlashCommand, type BridgeCommand } from "./commands.js";
@@ -37,6 +38,7 @@ import type { CronScopeSelector } from "../cron/types.js";
 import {
   createCronScopeSelector,
   getCronConversationTargetForStorage,
+  getCronRuntimeLockKey,
 } from "../cron/scope.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
 import {
@@ -102,6 +104,7 @@ interface CommandServiceDeps {
   deferredCronRunService?: Pick<DeferredCronRunService, "queueRun">;
   skillStatsStore?: Pick<SkillStatsStore, "listSkillUsage" | "reset">;
   groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig" | "writeGroupRoutingConfig">;
+  groupUnmatchedMessageStore?: Pick<GroupUnmatchedMessageStore, "clear" | "count">;
   runtimeConfig?: Pick<
     RuntimeConfigStore,
     | "getAudioTranscribeProvider"
@@ -117,6 +120,8 @@ interface CommandServiceDeps {
     | "setGroupMessageMode"
     | "getGroupMessageKeywords"
     | "setGroupMessageKeywords"
+    | "getGroupUnmatchedMessagePolicy"
+    | "setGroupUnmatchedMessagePolicy"
     | "enableProcessingReaction"
     | "disableProcessingReaction"
   >;
@@ -249,6 +254,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         FEISHU_GROUP_CHAT_ALLOWLIST: [...config.FEISHU_GROUP_CHAT_ALLOWLIST],
         FEISHU_GROUP_MESSAGE_MODE: config.FEISHU_GROUP_MESSAGE_MODE,
         FEISHU_GROUP_MESSAGE_KEYWORDS: [...config.FEISHU_GROUP_MESSAGE_KEYWORDS],
+        FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: config.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY,
       };
     }
 
@@ -257,6 +263,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "mention",
       FEISHU_GROUP_MESSAGE_KEYWORDS: [],
+      FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: "ignore",
     };
   }
 
@@ -275,6 +282,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       FEISHU_GROUP_CHAT_ALLOWLIST: runtimeConfig.getGroupChatAllowlist(),
       FEISHU_GROUP_MESSAGE_MODE: runtimeConfig.getGroupMessageMode(),
       FEISHU_GROUP_MESSAGE_KEYWORDS: runtimeConfig.getGroupMessageKeywords(),
+      FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: runtimeConfig.getGroupUnmatchedMessagePolicy(),
     };
   }
 
@@ -295,6 +303,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     deps.runtimeConfig.setGroupChatAllowlist(config.FEISHU_GROUP_CHAT_ALLOWLIST);
     deps.runtimeConfig.setGroupMessageMode(config.FEISHU_GROUP_MESSAGE_MODE);
     deps.runtimeConfig.setGroupMessageKeywords(config.FEISHU_GROUP_MESSAGE_KEYWORDS);
+    deps.runtimeConfig.setGroupUnmatchedMessagePolicy(config.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY);
   }
 
   async function handleBridgeCommandFlow(
@@ -703,7 +712,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
   ): Promise<void> {
     const openId = identity.openId;
     const cronScope = getCronScope(identity, conversationTarget);
-    const cronScopeKey = cronScope.scopeKey;
+    const cronLockKey = getCronRuntimeLockKey(cronScope.scopeKey);
     const cronService = deps.cronService;
     if (!cronService?.isEnabled()) {
       await sendTextReply(identity, conversationTarget, "当前网关没有开启定时任务。");
@@ -762,7 +771,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           await sendCommandReply(identity, conversationTarget, formatCronJobRemoved(removed));
         } catch (error) {
           if ((error instanceof Error ? error.message : String(error)) === "CRON_JOB_RUNNING") {
-            await sendTextReply(identity, conversationTarget, "这个定时任务正在执行，先用 /stop 停掉再删。");
+            await sendTextReply(identity, conversationTarget, "这个定时任务正在执行，先用 /cron stop <jobId> 停掉再删。");
             return;
           }
           throw error;
@@ -805,7 +814,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       case "run": {
         try {
           const result =
-            deps.runtimeState.isLocked(cronScopeKey) && deps.deferredCronRunService
+            deps.runtimeState.isLocked(cronLockKey) && deps.deferredCronRunService
               ? await deps.deferredCronRunService.queueRun(cronScope, parsed.command.jobId)
               : await cronService.runJobNow(cronScope, parsed.command.jobId);
           await sendCommandReply(identity, conversationTarget, formatCronJobRunResult(result, defaultTz));
@@ -1016,12 +1025,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         identity,
         conversationTarget,
         formatGroupSettingsReply(
-          {
-            policy: settings.FEISHU_GROUP_CHAT_POLICY,
-            mode: settings.FEISHU_GROUP_MESSAGE_MODE,
-            allowlist: settings.FEISHU_GROUP_CHAT_ALLOWLIST,
-            keywords: settings.FEISHU_GROUP_MESSAGE_KEYWORDS,
-          },
+          formatGroupSettingsForReply(settings),
           currentChatId,
           undefined,
           groupScopedSettings,
@@ -1037,12 +1041,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         identity,
         conversationTarget,
         formatGroupSettingsReply(
-          {
-            policy: settings.FEISHU_GROUP_CHAT_POLICY,
-            mode: settings.FEISHU_GROUP_MESSAGE_MODE,
-            allowlist: settings.FEISHU_GROUP_CHAT_ALLOWLIST,
-            keywords: settings.FEISHU_GROUP_MESSAGE_KEYWORDS,
-          },
+          formatGroupSettingsForReply(settings),
           currentChatId,
           `✅ 已切换群聊开关：${parsed.policy}`,
           groupScopedSettings,
@@ -1058,14 +1057,30 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         identity,
         conversationTarget,
         formatGroupSettingsReply(
-          {
-            policy: settings.FEISHU_GROUP_CHAT_POLICY,
-            mode: settings.FEISHU_GROUP_MESSAGE_MODE,
-            allowlist: settings.FEISHU_GROUP_CHAT_ALLOWLIST,
-            keywords: settings.FEISHU_GROUP_MESSAGE_KEYWORDS,
-          },
+          formatGroupSettingsForReply(settings),
           currentChatId,
           `✅ 已切换群消息触发方式：${parsed.mode}`,
+          groupScopedSettings,
+        ),
+      );
+      return;
+    }
+
+    if (parsed.kind === "set-unmatched") {
+      settings.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY = parsed.policy;
+      await writeEffectiveGroupRoutingConfig(currentChatId, settings);
+      if (parsed.policy === "ignore" && currentChatId) {
+        await deps.groupUnmatchedMessageStore?.clear(currentChatId);
+      }
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupSettingsReply(
+          formatGroupSettingsForReply(settings),
+          currentChatId,
+          parsed.policy === "capture"
+            ? "✅ 已开启未触发群消息暂存。"
+            : "✅ 已关闭未触发群消息暂存，未 @/未命中关键词的消息会按现有逻辑忽略。",
           groupScopedSettings,
         ),
       );
@@ -1113,6 +1128,26 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         conversationTarget,
         formatGroupAllowlistReply(settings.FEISHU_GROUP_CHAT_ALLOWLIST, currentChatId, summary, groupScopedSettings),
       );
+      return;
+    }
+
+    if (parsed.kind === "show-unmatched") {
+      const count = currentChatId
+        ? await deps.groupUnmatchedMessageStore?.count(currentChatId) ?? 0
+        : 0;
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        `未触发消息：${settings.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY}\n已暂存：${count} 条\n\n设置：/group unmatched capture|ignore`,
+      );
+      return;
+    }
+
+    if (parsed.kind === "clear-unmatched") {
+      if (currentChatId) {
+        await deps.groupUnmatchedMessageStore?.clear(currentChatId);
+      }
+      await sendCommandReply(identity, conversationTarget, "✅ 已清空暂存的未触发群消息。");
       return;
     }
 
@@ -1450,11 +1485,15 @@ function formatToolsActionReply(
 
 type GroupChatPolicy = Config["FEISHU_GROUP_CHAT_POLICY"];
 type GroupMessageMode = Config["FEISHU_GROUP_MESSAGE_MODE"];
+type GroupUnmatchedMessagePolicy = Config["FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"];
 
 type ParsedGroupCommand =
   | { kind: "show"; error?: undefined }
   | { kind: "set-policy"; policy: GroupChatPolicy; error?: undefined }
   | { kind: "set-mode"; mode: GroupMessageMode; error?: undefined }
+  | { kind: "set-unmatched"; policy: GroupUnmatchedMessagePolicy; error?: undefined }
+  | { kind: "show-unmatched"; error?: undefined }
+  | { kind: "clear-unmatched"; error?: undefined }
   | { kind: "show-allowlist"; error?: undefined }
   | { kind: "edit-allowlist"; action: "add" | "remove"; targets: string[]; error?: undefined }
   | { kind: "show-keywords"; error?: undefined }
@@ -1482,6 +1521,22 @@ function parseGroupArgs(args: string, groupScoped = false): ParsedGroupCommand {
       kind: "set-mode",
       mode: modeMatched[1]!.toLowerCase() as GroupMessageMode,
     };
+  }
+
+  const unmatchedMatched = trimmed.match(/^unmatched\s+(capture|ignore)$/i);
+  if (unmatchedMatched) {
+    return {
+      kind: "set-unmatched",
+      policy: unmatchedMatched[1]!.toLowerCase() as GroupUnmatchedMessagePolicy,
+    };
+  }
+
+  if (/^unmatched\s+show$/i.test(trimmed)) {
+    return { kind: "show-unmatched" };
+  }
+
+  if (/^unmatched\s+clear$/i.test(trimmed)) {
+    return { kind: "clear-unmatched" };
   }
 
   if (/^allowlist\s+show$/i.test(trimmed)) {
@@ -1546,6 +1601,9 @@ function formatGroupUsage(groupScoped = false): string {
     "用法：/group",
     "/group policy disabled|allowlist|open",
     "/group mode mention|all|keyword",
+    "/group unmatched capture|ignore",
+    "/group unmatched show",
+    "/group unmatched clear",
     "/group allowlist show",
     groupScoped ? "/group allowlist add here" : "/group allowlist add here|<chat_id...>",
     groupScoped ? "/group allowlist remove here" : "/group allowlist remove here|<chat_id...>",
@@ -1603,12 +1661,29 @@ function resolveGroupAllowlistTargets(
   };
 }
 
+function formatGroupSettingsForReply(settings: PersistedGroupRoutingConfig): {
+  policy: GroupChatPolicy;
+  mode: GroupMessageMode;
+  allowlist: string[];
+  keywords: string[];
+  unmatchedPolicy: GroupUnmatchedMessagePolicy;
+} {
+  return {
+    policy: settings.FEISHU_GROUP_CHAT_POLICY,
+    mode: settings.FEISHU_GROUP_MESSAGE_MODE,
+    allowlist: settings.FEISHU_GROUP_CHAT_ALLOWLIST,
+    keywords: settings.FEISHU_GROUP_MESSAGE_KEYWORDS,
+    unmatchedPolicy: settings.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY,
+  };
+}
+
 function formatGroupSettingsReply(
   settings: {
     policy: GroupChatPolicy;
     mode: GroupMessageMode;
     allowlist: string[];
     keywords: string[];
+    unmatchedPolicy: GroupUnmatchedMessagePolicy;
   },
   currentChatId?: string,
   summary?: string,
@@ -1623,6 +1698,7 @@ function formatGroupSettingsReply(
     "👥 群聊设置",
     `群聊开关：${settings.policy}`,
     `触发方式：${settings.mode}`,
+    `未触发消息：${settings.unmatchedPolicy}`,
     `白名单：${settings.allowlist.length} 个`,
     `关键词：${settings.keywords.length > 0 ? settings.keywords.map(formatGroupKeywordForDisplay).join(" ") : "（无）"}`,
   );
@@ -1641,6 +1717,7 @@ function formatGroupSettingsReply(
     "",
     "查看白名单：/group allowlist show",
     "查看关键词：/group keywords show",
+    "设置未触发消息：/group unmatched capture|ignore",
   );
   return lines.join("\n");
 }
@@ -1700,6 +1777,7 @@ function formatGroupSettingsWarning(settings: {
   mode: GroupMessageMode;
   allowlist: string[];
   keywords: string[];
+  unmatchedPolicy: GroupUnmatchedMessagePolicy;
 }): string | undefined {
   if (settings.policy === "allowlist" && settings.allowlist.length === 0) {
     return "提醒：当前是 allowlist，但白名单还是空的，群消息会继续被忽略。";
@@ -1707,6 +1785,10 @@ function formatGroupSettingsWarning(settings: {
 
   if (settings.mode === "keyword" && settings.keywords.length === 0) {
     return "提醒：还没设置关键词，普通消息不会触发；@ 机器人仍可使用。";
+  }
+
+  if (settings.policy === "open" && settings.unmatchedPolicy === "capture") {
+    return "提醒：未触发消息暂存只在 allowlist 群生效，open 模式下不会暂存。";
   }
 
   return undefined;

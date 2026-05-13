@@ -180,6 +180,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
       let flushedTools = "";
       let pendingTimer: NodeJS.Timeout | null = null;
       let pendingReplySeparator = "";
+      let separateNextAssistantText = false;
       let flushChain: Promise<void> = Promise.resolve();
       let reactionUpdateChain: Promise<void> = Promise.resolve();
       let streamingInitAttempted = false;
@@ -381,6 +382,11 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               if (pendingReplySeparator) {
                 fullText += pendingReplySeparator;
                 pendingReplySeparator = "";
+                separateNextAssistantText = false;
+              }
+              if (separateNextAssistantText) {
+                fullText = appendAssistantSegmentSeparator(fullText, event.assistantMessageEvent.delta);
+                separateNextAssistantText = false;
               }
               fullText += event.assistantMessageEvent.delta;
               queueStreamingFlush();
@@ -434,6 +440,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
             break;
           case "tool_execution_start":
             logger.debug("Pi tool_execution_start", { toolName: event.toolName });
+            if (hasVisibleAssistantText(fullText)) {
+              separateNextAssistantText = true;
+            }
             if (showToolCallsInReply) {
               toolCallMap.set(event.toolCallId, {
                 toolCallId: event.toolCallId,
@@ -462,6 +471,9 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               toolName: event.toolName,
               isError: event.isError,
             });
+            if (hasVisibleAssistantText(fullText)) {
+              separateNextAssistantText = true;
+            }
             if (showToolCallsInReply) {
               const toolCall = toolCallMap.get(event.toolCallId);
               if (toolCall) {
@@ -883,6 +895,33 @@ function appendToolCallsSection(text: string, toolsText: string): string {
 
 function appendDisplayedSections(text: string, preludeText: string, toolsText: string): string {
   return [text, preludeText, toolsText].filter((section) => Boolean(section)).join("\n\n");
+}
+
+function appendAssistantSegmentSeparator(text: string, nextDelta: string): string {
+  const normalizedText = text.replace(/[ \t]+$/, "");
+  if (!hasVisibleAssistantText(normalizedText) || !nextDelta) {
+    return text;
+  }
+
+  const missingLineBreaks = Math.max(
+    0,
+    2 - countTrailingLineBreaks(normalizedText) - countLeadingLineBreaks(nextDelta),
+  );
+  if (missingLineBreaks === 0) {
+    return normalizedText;
+  }
+
+  return `${normalizedText}${"\n".repeat(missingLineBreaks)}`;
+}
+
+function countTrailingLineBreaks(text: string): number {
+  const trailingLineBreaks = text.match(/(?:\r?\n)+$/)?.[0];
+  return trailingLineBreaks?.match(/\n/g)?.length ?? 0;
+}
+
+function countLeadingLineBreaks(text: string): number {
+  const leadingLineBreaks = text.match(/^(?:[ \t]*\r?\n)+/)?.[0];
+  return leadingLineBreaks?.match(/\n/g)?.length ?? 0;
 }
 
 function formatToolCallsSection(

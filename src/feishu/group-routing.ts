@@ -5,6 +5,7 @@ import { logger } from "../app/logger.js";
 
 export type FeishuGroupChatPolicy = "disabled" | "allowlist" | "open";
 export type FeishuGroupMessageMode = "mention" | "all" | "keyword";
+export type FeishuMessageRoutingDecision = "route" | "capture_unmatched" | "ignore";
 
 export type FeishuGroupRoutingConfig = Pick<
   Config,
@@ -12,6 +13,7 @@ export type FeishuGroupRoutingConfig = Pick<
   | "FEISHU_GROUP_CHAT_ALLOWLIST"
   | "FEISHU_GROUP_MESSAGE_MODE"
   | "FEISHU_GROUP_MESSAGE_KEYWORDS"
+  | "FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"
   | "FEISHU_BOT_OPEN_ID"
 >;
 
@@ -19,27 +21,34 @@ export function isSupportedFeishuMessage(
   event: FeishuMessageEvent,
   config: FeishuGroupRoutingConfig,
 ): boolean {
+  return getFeishuMessageRoutingDecision(event, config) === "route";
+}
+
+export function getFeishuMessageRoutingDecision(
+  event: FeishuMessageEvent,
+  config: FeishuGroupRoutingConfig,
+): FeishuMessageRoutingDecision {
   if (!isSupportedMessageType(event)) {
     logger.debug("忽略飞书事件：消息类型暂不支持", {
       chatType: event.message.chatType,
       messageType: event.message.messageType,
       supportedTypes: SUPPORTED_P2P_MESSAGE_TYPES,
     });
-    return false;
+    return "ignore";
   }
 
   if (event.message.chatType === "p2p") {
-    return true;
+    return "route";
   }
 
   if (event.message.chatType !== "group") {
     logger.debug("忽略飞书事件：聊天类型暂不支持", { chatType: event.message.chatType });
-    return false;
+    return "ignore";
   }
 
   if (config.FEISHU_GROUP_CHAT_POLICY === "disabled") {
     logger.debug("忽略飞书群消息：群聊功能未开启", { chatId: event.message.chatId });
-    return false;
+    return "ignore";
   }
 
   if (
@@ -47,54 +56,61 @@ export function isSupportedFeishuMessage(
     && !config.FEISHU_GROUP_CHAT_ALLOWLIST.includes(event.message.chatId)
   ) {
     logger.debug("忽略飞书群消息：群不在 allowlist", { chatId: event.message.chatId });
-    return false;
+    return "ignore";
   }
 
   if (config.FEISHU_GROUP_MESSAGE_MODE === "all") {
-    return true;
-  }
-
-  if (config.FEISHU_GROUP_MESSAGE_MODE === "keyword") {
-    const mentioned = isBotMentioned(event, config.FEISHU_BOT_OPEN_ID);
-    const matchedKeyword = containsConfiguredKeyword(event, config.FEISHU_GROUP_MESSAGE_KEYWORDS);
-    if (!mentioned && !matchedKeyword) {
-      logger.debug("忽略飞书群消息：keyword 模式下未 @ 机器人且未命中关键词", {
-        chatId: event.message.chatId,
-      });
-    }
-    return mentioned || matchedKeyword;
+    return "route";
   }
 
   const mentioned = isBotMentioned(event, config.FEISHU_BOT_OPEN_ID);
-  if (!mentioned) {
-    logger.debug("忽略飞书群消息：mention 模式下未 @ 机器人", { chatId: event.message.chatId });
+  if (config.FEISHU_GROUP_MESSAGE_MODE === "keyword") {
+    const matchedKeyword = containsConfiguredKeyword(event, config.FEISHU_GROUP_MESSAGE_KEYWORDS);
+    if (mentioned || matchedKeyword) {
+      return "route";
+    }
+
+    return getUnmatchedGroupMessageDecision(event, config, "keyword 模式下未 @ 机器人且未命中关键词");
   }
-  return mentioned;
+
+  if (mentioned) {
+    return "route";
+  }
+
+  return getUnmatchedGroupMessageDecision(event, config, "mention 模式下未 @ 机器人");
+}
+
+function getUnmatchedGroupMessageDecision(
+  event: FeishuMessageEvent,
+  config: FeishuGroupRoutingConfig,
+  reason: string,
+): FeishuMessageRoutingDecision {
+  if (
+    config.FEISHU_GROUP_CHAT_POLICY === "allowlist"
+    && config.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY === "capture"
+  ) {
+    logger.debug(`暂存飞书群消息：${reason}`, { chatId: event.message.chatId });
+    return "capture_unmatched";
+  }
+
+  logger.debug(`忽略飞书群消息：${reason}`, { chatId: event.message.chatId });
+  return "ignore";
 }
 
 export function isBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boolean {
   const normalizedBotOpenId = botOpenId?.trim();
-  const mentions = event.message.mentions ?? [];
-  if (normalizedBotOpenId) {
-    return mentions.some((mention) => mention.id.openId === normalizedBotOpenId);
+  if (!normalizedBotOpenId) {
+    return false;
   }
 
-  return mentions.length > 0 || containsAtToken(event.message.content);
+  const mentions = event.message.mentions ?? [];
+  return mentions.some((mention) => mention.id.openId === normalizedBotOpenId);
 }
 
 function isSupportedMessageType(event: FeishuMessageEvent): boolean {
   return SUPPORTED_P2P_MESSAGE_TYPES.includes(
     event.message.messageType as (typeof SUPPORTED_P2P_MESSAGE_TYPES)[number],
   );
-}
-
-function containsAtToken(content: string): boolean {
-  try {
-    const payload = JSON.parse(content) as unknown;
-    return collectStringValues(payload).some((value) => /<at\b|@_/.test(value));
-  } catch {
-    return /<at\b|@_/.test(content);
-  }
 }
 
 function containsConfiguredKeyword(event: FeishuMessageEvent, keywords: string[]): boolean {

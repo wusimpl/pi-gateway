@@ -81,12 +81,14 @@ describe("command service group", () => {
       "👥 群聊设置\n" +
         "群聊开关：allowlist\n" +
         "触发方式：keyword\n" +
+        "未触发消息：ignore\n" +
         "白名单：1 个\n" +
         "关键词：日报 Pi\n" +
         "当前群：oc_1（已在白名单）\n" +
         "\n" +
         "查看白名单：/group allowlist show\n" +
-        "查看关键词：/group keywords show",
+        "查看关键词：/group keywords show\n" +
+        "设置未触发消息：/group unmatched capture|ignore",
       2000,
     );
   });
@@ -149,6 +151,7 @@ describe("command service group", () => {
         "👥 群聊设置\n" +
         "群聊开关：allowlist\n" +
         "触发方式：keyword\n" +
+        "未触发消息：ignore\n" +
         "白名单：1 个\n" +
         "关键词：（无）\n" +
         "当前群：oc_1（已在白名单）\n" +
@@ -156,7 +159,8 @@ describe("command service group", () => {
         "提醒：还没设置关键词，普通消息不会触发；@ 机器人仍可使用。\n" +
         "\n" +
         "查看白名单：/group allowlist show\n" +
-        "查看关键词：/group keywords show",
+        "查看关键词：/group keywords show\n" +
+        "设置未触发消息：/group unmatched capture|ignore",
       2000,
     );
   });

@@ -11,6 +11,7 @@ import { createCronService, type CronService } from "./cron/service.js";
 import { createCronStore } from "./cron/store.js";
 import { ensureDir } from "./storage/files.js";
 import { createFeishuConnection } from "./feishu/client.js";
+import { resolveFeishuBotOpenId } from "./feishu/bot-info.js";
 import {
   createFeishuSenderNameResolver,
   type FeishuUserClient,
@@ -39,6 +40,7 @@ import { createPromptRunner } from "./pi/stream.js";
 import { setQuotedMessageDataDir } from "./storage/quoted-messages.js";
 import { createConversationStateStore } from "./storage/conversations.js";
 import { createGroupSettingsStore } from "./storage/group-settings.js";
+import { createGroupUnmatchedMessageStore } from "./storage/group-unmatched-messages.js";
 import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
 import { createRuntimeConfigStore } from "./app/runtime-config.js";
@@ -72,10 +74,10 @@ async function main() {
   logger.info("Workspace 根目录就绪", { workspaceRoot: config.PI_WORKSPACE_ROOT });
 
   const runtimeState = createRuntimeStateStore();
-  const runtimeConfig = createRuntimeConfigStore(config);
   const userStateStore = createUserStateStore(config.DATA_DIR);
   const conversationStateStore = createConversationStateStore(config.DATA_DIR);
   const groupSettingsStore = createGroupSettingsStore(config.DATA_DIR);
+  const groupUnmatchedMessageStore = createGroupUnmatchedMessageStore(config.DATA_DIR);
   const workspaceService = createWorkspaceService(config.PI_WORKSPACE_ROOT);
   const skillStatsStore = createSkillStatsStore(config.DATA_DIR);
 
@@ -87,6 +89,11 @@ async function main() {
     logger.error("飞书客户端初始化失败，请检查凭证配置", { error: String(err) });
     process.exit(1);
   }
+
+  if (!config.FEISHU_BOT_OPEN_ID) {
+    config.FEISHU_BOT_OPEN_ID = await resolveFeishuBotOpenId(feishuConnection.client);
+  }
+  const runtimeConfig = createRuntimeConfigStore(config);
 
   const feishuDocsService = createFeishuDocsService(
     feishuConnection.client as unknown as FeishuDocsClient,
@@ -191,6 +198,7 @@ async function main() {
     runtimeConfig,
     skillStatsStore,
     groupSettingsStore,
+    groupUnmatchedMessageStore,
   });
   const commandService = createCommandServiceWithMessenger(feishuMessenger);
   const promptService = createPromptService({
@@ -218,6 +226,7 @@ async function main() {
     promptService,
     config,
     groupSettingsStore,
+    groupUnmatchedMessageStore,
     runtimeConfig,
   });
   logger.info("消息路由就绪");

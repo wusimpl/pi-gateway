@@ -285,13 +285,18 @@ function buildRouterInput(message: FeishuInboundMessage): Record<string, unknown
     has_embedded_image: message.kind === "text" && Boolean(message.embeddedImages?.length),
     has_file: message.kind === "file",
     has_audio: message.kind === "audio",
+    unmatched_context_count: message.unmatchedContext?.length ?? 0,
     text: truncateText(message.kind === "text" ? message.text : "", ROUTER_TEXT_LIMIT),
     quoted_text: truncateText(message.quotedMessage?.text ?? "", ROUTER_QUOTED_TEXT_LIMIT),
   };
 }
 
 function messageHasImage(message: FeishuInboundMessage): boolean {
-  return message.kind === "image" || (message.kind === "text" && Boolean(message.embeddedImages?.length));
+  return message.kind === "image"
+    || (message.kind === "text" && Boolean(message.embeddedImages?.length))
+    || Boolean(message.unmatchedContext?.some((item) =>
+      item.kind === "image" || (item.kind === "text" && Boolean(item.embeddedImages?.length))
+    ));
 }
 
 function buildRoutingLogContext(message: FeishuInboundMessage): Record<string, unknown> {
@@ -302,6 +307,7 @@ function buildRoutingLogContext(message: FeishuInboundMessage): Record<string, u
     hasFile: message.kind === "file",
     hasAudio: message.kind === "audio",
     hasQuotedMessage: Boolean(message.quotedMessage),
+    unmatchedContextCount: message.unmatchedContext?.length ?? 0,
   };
 }
 

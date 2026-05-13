@@ -138,6 +138,31 @@ describe("isSupportedFeishuMessage", () => {
     }, baseConfig)).toBe(true);
   });
 
+  it("mention 模式不应把 @ 其他群成员当成 @ 机器人", () => {
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        content: '{"text":"@_user_1 笑死我了"}',
+        mentions: [{ key: "@_user_1", id: { openId: "ou_user_1" }, name: "wusimpl" }],
+      },
+    }, baseConfig)).toBe(false);
+  });
+
+  it("未配置机器人 open_id 时，不应把任意 @ 当成 @ 机器人", () => {
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        content: '{"text":"@_user_1 笑死我了"}',
+        mentions: [{ key: "@_user_1", id: { openId: "ou_user_1" }, name: "wusimpl" }],
+      },
+    }, {
+      ...baseConfig,
+      FEISHU_BOT_OPEN_ID: undefined,
+    })).toBe(false);
+  });
+
   it("all 模式应放行普通群消息", () => {
     expect(isSupportedFeishuMessage(baseEvent, {
       ...baseConfig,
@@ -212,6 +237,21 @@ describe("isSupportedFeishuMessage", () => {
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: [],
     })).toBe(true);
+  });
+
+  it("keyword 模式不应因 @ 其他群成员触发", () => {
+    expect(isSupportedFeishuMessage({
+      ...baseEvent,
+      message: {
+        ...baseEvent.message,
+        content: '{"text":"@_user_1 笑死我了 那太好了"}',
+        mentions: [{ key: "@_user_1", id: { openId: "ou_user_1" }, name: "wusimpl" }],
+      },
+    }, {
+      ...baseConfig,
+      FEISHU_GROUP_MESSAGE_MODE: "keyword",
+      FEISHU_GROUP_MESSAGE_KEYWORDS: [],
+    })).toBe(false);
   });
 });
 

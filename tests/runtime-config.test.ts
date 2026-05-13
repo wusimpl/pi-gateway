@@ -51,16 +51,19 @@ describe("createRuntimeConfigStore", () => {
     store.setGroupChatAllowlist(["oc_1", "oc_2", "oc_2"]);
     store.setGroupMessageMode("keyword");
     store.setGroupMessageKeywords(["日报", "日报", "小助手"]);
+    store.setGroupUnmatchedMessagePolicy("capture");
 
     expect(store.getGroupChatPolicy()).toBe("allowlist");
     expect(store.getGroupChatAllowlist()).toEqual(["oc_1", "oc_2"]);
     expect(store.getGroupMessageMode()).toBe("keyword");
     expect(store.getGroupMessageKeywords()).toEqual(["日报", "小助手"]);
+    expect(store.getGroupUnmatchedMessagePolicy()).toBe("capture");
     expect(store.getGroupRoutingConfig()).toEqual({
       FEISHU_GROUP_CHAT_POLICY: "allowlist",
       FEISHU_GROUP_CHAT_ALLOWLIST: ["oc_1", "oc_2"],
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: ["日报", "小助手"],
+      FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: "capture",
       FEISHU_BOT_OPEN_ID: "ou_bot_1",
     });
   });

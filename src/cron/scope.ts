@@ -21,6 +21,10 @@ export function createCronScopeSelector(
   };
 }
 
+export function getCronRuntimeLockKey(scopeKey: string): string {
+  return `cron:${scopeKey.trim()}`;
+}
+
 export function getCronScopeType(conversationTarget?: ConversationTarget): CronScopeType {
   if (!conversationTarget || conversationTarget.kind === "p2p") {
     return "dm";
