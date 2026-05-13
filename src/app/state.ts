@@ -20,6 +20,7 @@ export interface RuntimeStateStore {
     abortHandler: () => Promise<void>,
   ): Promise<boolean>;
   requestStop(openId: string, messageId?: string): Promise<StopRequestResult>;
+  waitForUnlock(openId: string, messageId?: string, timeoutMs?: number): Promise<boolean>;
   isStopRequested(openId: string, messageId?: string): boolean;
   isDuplicate(messageId: string): boolean;
   clearAllState(): void;
@@ -32,6 +33,7 @@ interface LockEntry {
   timer: NodeJS.Timeout;
   abortHandler?: () => Promise<void>;
   stopRequested: boolean;
+  releaseWaiters: Set<() => void>;
 }
 
 function triggerAbort(
@@ -65,6 +67,7 @@ export function createRuntimeStateStore(options?: {
     if (lock && Date.now() - lock.lockedAt > lockTimeoutMs) {
       clearTimeout(lock.timer);
       userLocks.delete(openId);
+      notifyReleaseWaiters(lock);
       logger.warn("运行锁已超时，强制释放", { openId, lockedAt: lock.lockedAt, messageId: lock.messageId });
     }
   }
@@ -101,6 +104,7 @@ export function createRuntimeStateStore(options?: {
       // 同时校验 messageId 和 lockedAt，防止旧定时器误删新锁
       if (lock && lock.messageId === messageId && lock.lockedAt === lockedAt) {
         userLocks.delete(openId);
+        notifyReleaseWaiters(lock);
         logger.warn("运行锁超时自动释放", { openId, messageId });
       }
     }, lockTimeoutMs);
@@ -111,6 +115,7 @@ export function createRuntimeStateStore(options?: {
       messageId,
       timer,
       stopRequested: false,
+      releaseWaiters: new Set(),
     });
     logger.debug("锁已获取", { openId, messageId });
     return true;
@@ -121,7 +126,16 @@ export function createRuntimeStateStore(options?: {
     if (lock) {
       clearTimeout(lock.timer);
       userLocks.delete(openId);
+      notifyReleaseWaiters(lock);
       logger.debug("锁已释放", { openId });
+    }
+  }
+
+  function notifyReleaseWaiters(lock: LockEntry): void {
+    const waiters = [...lock.releaseWaiters];
+    lock.releaseWaiters.clear();
+    for (const resolve of waiters) {
+      resolve();
     }
   }
 
@@ -216,6 +230,32 @@ export function createRuntimeStateStore(options?: {
     return "requested";
   }
 
+  async function waitForUnlock(openId: string, messageId?: string, timeoutMs?: number): Promise<boolean> {
+    cleanupExpiredLock(openId);
+    const lock = userLocks.get(openId);
+    if (!lock || !matchesStopMessageId(lock.messageId, messageId)) {
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      let timeout: NodeJS.Timeout | undefined;
+      const done = (released: boolean) => {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+        lock.releaseWaiters.delete(releasedWaiter);
+        resolve(released);
+      };
+      const releasedWaiter = () => done(true);
+      lock.releaseWaiters.add(releasedWaiter);
+
+      if (timeoutMs !== undefined && timeoutMs > 0) {
+        timeout = setTimeout(() => done(false), timeoutMs);
+        timeout.unref();
+      }
+    });
+  }
+
   function matchesStopMessageId(lockMessageId: string, requestedMessageId?: string): boolean {
     if (!requestedMessageId) {
       return true;
@@ -268,6 +308,7 @@ export function createRuntimeStateStore(options?: {
     isDraining,
     setAbortHandler,
     requestStop,
+    waitForUnlock,
     isStopRequested,
     isDuplicate,
     clearAllState,
@@ -314,6 +355,10 @@ export async function setAbortHandler(
 
 export async function requestStop(openId: string, messageId?: string): Promise<StopRequestResult> {
   return defaultRuntimeStateStore.requestStop(openId, messageId);
+}
+
+export async function waitForUnlock(openId: string, messageId?: string, timeoutMs?: number): Promise<boolean> {
+  return defaultRuntimeStateStore.waitForUnlock(openId, messageId, timeoutMs);
 }
 
 export function isStopRequested(openId: string, messageId?: string): boolean {

@@ -109,21 +109,25 @@ describe("handleFeishuMessage /stop", () => {
   });
 
   it("会中断当前正在执行的任务", async () => {
+    let markPromptStarted: (() => void) | undefined;
+    const promptStarted = new Promise<void>((resolve) => {
+      markPromptStarted = resolve;
+    });
     let resolvePrompt: ((value: { text: string; error?: string; aborted?: boolean }) => void) | undefined;
     const piSession = {
-      abort: vi.fn(async () => {
-        resolvePrompt?.({ text: "", error: undefined, aborted: true });
-      }),
+      abort: vi.fn().mockResolvedValue(undefined),
     };
     mocks.getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
       piSession,
     });
     mocks.promptSession.mockImplementation(
-      () =>
-        new Promise((resolve) => {
+      () => {
+        markPromptStarted?.();
+        return new Promise((resolve) => {
           resolvePrompt = resolve;
-        }),
+        });
+      },
     );
 
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
@@ -137,8 +141,7 @@ describe("handleFeishuMessage /stop", () => {
     });
 
     const firstCall = handleFeishuMessage({});
-    await Promise.resolve();
-    await Promise.resolve();
+    await promptStarted;
 
     mocks.parseMessageEvent.mockReturnValue({
       ...baseEvent,
@@ -154,8 +157,16 @@ describe("handleFeishuMessage /stop", () => {
       text: "/stop",
     });
 
-    await handleFeishuMessage({});
+    const stopCall = handleFeishuMessage({});
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(piSession.abort).toHaveBeenCalledTimes(1);
+    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
+
+    resolvePrompt?.({ text: "", error: undefined, aborted: true });
     await firstCall;
+    await stopCall;
 
     expect(piSession.abort).toHaveBeenCalledTimes(1);
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
@@ -174,6 +185,7 @@ describe("handleFeishuMessage /stop", () => {
 
     await handleFeishuMessage({});
 
-    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendTextMessage).toHaveBeenCalledWith("ou_1", "当前没有正在执行的任务。");
+    expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
   });
 });

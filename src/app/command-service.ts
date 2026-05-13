@@ -94,7 +94,7 @@ interface CommandServiceDeps {
   runtimeState: Pick<
     RuntimeStateStore,
     "isLocked" | "hasActiveLocks" | "beginRestartDrain" | "cancelRestartDrain" | "requestStop"
-  >;
+  > & Partial<Pick<RuntimeStateStore, "waitForUnlock">>;
   restartService: Pick<RestartService, "restartGateway">;
   listAvailableModels(): Promise<AvailableModelInfo[]>;
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
@@ -125,6 +125,7 @@ interface CommandServiceDeps {
 export function createCommandService(deps: CommandServiceDeps): CommandService {
   const SESSION_PAGE_SIZE = 20;
   const SKILL_STATS_PAGE_SIZE = 10;
+  const STOP_WAIT_TIMEOUT_MS = 30 * 1000;
 
   async function getActiveSession(identity: UserIdentity, conversationTarget?: ConversationTarget) {
     if (conversationTarget && conversationTarget.kind !== "p2p" && deps.sessionService.getOrCreateActiveSessionForTarget) {
@@ -488,7 +489,20 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     conversationTarget?: ConversationTarget,
   ): Promise<void> {
     const openId = identity.openId;
-    await deps.runtimeState.requestStop(conversationKey);
+    const result = await deps.runtimeState.requestStop(conversationKey);
+    if (result === "not_running") {
+      await sendTextReply(identity, conversationTarget, "当前没有正在执行的任务。");
+      return;
+    }
+
+    const stopped = deps.runtimeState.waitForUnlock
+      ? await deps.runtimeState.waitForUnlock(conversationKey, undefined, STOP_WAIT_TIMEOUT_MS)
+      : !deps.runtimeState.isLocked(conversationKey);
+    if (!stopped) {
+      await sendTextReply(identity, conversationTarget, "停止请求已发出，但任务还没完全结束，请稍后再试。");
+      return;
+    }
+
     const reply = handleBridgeCommand(command, { openId });
     await sendCommandReply(identity, conversationTarget, reply);
   }

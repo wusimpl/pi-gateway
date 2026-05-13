@@ -58,6 +58,7 @@ import {
   releaseLock,
   requestStop,
   setAbortHandler,
+  waitForUnlock,
   type RuntimeStateStore,
 } from "./state.js";
 
@@ -437,6 +438,7 @@ export function initRouter(cfg: Config): void {
       beginRestartDrain: () => beginRestartDrain(),
       cancelRestartDrain: () => cancelRestartDrain(),
       requestStop: (...args) => requestStop(...args),
+      waitForUnlock: (...args) => waitForUnlock(...args),
     },
     restartService: createRestartService(),
     listAvailableModels: () => listAvailableModels(),
