@@ -29,9 +29,9 @@ describe("parseBridgeCommand", () => {
     });
   });
 
-  it("should parse /models with provider filter", () => {
-    expect(parseBridgeCommand("/models zen2api")).toEqual({
-      name: "models",
+  it("should parse /model with provider filter", () => {
+    expect(parseBridgeCommand("/model zen2api")).toEqual({
+      name: "model",
       args: "zen2api",
     });
   });
@@ -149,6 +149,10 @@ describe("parseBridgeCommand", () => {
     expect(parseBridgeCommand("/unknown")).toBeNull();
   });
 
+  it("should return null for removed /models command", () => {
+    expect(parseBridgeCommand("/models zen2api")).toBeNull();
+  });
+
   it("should trim whitespace", () => {
     expect(parseBridgeCommand("  /new  ")).toEqual({ name: "new", args: "" });
   });
@@ -211,6 +215,10 @@ describe("handleBridgeCommand", () => {
     expect(
       handleBridgeCommand("model", {
         currentModel: "cpa/heavy",
+        availableModels: [
+          { order: 1, id: "router", label: "cpa/router", name: "router" },
+          { order: 2, id: "heavy", label: "cpa/heavy", name: "heavy" },
+        ],
         availableModelCount: 3,
         modelRouting: {
           enabled: true,
@@ -220,6 +228,22 @@ describe("handleBridgeCommand", () => {
         },
       }),
     ).toContain("router: cpa/router");
+  });
+
+  it("`/model <provider>` 应显示筛选后的可用模型", () => {
+    expect(
+      handleBridgeCommand({ name: "model", args: "zen2api" }, {
+        currentModel: "cpa/heavy",
+        requestedProvider: "zen2api",
+        availableModels: [
+          { order: 3, id: "light", label: "zen2api/light", name: "light" },
+        ],
+        modelRouting: {
+          enabled: false,
+          heavyModel: { provider: "cpa", id: "heavy" },
+        },
+      }),
+    ).toContain("zen2api/light");
   });
 
   it("`/route on` 应返回路由开关状态", () => {
@@ -385,5 +409,6 @@ describe("handleBridgeCommand", () => {
   it("未知斜杠命令应返回不支持提示", () => {
     expect(formatUnsupportedSlashCommand("/compact now")).toContain("暂不支持命令：/compact");
     expect(formatUnsupportedSlashCommand("/compact now")).toContain("当前支持：/new");
+    expect(formatUnsupportedSlashCommand("/compact now")).not.toContain("/models");
   });
 });

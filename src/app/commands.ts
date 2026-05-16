@@ -13,7 +13,6 @@ const BRIDGE_COMMANDS = [
   "context",
   "skills",
   "model",
-  "models",
   "route",
   "sessions",
   "resume",
@@ -166,7 +165,7 @@ export function handleBridgeCommand(
     }
     case "model": {
       const argText = normalized.args.trim().toLowerCase();
-      if (!argText || argText === "status") {
+      if (!argText || argText === "status" || context.availableModels) {
         return formatModelConfigReply(context);
       }
 
@@ -175,7 +174,7 @@ export function handleBridgeCommand(
       if (slot === "heavy" && context.previousModel && context.previousModel !== context.currentModel) {
         lines.push(`上一个模型: ${context.previousModel}`);
       }
-      lines.push("", "查看模型配置：/model", "查看可用模型：/models");
+      lines.push("", "查看模型配置和可用模型：/model");
       return lines.join("\n");
     }
     case "route": {
@@ -199,33 +198,6 @@ export function handleBridgeCommand(
       return formatContextReply(context.contextFiles ?? []);
     case "skills":
       return formatSkillsReply(context.skills ?? []);
-    case "models": {
-      const models = context.availableModels ?? [];
-      const provider = context.requestedProvider?.trim();
-
-      if (models.length === 0) {
-        if (provider) {
-          return `provider ${provider} 下面没有当前可用模型。\n\n用 /models 看全部当前可用模型。`;
-        }
-        return "当前环境里没有可用模型，请先检查 API Key 或 OAuth 配置。";
-      }
-
-      const lines = [
-        provider
-          ? `📚 当前可用模型（${provider}，${models.length} 个）`
-          : `📚 当前可用模型（${models.length} 个）`,
-        "只显示当前环境真的能用的模型。",
-        "序号跟总列表一致，可直接用 /model <序号> 切换。",
-        "",
-        ...models.map(formatAvailableModelLine),
-        "",
-        "切换：/model <序号> 或 /model <provider/model>",
-      ];
-      if (!provider) {
-        lines.push("按 provider 查看：/models <provider>");
-      }
-      return lines.join("\n");
-    }
     case "sessions":
       return formatSessionsReply(context.sessions ?? [], {
         page: context.sessionsPage ?? 1,
@@ -350,17 +322,41 @@ function formatModelConfigReply(context: BridgeCommandContext): string {
     "🤖 模型配置",
     ...formatModelRoutingLines(context.modelRouting, context.currentModel),
   ];
-  if (typeof context.availableModelCount === "number") {
+  if (context.availableModels) {
+    lines.push("", ...formatAvailableModelsLines(context));
+  } else if (typeof context.availableModelCount === "number") {
     lines.push(`✅ 当前可用模型: ${context.availableModelCount} 个`);
   }
   lines.push(
     "",
     "设置：/model router|light|heavy <序号或provider/model>",
-    "兼容：/model <序号或provider/model> 等价于 /model heavy <...>",
+    "切换主模型：/model <序号或provider/model>",
+    "按 provider 查看：/model <provider>",
     "路由：/route on 或 /route off",
-    "查看可用模型：/models",
   );
   return lines.join("\n");
+}
+
+function formatAvailableModelsLines(context: BridgeCommandContext): string[] {
+  const models = context.availableModels ?? [];
+  const provider = context.requestedProvider?.trim();
+
+  if (models.length === 0) {
+    if (provider) {
+      return [`provider ${provider} 下面没有当前可用模型。`];
+    }
+    return ["当前环境里没有可用模型，请先检查 API Key 或 OAuth 配置。"];
+  }
+
+  return [
+    provider
+      ? `📚 当前可用模型（${provider}，${models.length} 个）`
+      : `📚 当前可用模型（${models.length} 个）`,
+    "只显示当前环境真的能用的模型。",
+    "序号跟总列表一致，可直接用 /model <序号> 切换。",
+    "",
+    ...models.map(formatAvailableModelLine),
+  ];
 }
 
 function formatModelRoutingLines(modelRouting?: ModelRoutingConfig, currentModel?: string): string[] {

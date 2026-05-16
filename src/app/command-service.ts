@@ -345,15 +345,6 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           skills: getLoadedSkills(sessionState.piSession),
         });
         await sendCommandReply(identity, conversationTarget, reply);
-      } else if (command.name === "models") {
-        const availableModels = await deps.listAvailableModels();
-        const filteredModels = filterAvailableModels(availableModels, command.args);
-        const reply = handleBridgeCommand(command, {
-          openId,
-          requestedProvider: command.args,
-          availableModels: filteredModels,
-        });
-        await sendCommandReply(identity, conversationTarget, reply);
       } else if (command.name === "sessions") {
         const pageResult = parsePageArg(command.args, {
           commandName: "sessions",
@@ -560,6 +551,23 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         openId,
         currentModel: getCurrentModelLabel(sessionState.piSession),
         availableModelCount: availableModels.length,
+        availableModels,
+        modelRouting: getModelRoutingConfig(userState),
+      });
+      await sendCommandReply(identity, conversationTarget, reply);
+      return;
+    }
+
+    const providerFilter = parseModelProviderFilterArg(argText);
+    if (providerFilter) {
+      const sessionState = await getActiveSession(identity, conversationTarget);
+      const userState = await readTargetState(identity, conversationTarget);
+      const availableModels = await deps.listAvailableModels();
+      const reply = handleBridgeCommand(command, {
+        openId,
+        currentModel: getCurrentModelLabel(sessionState.piSession),
+        requestedProvider: providerFilter,
+        availableModels: filterAvailableModels(availableModels, providerFilter),
         modelRouting: getModelRoutingConfig(userState),
       });
       await sendCommandReply(identity, conversationTarget, reply);
@@ -587,7 +595,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       await sendTextReply(
         identity,
         conversationTarget,
-        "没找到这个模型，或者它现在还不能用。\n\n先用 /models 看编号，再用 /model router|light|heavy <序号或provider/model> 设置。",
+        "没找到这个模型，或者它现在还不能用。\n\n先用 /model 看编号，再用 /model router|light|heavy <序号或provider/model> 设置。",
       );
       return;
     }
@@ -1905,6 +1913,20 @@ function parseModelCommandArgs(
   }
 
   return { slot: "heavy", modelRef: args.trim() };
+}
+
+function parseModelProviderFilterArg(args: string): string | null {
+  const trimmed = args.trim();
+  if (!trimmed || trimmed.includes("/") || /^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length !== 1 || parseModelRouteSlot(parts[0] ?? "")) {
+    return null;
+  }
+
+  return parts[0] ?? null;
 }
 
 function getCurrentThinkingLevel(session: { thinkingLevel?: ThinkingLevel | undefined }): ThinkingLevel | undefined {

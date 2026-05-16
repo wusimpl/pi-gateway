@@ -111,38 +111,17 @@ describe("handleFeishuMessage 模型命令", () => {
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
-      rawContent: '{"text":"/models"}',
-      text: "/models",
+      rawContent: '{"text":"/model"}',
+      text: "/model",
     });
     mocks.sendRenderedMessage.mockResolvedValue(undefined);
     mocks.sendTextMessage.mockResolvedValue("om_reply");
     mocks.writeUserState.mockResolvedValue(undefined);
   });
 
-  it("`/models` 只返回当前可用模型", async () => {
-    mocks.normalizeFeishuInboundMessage.mockReturnValue({
-      kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
-      messageId: "om_1",
-      messageType: "text",
-      createTime: "123",
-      rawContent: '{"text":"/models"}',
-      text: "/models",
-    });
-    mocks.listAvailableModels.mockResolvedValue([
-      { order: 1, provider: "openai", id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
-      { order: 2, provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
-    ]);
-
-    await handleFeishuMessage({});
-
-    expect(mocks.listAvailableModels).toHaveBeenCalledTimes(1);
-    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it("`/model` 会返回当前模型和可用模型数量", async () => {
+  it("`/model` 返回当前模型配置和可用模型", async () => {
     const piSession = {
-      model: { provider: "zen2api", id: "minimax-m2.5-free" },
+      model: { provider: "openai", id: "gpt-4o" },
     };
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
@@ -152,6 +131,79 @@ describe("handleFeishuMessage 模型命令", () => {
       createTime: "123",
       rawContent: '{"text":"/model"}',
       text: "/model",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession,
+    });
+    mocks.listAvailableModels.mockResolvedValue([
+      { order: 1, provider: "openai", id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
+      { order: 2, provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
+    ]);
+
+    await handleFeishuMessage({});
+
+    expect(mocks.getOrCreateActiveSession).toHaveBeenCalledTimes(1);
+    expect(mocks.listAvailableModels).toHaveBeenCalledTimes(1);
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("`/model provider` 只列出这个 provider 的可用模型", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/model openai"}',
+      text: "/model openai",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession: { model: { provider: "openai", id: "gpt-4o" } },
+    });
+    mocks.listAvailableModels.mockResolvedValue([
+      { order: 1, provider: "openai", id: "gpt-4o", label: "openai/gpt-4o", name: "GPT-4o" },
+      { order: 2, provider: "rightcodes", id: "gpt-5.4-high", label: "rightcodes/gpt-5.4-high", name: "gpt5.4-high" },
+    ]);
+
+    await handleFeishuMessage({});
+
+    expect(mocks.listAvailableModels).toHaveBeenCalledTimes(1);
+    expect(mocks.findAvailableModel).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("`/models` 不再是桥接层命令", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/models"}',
+      text: "/models",
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.listAvailableModels).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendRenderedMessage.mock.calls[0]?.[1]).toContain("暂不支持命令：/models");
+  });
+
+  it("`/model status` 会返回当前模型配置和可用模型", async () => {
+    const piSession = {
+      model: { provider: "zen2api", id: "minimax-m2.5-free" },
+    };
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/model status"}',
+      text: "/model status",
     });
     mocks.getOrCreateActiveSession.mockResolvedValue({
       activeSessionId: "session_1",
@@ -334,7 +386,7 @@ describe("handleFeishuMessage 模型命令", () => {
     expect(mocks.getOrCreateActiveSession).not.toHaveBeenCalled();
   });
 
-  it("`/model 2` 会按 `/models` 序号设置重模型", async () => {
+  it("`/model 2` 会按 `/model` 里的序号设置重模型", async () => {
     const piSession = {
       model: { provider: "zen2api", id: "minimax-m2.5-free" },
       setModel: vi.fn(async (model: { provider: string; id: string }) => {
