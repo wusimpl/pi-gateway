@@ -611,7 +611,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
               });
               const assistantError = extractAssistantErrorMessage(event.message);
               if (assistantError) {
-                lastError = assistantError;
+                lastError = formatPromptErrorForUser(assistantError);
                 logger.warn("Pi message_end 返回失败消息", {
                   openId,
                   sourceMessageId,
@@ -644,7 +644,7 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
                 attempt: event.attempt,
               });
             } else if (event.finalError) {
-              lastError = event.finalError;
+              lastError = formatPromptErrorForUser(event.finalError);
               logger.warn("Pi prompt 自动重试结束，最终仍失败", {
                 openId,
                 sourceMessageId,
@@ -747,10 +747,11 @@ export function createPromptRunner(messenger: PromptMessenger): PromptRunner {
           abortedByUser = true;
           logger.info("Pi prompt 已按用户请求停止", getPromptDiagnostics());
         } else {
-          lastError = err instanceof Error ? err.message : String(err);
+          const rawError = err instanceof Error ? err.message : String(err);
+          lastError = formatPromptErrorForUser(rawError);
           logger.error("Pi prompt 执行失败", {
             ...getPromptDiagnostics(),
-            error: lastError,
+            error: rawError,
           });
         }
       } finally {
@@ -1139,6 +1140,14 @@ function extractAssistantErrorMessage(message: unknown): string | undefined {
   }
 
   return readStringField(record, "errorMessage") ?? "处理失败，请稍后重试";
+}
+
+function formatPromptErrorForUser(error: string): string {
+  if (/\bunexpected\s+EOF\b/i.test(error)) {
+    return "连接中断，请发送“继续”让我接着处理。";
+  }
+
+  return error;
 }
 
 function summarizeToolCallFromAssistantUpdate(

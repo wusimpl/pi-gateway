@@ -50,6 +50,18 @@ export interface CreatePiRuntimeOptions {
   gatewayAgentsFile?: string;
 }
 
+const retryClassifierPatchMarker = Symbol("piGatewayRetryClassifier");
+
+type RetryableMessage = {
+  stopReason?: unknown;
+  errorMessage?: unknown;
+};
+
+type RetryClassifierSession = {
+  _isRetryableError?: (message: RetryableMessage) => boolean;
+  [retryClassifierPatchMarker]?: true;
+};
+
 export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
@@ -92,6 +104,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
       sessionId: session.sessionId,
       sessionFile: session.sessionFile,
     });
+    installGatewayRetryClassifier(session);
     return session;
   }
 
@@ -118,6 +131,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
         sessionId: session.sessionId,
         sessionFile: session.sessionFile,
       });
+      installGatewayRetryClassifier(session);
       return { session, fallbackMessage: modelFallbackMessage };
     } catch (err) {
       logger.warn("Pi session 恢复失败，将创建新 session", { error: String(err) });
@@ -143,6 +157,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
       sessionId: session.sessionId,
       sessionFile: session.sessionFile,
     });
+    installGatewayRetryClassifier(session);
     return session;
   }
 
@@ -154,6 +169,26 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
     continueRecentPiSession,
     openPiSession,
   };
+}
+
+function installGatewayRetryClassifier(session: AgentSession): void {
+  const retrySession = session as unknown as RetryClassifierSession;
+  if (retrySession[retryClassifierPatchMarker] || typeof retrySession._isRetryableError !== "function") {
+    return;
+  }
+
+  const defaultClassifier = retrySession._isRetryableError.bind(session);
+  retrySession._isRetryableError = (message: RetryableMessage) =>
+    defaultClassifier(message) || isRetryableStreamInterruption(message);
+  retrySession[retryClassifierPatchMarker] = true;
+}
+
+function isRetryableStreamInterruption(message: RetryableMessage): boolean {
+  if (message.stopReason !== "error" || typeof message.errorMessage !== "string") {
+    return false;
+  }
+
+  return /\bunexpected\s+EOF\b/i.test(message.errorMessage);
 }
 
 function createAgentsFilesOverride(options: {

@@ -107,6 +107,29 @@ describe("pi runtime", () => {
     });
   });
 
+  it("创建 session 时会把 unexpected EOF 纳入自动重试判断", async () => {
+    const defaultRetryClassifier = vi.fn(() => false);
+    const session = {
+      sessionId: "session-1",
+      sessionFile: "/tmp/session-1.json",
+      _isRetryableError: defaultRetryClassifier,
+    };
+    mocks.createAgentSession.mockResolvedValueOnce({ session });
+    const runtime = createPiRuntime();
+
+    const created = await runtime.createPiSession("/tmp/workspace/ou_1", "/tmp/sessions/ou_1");
+
+    expect((created as any)._isRetryableError({
+      stopReason: "error",
+      errorMessage: "unexpected EOF",
+    })).toBe(true);
+    expect((created as any)._isRetryableError({
+      stopReason: "error",
+      errorMessage: "permission denied",
+    })).toBe(false);
+    expect(defaultRetryClassifier).toHaveBeenCalledTimes(2);
+  });
+
   it("开启 disableGlobalAgents 时会过滤全局 AGENTS.md 和 CLAUDE.md", async () => {
     const runtime = createPiRuntime({
       disableGlobalAgents: true,

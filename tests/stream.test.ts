@@ -1025,6 +1025,33 @@ describe("promptSession", () => {
     expect(mockSendRenderedMessage).toHaveBeenCalledWith("ou_1", "partial\n\n⚠️ 回复中断: boom", 2000);
   });
 
+  it("unexpected EOF 中断时，应显示可继续处理的提示", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([], async () => {
+      session.subscribeHandler?.({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "partial" },
+      });
+      throw new Error("unexpected EOF");
+    }) as any;
+
+    session.subscribe = (callback: (event: StreamEvent) => void) => {
+      (session as any).subscribeHandler = callback;
+      return () => {
+        (session as any).subscribeHandler = undefined;
+      };
+    };
+
+    const result = await promptSession(session, "hi", "ou_1", "om_source_1", undefined);
+
+    expect(result).toEqual({ text: "partial", error: "连接中断，请发送“继续”让我接着处理。" });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "partial\n\n⚠️ 回复中断: 连接中断，请发送“继续”让我接着处理。",
+      2000,
+    );
+  });
+
   it("用户主动停止时，不应再追加报错提示", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     let aborted = false;
