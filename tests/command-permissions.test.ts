@@ -29,9 +29,11 @@ describe("canRunBridgeCommand", () => {
     expect(canRunBridgeCommand(identity, { name: "tools", args: "reset" }, groupTarget, [])).toBe(false);
     expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "" }, groupTarget, [])).toBe(true);
     expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "on" }, groupTarget, [])).toBe(false);
+    expect(canRunBridgeCommand(identity, { name: "new", args: "" }, groupTarget, [])).toBe(true);
+    expect(canRunBridgeCommand(identity, { name: "stop", args: "" }, groupTarget, [])).toBe(true);
     expect(canRunBridgeCommand(identity, { name: "skills", args: "" }, groupTarget, [])).toBe(true);
     expect(canRunBridgeCommand(identity, { name: "status", args: "" }, groupTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "new", args: "" }, groupTarget, [])).toBe(false);
+    expect(canRunBridgeCommand(identity, { name: "restart", args: "" }, groupTarget, [])).toBe(false);
   });
 
   it("群聊 owner 可以执行 owner-only 命令", () => {

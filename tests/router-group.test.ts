@@ -216,7 +216,7 @@ describe("createMessageRouter 群聊入口", () => {
     );
   });
 
-  it("群聊普通成员只能执行公开命令", async () => {
+  it("群聊普通成员不能执行 owner-only 命令", async () => {
     const deps = createDeps({
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
@@ -230,8 +230,8 @@ describe("createMessageRouter 群聊入口", () => {
       messageId: "om_group_1",
       messageType: "text",
       createTime: "123",
-      rawContent: '{"text":"/new"}',
-      text: "/new",
+      rawContent: '{"text":"/restart"}',
+      text: "/restart",
     });
     const router = createMessageRouter(deps as any);
 
@@ -239,7 +239,7 @@ describe("createMessageRouter 群聊入口", () => {
 
     expect(deps.commandService.handleUnauthorizedBridgeCommand).toHaveBeenCalledWith(
       { openId: "ou_1", userId: "u_1" },
-      { name: "new", args: "" },
+      { name: "restart", args: "" },
       groupTarget,
     );
     expect(deps.commandService.handleBridgeCommand).not.toHaveBeenCalled();
@@ -274,7 +274,7 @@ describe("createMessageRouter 群聊入口", () => {
     expect(deps.commandService.handleUnauthorizedBridgeCommand).not.toHaveBeenCalled();
   });
 
-  it("群聊普通成员可以执行 /tools /skills /status", async () => {
+  it("群聊普通成员可以执行公开命令", async () => {
     const deps = createDeps({
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
@@ -283,7 +283,7 @@ describe("createMessageRouter 群聊入口", () => {
     });
     const router = createMessageRouter(deps as any);
 
-    for (const command of ["/tools", "/skills", "/status"]) {
+    for (const command of ["/new", "/stop", "/tools", "/skills", "/status"]) {
       deps.commandService.handleBridgeCommand.mockClear();
       deps.commandService.handleUnauthorizedBridgeCommand.mockClear();
       deps.normalizeFeishuInboundMessage.mockReturnValue({

@@ -2,7 +2,7 @@ import type { ConversationTarget } from "../conversation.js";
 import type { UserIdentity } from "../types.js";
 import type { BridgeCommand } from "./commands.js";
 
-const GROUP_PUBLIC_COMMANDS = new Set(["skills", "status", "model", "route"]);
+const GROUP_PUBLIC_COMMANDS = new Set(["new", "stop", "skills", "status", "model", "route"]);
 
 export function canRunBridgeCommand(
   identity: UserIdentity,
