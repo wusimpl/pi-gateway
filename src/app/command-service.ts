@@ -44,12 +44,13 @@ import {
 import type { RuntimeConfigStore } from "./runtime-config.js";
 import { isSuperAdminOpenId } from "./access-control.js";
 import { COMMAND_CATALOG, isCommandVisibleInTarget, type CommandCatalogItem } from "./command-service/catalog.js";
+import { createGroupCommandHandler } from "./command-service/group.js";
+import { dedupeToolNames } from "./command-service/helpers.js";
+import { createP2PCommandHandler } from "./command-service/p2p.js";
 import {
-  parseGroupArgs,
   parseModelCommandArgs,
   parseModelProviderFilterArg,
   parseOnOffArgs,
-  parseP2PArgs,
   parsePageArg,
   parseSettingsArgs,
   parseSkillFolderArgs,
@@ -60,13 +61,6 @@ import {
 import {
   appendRecentHistory,
   buildToolStatusList,
-  formatGroupAllowlistReply,
-  formatGroupKeywordForDisplay,
-  formatGroupKeywordsReply,
-  formatGroupSettingsForReply,
-  formatGroupSettingsReply,
-  formatP2PAllowlistReply,
-  formatP2PSettingsReply,
   formatToolsActionReply,
 } from "./command-service/replies.js";
 import {
@@ -381,6 +375,24 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     deps.runtimeConfig.setGroupMessageKeywords(config.FEISHU_GROUP_MESSAGE_KEYWORDS);
     deps.runtimeConfig.setGroupUnmatchedMessagePolicy(config.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY);
   }
+
+  const handleP2PCommand = createP2PCommandHandler({
+    readEffectiveP2PRoutingConfig,
+    writeEffectiveP2PRoutingConfig,
+    sendTextReply,
+    sendCommandReply,
+  });
+
+  const handleGroupCommand = createGroupCommandHandler({
+    isRuntimeConfigAvailable: () => Boolean(deps.runtimeConfig),
+    readEffectiveGlobalGroupRoutingConfig,
+    writeEffectiveGlobalGroupRoutingConfig,
+    readEffectiveGroupRoutingConfig,
+    writeEffectiveGroupRoutingConfig,
+    groupUnmatchedMessageStore: deps.groupUnmatchedMessageStore,
+    sendTextReply,
+    sendCommandReply,
+  });
 
   async function handleBridgeCommandFlow(
     identity: UserIdentity,
@@ -1097,273 +1109,6 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await sendCommandReply(identity, conversationTarget, `✅ 已开启处理中 reaction，表情继续使用 .env 里的 ${reactionType}。`);
   }
 
-  async function handleP2PCommand(
-    identity: UserIdentity,
-    command: BridgeCommand,
-    conversationTarget?: ConversationTarget,
-  ): Promise<void> {
-    if (conversationTarget && conversationTarget.kind !== "p2p") {
-      await sendTextReply(identity, conversationTarget, "请在私聊里使用 /p2p。");
-      return;
-    }
-
-    if (!isSuperAdminOpenId(identity.openId)) {
-      await sendTextReply(identity, conversationTarget, "这个命令只有 super admin 可以使用。");
-      return;
-    }
-
-    const parsed = parseP2PArgs(command.args);
-    if (parsed.error) {
-      await sendTextReply(identity, conversationTarget, parsed.error);
-      return;
-    }
-
-    const settings = await readEffectiveP2PRoutingConfig();
-    if (parsed.kind === "show") {
-      await sendCommandReply(identity, conversationTarget, formatP2PSettingsReply(settings));
-      return;
-    }
-
-    if (parsed.kind === "set-policy") {
-      settings.FEISHU_P2P_CHAT_POLICY = parsed.policy;
-      await writeEffectiveP2PRoutingConfig(settings);
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatP2PSettingsReply(settings, `✅ 已切换私聊策略：${parsed.policy}`),
-      );
-      return;
-    }
-
-    if (parsed.kind === "show-allowlist") {
-      await sendCommandReply(identity, conversationTarget, formatP2PAllowlistReply(settings.FEISHU_P2P_CHAT_ALLOWLIST));
-      return;
-    }
-
-    if (parsed.kind !== "edit-allowlist") {
-      await sendTextReply(identity, conversationTarget, "p2p 参数解析失败。");
-      return;
-    }
-
-    const openIds = dedupeToolNames(parsed.openIds);
-    const currentAllowlist = [...settings.FEISHU_P2P_CHAT_ALLOWLIST];
-    const currentAllowlistSet = new Set(currentAllowlist);
-    const changedOpenIds = parsed.action === "add"
-      ? openIds.filter((openId) => !currentAllowlistSet.has(openId))
-      : openIds.filter((openId) => currentAllowlistSet.has(openId));
-
-    if (parsed.action === "add") {
-      settings.FEISHU_P2P_CHAT_ALLOWLIST = dedupeToolNames([...currentAllowlist, ...openIds]);
-    } else {
-      const removedOpenIds = new Set(openIds);
-      settings.FEISHU_P2P_CHAT_ALLOWLIST = currentAllowlist.filter((openId) => !removedOpenIds.has(openId));
-    }
-    await writeEffectiveP2PRoutingConfig(settings);
-
-    const summary = changedOpenIds.length > 0
-      ? `✅ 已${parsed.action === "add" ? "加入" : "移出"}私聊白名单：${changedOpenIds.join(", ")}`
-      : parsed.action === "add"
-        ? `这些用户本来就在私聊白名单里：${openIds.join(", ")}`
-        : `这些用户本来就不在私聊白名单里：${openIds.join(", ")}`;
-    await sendCommandReply(
-      identity,
-      conversationTarget,
-      formatP2PAllowlistReply(settings.FEISHU_P2P_CHAT_ALLOWLIST, summary),
-    );
-  }
-
-  async function handleGroupCommand(
-    identity: UserIdentity,
-    command: BridgeCommand,
-    conversationTarget?: ConversationTarget,
-  ): Promise<void> {
-    if (!deps.runtimeConfig) {
-      await sendTextReply(identity, conversationTarget, "当前环境不支持这个命令。");
-      return;
-    }
-
-    const currentChatId = getCurrentGroupChatId(conversationTarget);
-    const parsed = parseGroupArgs(command.args, { allowAllowlist: !currentChatId });
-    if (parsed.error) {
-      await sendTextReply(identity, conversationTarget, parsed.error);
-      return;
-    }
-
-    if (parsed.kind === "show-allowlist") {
-      if (!isSuperAdminOpenId(identity.openId)) {
-        await sendTextReply(identity, conversationTarget, "这个命令只有 super admin 可以使用。");
-        return;
-      }
-
-      const settings = await readEffectiveGlobalGroupRoutingConfig();
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupAllowlistReply(settings.FEISHU_GROUP_CHAT_ALLOWLIST),
-      );
-      return;
-    }
-
-    if (parsed.kind === "edit-allowlist") {
-      if (!isSuperAdminOpenId(identity.openId)) {
-        await sendTextReply(identity, conversationTarget, "这个命令只有 super admin 可以使用。");
-        return;
-      }
-      if (parsed.targets.some((target) => target.toLowerCase() === "here")) {
-        await sendTextReply(identity, conversationTarget, "请填写群 chat_id，例如 /group allowlist add oc_xxx。");
-        return;
-      }
-
-      const settings = await readEffectiveGlobalGroupRoutingConfig();
-      const chatIds = dedupeToolNames(parsed.targets);
-      const currentAllowlist = [...settings.FEISHU_GROUP_CHAT_ALLOWLIST];
-      const currentAllowlistSet = new Set(currentAllowlist);
-      const changedChatIds = parsed.action === "add"
-        ? chatIds.filter((chatId) => !currentAllowlistSet.has(chatId))
-        : chatIds.filter((chatId) => currentAllowlistSet.has(chatId));
-
-      if (parsed.action === "add") {
-        settings.FEISHU_GROUP_CHAT_ALLOWLIST = dedupeToolNames([...currentAllowlist, ...chatIds]);
-      } else {
-        const removedChatIds = new Set(chatIds);
-        settings.FEISHU_GROUP_CHAT_ALLOWLIST = currentAllowlist.filter((chatId) => !removedChatIds.has(chatId));
-      }
-      await writeEffectiveGlobalGroupRoutingConfig(settings);
-
-      const summary = changedChatIds.length > 0
-        ? `✅ 已${parsed.action === "add" ? "加入" : "移出"}群白名单：${changedChatIds.join(", ")}`
-        : parsed.action === "add"
-          ? `这些群本来就在白名单里：${chatIds.join(", ")}`
-          : `这些群本来就不在白名单里：${chatIds.join(", ")}`;
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupAllowlistReply(settings.FEISHU_GROUP_CHAT_ALLOWLIST, summary),
-      );
-      return;
-    }
-
-    if (!currentChatId) {
-      await sendTextReply(identity, conversationTarget, "群聊设置请到目标群里使用；群白名单请用 /group allowlist show|add|remove。");
-      return;
-    }
-
-    const settings = await readEffectiveGroupRoutingConfig(currentChatId);
-    if (parsed.kind === "show") {
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupSettingsReply(
-          formatGroupSettingsForReply(settings),
-          currentChatId,
-          undefined,
-        ),
-      );
-      return;
-    }
-
-    if (parsed.kind === "set-policy") {
-      settings.FEISHU_GROUP_CHAT_POLICY = parsed.policy;
-      await writeEffectiveGroupRoutingConfig(currentChatId, settings);
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupSettingsReply(
-          formatGroupSettingsForReply(settings),
-          currentChatId,
-          `✅ 已切换群聊开关：${parsed.policy}`,
-        ),
-      );
-      return;
-    }
-
-    if (parsed.kind === "set-mode") {
-      settings.FEISHU_GROUP_MESSAGE_MODE = parsed.mode;
-      await writeEffectiveGroupRoutingConfig(currentChatId, settings);
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupSettingsReply(
-          formatGroupSettingsForReply(settings),
-          currentChatId,
-          `✅ 已切换群消息触发方式：${parsed.mode}`,
-        ),
-      );
-      return;
-    }
-
-    if (parsed.kind === "set-unmatched") {
-      settings.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY = parsed.policy;
-      await writeEffectiveGroupRoutingConfig(currentChatId, settings);
-      if (parsed.policy === "ignore" && currentChatId) {
-        await deps.groupUnmatchedMessageStore?.clear(currentChatId);
-      }
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupSettingsReply(
-          formatGroupSettingsForReply(settings),
-          currentChatId,
-          parsed.policy === "capture"
-            ? "✅ 已开启未触发群消息暂存。"
-            : "✅ 已关闭未触发群消息暂存，未 @/未命中关键词的消息会按现有逻辑忽略。",
-        ),
-      );
-      return;
-    }
-
-    if (parsed.kind === "show-unmatched") {
-      const count = currentChatId
-        ? await deps.groupUnmatchedMessageStore?.count(currentChatId) ?? 0
-        : 0;
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        `未触发消息：${settings.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY}\n已暂存：${count} 条\n\n设置：/group unmatched capture|ignore`,
-      );
-      return;
-    }
-
-    if (parsed.kind === "clear-unmatched") {
-      if (currentChatId) {
-        await deps.groupUnmatchedMessageStore?.clear(currentChatId);
-      }
-      await sendCommandReply(identity, conversationTarget, "✅ 已清空暂存的未触发群消息。");
-      return;
-    }
-
-    if (parsed.kind === "show-keywords") {
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupKeywordsReply(settings.FEISHU_GROUP_MESSAGE_KEYWORDS),
-      );
-      return;
-    }
-
-    if (parsed.kind === "set-keywords") {
-      settings.FEISHU_GROUP_MESSAGE_KEYWORDS = dedupeToolNames(parsed.keywords);
-      await writeEffectiveGroupRoutingConfig(currentChatId, settings);
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupKeywordsReply(
-          settings.FEISHU_GROUP_MESSAGE_KEYWORDS,
-          `✅ 已更新群关键词：${settings.FEISHU_GROUP_MESSAGE_KEYWORDS.map(formatGroupKeywordForDisplay).join(" ")}`,
-        ),
-      );
-      return;
-    }
-
-    settings.FEISHU_GROUP_MESSAGE_KEYWORDS = [];
-    await writeEffectiveGroupRoutingConfig(currentChatId, settings);
-    await sendCommandReply(
-      identity,
-      conversationTarget,
-      formatGroupKeywordsReply([], "✅ 已清空群关键词。"),
-    );
-  }
-
   async function handleToolsCommand(
     identity: UserIdentity,
     command: BridgeCommand,
@@ -1631,28 +1376,6 @@ function getToolConfigSession(session: unknown): ToolConfigSession | null {
   }
 
   return session as ToolConfigSession;
-}
-
-function dedupeToolNames(toolNames: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const toolName of toolNames) {
-    if (seen.has(toolName)) {
-      continue;
-    }
-    seen.add(toolName);
-    result.push(toolName);
-  }
-  return result;
-}
-
-function getCurrentGroupChatId(conversationTarget?: ConversationTarget): string | undefined {
-  if (!conversationTarget) {
-    return undefined;
-  }
-  return conversationTarget.kind === "group" || conversationTarget.kind === "thread"
-    ? conversationTarget.chatId
-    : undefined;
 }
 
 function getCurrentThinkingLevel(session: { thinkingLevel?: ThinkingLevel | undefined }): ThinkingLevel | undefined {
