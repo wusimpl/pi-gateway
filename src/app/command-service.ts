@@ -26,7 +26,7 @@ import type { P2PSettingsStore, PersistedP2PRoutingConfig } from "../storage/p2p
 import type { UserStateStore } from "../storage/users.js";
 import type { ModelPreference, ModelRouteSlot, ThinkingLevel, ToolCallsDisplayMode, UserIdentity, UserState } from "../types.js";
 import { handleBridgeCommand, formatUnsupportedSlashCommand, type BridgeCommand, type BridgeCommandName } from "./commands.js";
-import { canRunBridgeCommand } from "./command-permissions.js";
+import { canRunBridgeCommand, isPrivateSuperAdminCommand, type GroupOwnerResolver } from "./command-permissions.js";
 import { logger } from "./logger.js";
 import {
   clearRestartReadyNotification,
@@ -105,6 +105,7 @@ interface CommandServiceDeps {
   findAvailableModel(rawRef: string): Promise<AvailableModelInfo | null>;
   cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "setJobEnabled" | "removeJob" | "stopJob" | "runJobNow">;
   deferredCronRunService?: Pick<DeferredCronRunService, "queueRun">;
+  groupOwnerResolver?: GroupOwnerResolver;
   skillStatsStore?: Pick<SkillStatsStore, "listSkillUsage" | "reset">;
   groupSettingsStore?: Pick<
     GroupSettingsStore,
@@ -365,7 +366,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     const conversationKey = getConversationTargetKey(conversationTarget, openId);
     try {
       if (command.name === "commands") {
-        await sendCommandReply(identity, conversationTarget, formatAvailableCommandsReply(identity, conversationTarget));
+        await sendCommandReply(identity, conversationTarget, await formatAvailableCommandsReply(identity, conversationTarget));
       } else if (command.name === "new" || command.name === "reset") {
         const sessionState = await createSession(identity, conversationTarget);
         const reply = handleBridgeCommand(command, {
@@ -690,6 +691,19 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     conversationTarget?: ConversationTarget,
   ): Promise<void> {
     const openId = identity.openId;
+    const argText = command.args.trim();
+    if (!argText || argText.toLowerCase() === "status") {
+      const sessionState = await getActiveSession(identity, conversationTarget);
+      const userState = await readTargetState(identity, conversationTarget);
+      const reply = handleBridgeCommand(command, {
+        openId,
+        currentModel: getCurrentModelLabel(sessionState.piSession),
+        modelRouting: getModelRoutingConfig(userState),
+      });
+      await sendCommandReply(identity, conversationTarget, reply);
+      return;
+    }
+
     const parsed = parseOnOffArgs(command.args, "route");
     if (parsed.error) {
       await sendTextReply(identity, conversationTarget, parsed.error);
@@ -1063,6 +1077,11 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     command: BridgeCommand,
     conversationTarget?: ConversationTarget,
   ): Promise<void> {
+    if (conversationTarget && conversationTarget.kind !== "p2p") {
+      await sendTextReply(identity, conversationTarget, "请在私聊里使用 /p2p。");
+      return;
+    }
+
     if (!isSuperAdminOpenId(identity.openId)) {
       await sendTextReply(identity, conversationTarget, "这个命令只有 super admin 可以使用。");
       return;
@@ -1496,21 +1515,32 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
 
   async function handleUnauthorizedBridgeCommand(
     identity: UserIdentity,
-    _command: BridgeCommand,
+    command: BridgeCommand,
     conversationTarget?: ConversationTarget,
   ): Promise<void> {
-    await sendTextReply(identity, conversationTarget, formatUnauthorizedCommandReply(identity, conversationTarget));
+    await sendTextReply(identity, conversationTarget, formatUnauthorizedCommandReply(identity, conversationTarget, command));
   }
 
-  function formatAvailableCommandsReply(
+  async function formatAvailableCommandsReply(
     identity: UserIdentity,
     conversationTarget?: ConversationTarget,
-  ): string {
+  ): Promise<string> {
     const resolvedTarget = conversationTarget ?? createFallbackP2PTarget(identity.openId);
-    const ownerOpenIds = ((deps.config as Partial<Config>).FEISHU_OWNER_OPEN_IDS ?? []) as string[];
     const scopeLabel = resolvedTarget.kind === "p2p" ? "私聊" : "群聊";
-    const availableCommands = COMMAND_CATALOG.filter((item) => isCommandVisibleInTarget(item, resolvedTarget))
-      .filter((item) => canRunBridgeCommand(identity, { name: item.name, args: item.permissionArgs ?? "" }, resolvedTarget, ownerOpenIds));
+    const availableCommands: CommandCatalogItem[] = [];
+    for (const item of COMMAND_CATALOG) {
+      if (!isCommandVisibleInTarget(item, resolvedTarget)) {
+        continue;
+      }
+      if (await canRunBridgeCommand(
+        identity,
+        { name: item.name, args: item.permissionArgs ?? "" },
+        resolvedTarget,
+        deps.groupOwnerResolver,
+      )) {
+        availableCommands.push(item);
+      }
+    }
 
     const lines = [`📖 当前可用命令（${scopeLabel}）`];
     if (availableCommands.length === 0) {
@@ -1529,7 +1559,12 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
   function formatUnauthorizedCommandReply(
     identity: UserIdentity,
     conversationTarget?: ConversationTarget,
+    command?: BridgeCommand,
   ): string {
+    if (conversationTarget && conversationTarget.kind !== "p2p" && command && isPrivateSuperAdminCommand(command)) {
+      return "这个命令请在私聊里使用。用 /commands 查看当前可用命令。";
+    }
+
     if (conversationTarget?.kind === "p2p" || !conversationTarget) {
       return "这个命令只有 super admin 可以在私聊里使用。用 /commands 查看当前可用命令。";
     }
@@ -1559,27 +1594,31 @@ const COMMAND_CATALOG: CommandCatalogItem[] = [
   { name: "status", usage: "/status", description: "查看当前会话状态" },
   { name: "context", usage: "/context", description: "查看已加载上下文" },
   { name: "skills", usage: "/skills", description: "查看可用技能" },
-  { name: "model", usage: "/model", description: "查看或切换模型" },
-  { name: "route", usage: "/route", description: "查看或管理模型路由" },
+  { name: "model", usage: "/model", description: "查看模型配置和可用模型" },
+  { name: "model", usage: "/model <序号或模型>", description: "切换模型", permissionArgs: "2" },
+  { name: "route", usage: "/route", description: "查看模型路由" },
+  { name: "route", usage: "/route on|off", description: "开关模型路由", permissionArgs: "on" },
   { name: "sessions", usage: "/sessions", description: "查看历史会话" },
   { name: "resume", usage: "/resume <序号或会话ID>", description: "恢复历史会话" },
-  { name: "settings", usage: "/settings", description: "查看或调整当前设置" },
+  { name: "settings", usage: "/settings", description: "查看当前设置" },
+  { name: "settings", usage: "/settings think|stream", description: "调整当前设置", permissionArgs: "think high" },
   { name: "tools", usage: "/tools", description: "查看工具状态" },
   { name: "tools", usage: "/tools on|off|set|reset", description: "管理工具启用状态", permissionArgs: "on read" },
-  { name: "toolcalls", usage: "/toolcalls", description: "设置工具调用展示" },
+  { name: "toolcalls", usage: "/toolcalls", description: "查看工具调用展示" },
+  { name: "toolcalls", usage: "/toolcalls off|name|full", description: "设置工具调用展示", permissionArgs: "name" },
   { name: "skill-folder", usage: "/skill-folder", description: "查看私有技能目录开关" },
   { name: "skill-folder", usage: "/skill-folder on|off", description: "管理私有技能目录开关", permissionArgs: "on" },
   { name: "stop", usage: "/stop", description: "停止当前任务" },
   { name: "next", usage: "/next <内容>", description: "把补充内容排到当前任务后处理" },
-  { name: "restart", usage: "/restart", description: "重启网关" },
+  { name: "restart", usage: "/restart", description: "重启网关", target: "p2p" },
   { name: "cron", usage: "/cron", description: "管理定时任务" },
-  { name: "stt", usage: "/stt provider <名称>", description: "切换语音转写方式" },
-  { name: "stream", usage: "/stream on|off", description: "开关流式回复" },
-  { name: "reaction", usage: "/reaction on|off", description: "开关处理中 reaction" },
+  { name: "stt", usage: "/stt provider <名称>", description: "切换语音转写方式", target: "p2p" },
+  { name: "stream", usage: "/stream on|off", description: "开关默认流式回复", target: "p2p" },
+  { name: "reaction", usage: "/reaction on|off", description: "开关处理中 reaction", target: "p2p" },
   { name: "group", usage: "/group", description: "管理群聊策略", target: "group" },
   { name: "group", usage: "/group allowlist show|add|remove", description: "管理群白名单", target: "p2p" },
-  { name: "p2p", usage: "/p2p", description: "管理私聊访问策略" },
-  { name: "skillstat", usage: "/skillstat", description: "查看技能使用统计" },
+  { name: "p2p", usage: "/p2p", description: "管理私聊访问策略", target: "p2p" },
+  { name: "skillstat", usage: "/skillstat", description: "查看技能使用统计", target: "p2p" },
 ];
 
 function isCommandVisibleInTarget(item: CommandCatalogItem, conversationTarget: ConversationTarget): boolean {

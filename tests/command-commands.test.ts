@@ -10,7 +10,7 @@ const groupTarget = {
   chatId: "oc_1",
 } as const;
 
-function createDeps(ownerOpenIds: string[] = []) {
+function createDeps(options: { groupOwner?: boolean } = {}) {
   const messenger = {
     sendRenderedMessage: vi.fn().mockResolvedValue(undefined),
     sendTextMessage: vi.fn().mockResolvedValue(undefined),
@@ -23,7 +23,6 @@ function createDeps(ownerOpenIds: string[] = []) {
       CRON_DEFAULT_TZ: "Asia/Shanghai",
       FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "doubao-api-key",
       DATA_DIR: "/tmp/pi-gateway-data",
-      FEISHU_OWNER_OPEN_IDS: ownerOpenIds,
     } as any,
     messenger,
     sessionService: {
@@ -51,13 +50,16 @@ function createDeps(ownerOpenIds: string[] = []) {
     },
     listAvailableModels: vi.fn(),
     findAvailableModel: vi.fn(),
+    groupOwnerResolver: options.groupOwner
+      ? { isGroupOwner: vi.fn().mockResolvedValue(true) }
+      : undefined,
   });
 
   return { service, messenger };
 }
 
 describe("/commands", () => {
-  it("私聊普通用户只看到公开命令", async () => {
+  it("私聊普通用户能看到个人命令", async () => {
     const { service, messenger } = createDeps();
 
     await service.handleBridgeCommand(
@@ -70,8 +72,10 @@ describe("/commands", () => {
     expect(reply).toContain("/commands");
     expect(reply).toContain("/new");
     expect(reply).toContain("/tools — 查看工具状态");
+    expect(reply).toContain("/tools on|off|set|reset");
     expect(reply).not.toContain("/restart");
     expect(reply).not.toContain("/p2p");
+    expect(reply).not.toContain("/stt");
   });
 
   it("私聊 super admin 能看到管理命令", async () => {
@@ -101,13 +105,15 @@ describe("/commands", () => {
     const reply = messenger.sendRenderedMessageToTarget.mock.calls[0]?.[1] as string;
     expect(reply).toContain("当前可用命令（群聊）");
     expect(reply).toContain("/commands");
-    expect(reply).toContain("/new");
+    expect(reply).toContain("/model — 查看模型配置和可用模型");
+    expect(reply).not.toContain("/new");
+    expect(reply).not.toContain("/model <序号或模型>");
     expect(reply).not.toContain("/restart");
     expect(reply).not.toContain("/group");
   });
 
-  it("群聊 owner 能看到群聊管理命令但看不到 /p2p", async () => {
-    const { service, messenger } = createDeps(["ou_1"]);
+  it("真实群主能看到群聊管理命令但看不到全局管理命令", async () => {
+    const { service, messenger } = createDeps({ groupOwner: true });
 
     await service.handleBridgeCommand(
       { openId: "ou_1", userId: "u_1" },
@@ -116,8 +122,9 @@ describe("/commands", () => {
     );
 
     const reply = messenger.sendRenderedMessageToTarget.mock.calls[0]?.[1] as string;
-    expect(reply).toContain("/restart");
+    expect(reply).toContain("/new");
     expect(reply).toContain("/group");
+    expect(reply).not.toContain("/restart");
     expect(reply).not.toContain("/p2p");
   });
 });

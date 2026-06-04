@@ -509,6 +509,40 @@ describe("handleFeishuMessage 模型命令", () => {
     expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("`/route` 会查看当前路由状态", async () => {
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_1", userId: "u_1" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"/route"}',
+      text: "/route",
+    });
+    mocks.getOrCreateActiveSession.mockResolvedValue({
+      activeSessionId: "session_1",
+      piSession: { model: { provider: "cpa", id: "heavy" } },
+    });
+    mocks.readUserState.mockResolvedValue({
+      activeSessionId: "session_1",
+      createdAt: "2026-04-30T00:00:00.000Z",
+      updatedAt: "2026-04-30T00:00:00.000Z",
+      lastActiveAt: "2026-04-30T00:00:00.000Z",
+      modelRouting: {
+        enabled: true,
+        routerModel: { provider: "cpa", id: "router" },
+        lightModel: { provider: "zen", id: "light" },
+        heavyModel: { provider: "cpa", id: "heavy" },
+      },
+    });
+
+    await handleFeishuMessage({});
+
+    expect(mocks.writeUserState).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendRenderedMessage.mock.calls[0]?.[1]).toContain("模型路由: on");
+  });
+
   it("`/route on` 配置不完整时拒绝开启", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",

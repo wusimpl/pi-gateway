@@ -46,6 +46,13 @@ function createDeps(config: Record<string, unknown>) {
       text: "hello",
     })),
     config,
+    groupOwnerResolver: undefined as { isGroupOwner(chatId: string, identity: { openId: string; userId?: string }): Promise<boolean> } | undefined,
+  };
+}
+
+function allowGroupOwner(deps: ReturnType<typeof createDeps>): void {
+  deps.groupOwnerResolver = {
+    isGroupOwner: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -111,8 +118,9 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: ["pi"],
-      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
+      FEISHU_OWNER_OPEN_IDS: [],
     });
+    allowGroupOwner(deps);
     deps.parseMessageEvent.mockReturnValue({
       ...groupEvent,
       message: {
@@ -148,7 +156,7 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: ["pi"],
-      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
+      FEISHU_OWNER_OPEN_IDS: [],
     });
     deps.parseMessageEvent.mockReturnValue({
       ...groupEvent,
@@ -185,8 +193,9 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: [],
       FEISHU_BOT_OPEN_ID: "ou_bot_1",
-      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
+      FEISHU_OWNER_OPEN_IDS: [],
     });
+    allowGroupOwner(deps);
     deps.parseMessageEvent.mockReturnValue({
       ...groupEvent,
       message: {
@@ -216,7 +225,7 @@ describe("createMessageRouter 群聊入口", () => {
     );
   });
 
-  it("群聊普通成员不能执行 owner-only 命令", async () => {
+  it("群聊普通成员不能执行群聊高级命令", async () => {
     const deps = createDeps({
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
@@ -230,8 +239,8 @@ describe("createMessageRouter 群聊入口", () => {
       messageId: "om_group_1",
       messageType: "text",
       createTime: "123",
-      rawContent: '{"text":"/restart"}',
-      text: "/restart",
+      rawContent: '{"text":"/new"}',
+      text: "/new",
     });
     const router = createMessageRouter(deps as any);
 
@@ -239,19 +248,20 @@ describe("createMessageRouter 群聊入口", () => {
 
     expect(deps.commandService.handleUnauthorizedBridgeCommand).toHaveBeenCalledWith(
       { openId: "ou_1", userId: "u_1" },
-      { name: "restart", args: "" },
+      { name: "new", args: "" },
       groupTarget,
     );
     expect(deps.commandService.handleBridgeCommand).not.toHaveBeenCalled();
   });
 
-  it("群聊 owner 可以执行 owner-only 命令", async () => {
+  it("真实群主可以执行群聊高级命令", async () => {
     const deps = createDeps({
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "all",
-      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
+      FEISHU_OWNER_OPEN_IDS: [],
     });
+    allowGroupOwner(deps);
     deps.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
       identity: { openId: "ou_1", userId: "u_1" },
@@ -274,7 +284,7 @@ describe("createMessageRouter 群聊入口", () => {
     expect(deps.commandService.handleUnauthorizedBridgeCommand).not.toHaveBeenCalled();
   });
 
-  it("群聊普通成员可以执行公开命令", async () => {
+  it("群聊普通成员可以执行低风险公开命令", async () => {
     const deps = createDeps({
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
@@ -283,7 +293,7 @@ describe("createMessageRouter 群聊入口", () => {
     });
     const router = createMessageRouter(deps as any);
 
-    for (const command of ["/new", "/stop", "/tools", "/skills", "/status"]) {
+    for (const command of ["/stop", "/tools", "/skills", "/status", "/model", "/route"]) {
       deps.commandService.handleBridgeCommand.mockClear();
       deps.commandService.handleUnauthorizedBridgeCommand.mockClear();
       deps.normalizeFeishuInboundMessage.mockReturnValue({

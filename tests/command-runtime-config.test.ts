@@ -7,6 +7,8 @@ function createDeps(options: { doubaoApiKey?: string } = {}) {
   const messenger = {
     sendRenderedMessage: vi.fn().mockResolvedValue(undefined),
     sendTextMessage: vi.fn().mockResolvedValue(undefined),
+    sendRenderedMessageToTarget: vi.fn().mockResolvedValue(undefined),
+    sendTextMessageToTarget: vi.fn().mockResolvedValue(undefined),
   };
   const runtimeConfig = createRuntimeConfigStore({
     FEISHU_AUDIO_TRANSCRIBE_PROVIDER: "whisper",
@@ -238,6 +240,29 @@ describe("command service runtime config", () => {
     expect(messenger.sendTextMessage).toHaveBeenCalledWith(
       "ou_1",
       "这个命令只有 super admin 可以使用。",
+    );
+  });
+
+  it("群聊里不能执行 /p2p", async () => {
+    const { service, p2pSettingsStore, messenger } = createDeps();
+    const groupTarget = {
+      kind: "group" as const,
+      key: "oc_1",
+      receiveIdType: "chat_id" as const,
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    };
+
+    await service.handleBridgeCommand(
+      { openId: SUPER_ADMIN_OPEN_ID },
+      { name: "p2p", args: "policy whitelist" },
+      groupTarget,
+    );
+
+    expect(p2pSettingsStore.writeP2PRoutingConfig).not.toHaveBeenCalled();
+    expect(messenger.sendTextMessageToTarget).toHaveBeenCalledWith(
+      groupTarget,
+      "请在私聊里使用 /p2p。",
     );
   });
 });

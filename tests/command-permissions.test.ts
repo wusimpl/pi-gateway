@@ -18,40 +18,50 @@ const p2pTarget = {
 } as const;
 
 describe("canRunBridgeCommand", () => {
-  it("私聊普通用户只能执行公开命令", () => {
-    expect(canRunBridgeCommand(identity, { name: "commands", args: "" }, p2pTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "new", args: "" }, p2pTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "tools", args: "" }, p2pTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "restart", args: "" }, p2pTarget, [])).toBe(false);
-    expect(canRunBridgeCommand(identity, { name: "tools", args: "on read" }, p2pTarget, [])).toBe(false);
-    expect(canRunBridgeCommand(identity, { name: "p2p", args: "policy whitelist" }, p2pTarget, [])).toBe(false);
+  it("私聊普通用户可以执行个人命令，但不能执行全局管理命令", async () => {
+    await expect(canRunBridgeCommand(identity, { name: "commands", args: "" }, p2pTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "new", args: "" }, p2pTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "tools", args: "on read" }, p2pTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "cron", args: "" }, p2pTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "restart", args: "" }, p2pTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(identity, { name: "p2p", args: "policy whitelist" }, p2pTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(identity, { name: "stt", args: "provider whisper" }, p2pTarget)).resolves.toBe(false);
   });
 
-  it("super admin 在私聊和群聊都可以执行受限命令", () => {
+  it("super admin 只能在私聊里执行全局管理命令", async () => {
     const superAdmin = { openId: SUPER_ADMIN_OPEN_ID };
-    expect(canRunBridgeCommand(superAdmin, { name: "restart", args: "" }, p2pTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(superAdmin, { name: "tools", args: "on read" }, groupTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(superAdmin, { name: "p2p", args: "policy whitelist" }, p2pTarget, [])).toBe(true);
+    await expect(canRunBridgeCommand(superAdmin, { name: "restart", args: "" }, p2pTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(superAdmin, { name: "p2p", args: "policy whitelist" }, p2pTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(superAdmin, { name: "tools", args: "on read" }, groupTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(superAdmin, { name: "restart", args: "" }, groupTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(superAdmin, { name: "p2p", args: "policy whitelist" }, groupTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(superAdmin, { name: "group", args: "allowlist show" }, groupTarget)).resolves.toBe(false);
   });
 
-  it("群聊普通成员只能执行公开命令", () => {
-    expect(canRunBridgeCommand(identity, { name: "tools", args: "" }, groupTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "tools", args: "on read" }, groupTarget, [])).toBe(false);
-    expect(canRunBridgeCommand(identity, { name: "tools", args: "off read" }, groupTarget, [])).toBe(false);
-    expect(canRunBridgeCommand(identity, { name: "tools", args: "set read" }, groupTarget, [])).toBe(false);
-    expect(canRunBridgeCommand(identity, { name: "tools", args: "reset" }, groupTarget, [])).toBe(false);
-    expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "" }, groupTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "on" }, groupTarget, [])).toBe(false);
-    expect(canRunBridgeCommand(identity, { name: "new", args: "" }, groupTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "stop", args: "" }, groupTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "skills", args: "" }, groupTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "status", args: "" }, groupTarget, [])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "restart", args: "" }, groupTarget, [])).toBe(false);
+  it("群聊普通成员只能执行低风险命令", async () => {
+    await expect(canRunBridgeCommand(identity, { name: "tools", args: "" }, groupTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "tools", args: "on read" }, groupTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "" }, groupTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "on" }, groupTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(identity, { name: "model", args: "" }, groupTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "model", args: "2" }, groupTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(identity, { name: "route", args: "" }, groupTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "route", args: "on" }, groupTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(identity, { name: "new", args: "" }, groupTarget)).resolves.toBe(false);
+    await expect(canRunBridgeCommand(identity, { name: "stop", args: "" }, groupTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "skills", args: "" }, groupTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "status", args: "" }, groupTarget)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "group", args: "" }, groupTarget)).resolves.toBe(false);
   });
 
-  it("群聊 owner 可以执行 owner-only 命令", () => {
-    expect(canRunBridgeCommand(identity, { name: "restart", args: "" }, groupTarget, ["ou_1"])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "tools", args: "on read" }, groupTarget, ["ou_1"])).toBe(true);
-    expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "off" }, groupTarget, ["ou_1"])).toBe(true);
+  it("真实群主可以执行当前群高级命令", async () => {
+    const resolver = {
+      isGroupOwner: async () => true,
+    };
+    await expect(canRunBridgeCommand(identity, { name: "new", args: "" }, groupTarget, resolver)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "tools", args: "on read" }, groupTarget, resolver)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "skill-folder", args: "off" }, groupTarget, resolver)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "cron", args: "" }, groupTarget, resolver)).resolves.toBe(true);
+    await expect(canRunBridgeCommand(identity, { name: "restart", args: "" }, groupTarget, resolver)).resolves.toBe(false);
   });
 });

@@ -13,6 +13,10 @@ import { ensureDir } from "./storage/files.js";
 import { createFeishuConnection } from "./feishu/client.js";
 import { resolveFeishuBotOpenId } from "./feishu/bot-info.js";
 import {
+  createFeishuChatInfoService,
+  type FeishuChatInfoClient,
+} from "./feishu/chat-info.js";
+import {
   createFeishuSenderNameResolver,
   type FeishuUserClient,
 } from "./feishu/user-context.js";
@@ -106,6 +110,9 @@ async function main() {
   const resolveFeishuSenderName = createFeishuSenderNameResolver(
     feishuConnection.client as unknown as FeishuUserClient,
   );
+  const feishuChatInfoService = createFeishuChatInfoService(
+    feishuConnection.client as unknown as FeishuChatInfoClient,
+  );
   const choiceInteractionStore = createFeishuChoiceInteractionStore();
 
   let cronService: CronService | null = null;
@@ -195,6 +202,7 @@ async function main() {
     findAvailableModel: (rawRef: string) => findAvailableModel(rawRef, piRuntime.getModelRegistry()),
     cronService: cronService ?? undefined,
     deferredCronRunService,
+    groupOwnerResolver: feishuChatInfoService,
     runtimeConfig,
     skillStatsStore,
     groupSettingsStore,
@@ -228,6 +236,7 @@ async function main() {
     groupSettingsStore,
     groupUnmatchedMessageStore,
     runtimeConfig,
+    groupOwnerResolver: feishuChatInfoService,
   });
   logger.info("消息路由就绪");
 

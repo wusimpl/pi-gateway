@@ -175,7 +175,7 @@ describe("handleFeishuMessage /restart", () => {
     expect(mocks.clearRestartReadyNotification).not.toHaveBeenCalled();
   });
 
-  it("群聊里重启会把完成通知登记到当前群聊", async () => {
+  it("群聊里不能使用 /restart", async () => {
     const target = {
       kind: "group",
       key: "oc_1",
@@ -196,14 +196,14 @@ describe("handleFeishuMessage /restart", () => {
 
     await handleFeishuMessage({});
 
-    expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith(
-      "/tmp/pi-gateway-data",
-      "ou_1",
+    expect(mocks.sendTextMessageToTarget).toHaveBeenCalledWith(
       target,
+      "这个命令请在私聊里使用。用 /commands 查看当前可用命令。",
     );
-    expect(mocks.sendRenderedMessageToTarget).toHaveBeenCalledWith(target, "🔄 正在重启网关...", 2000);
+    expect(mocks.recordRestartReadyNotification).not.toHaveBeenCalled();
+    expect(mocks.sendRenderedMessageToTarget).not.toHaveBeenCalled();
     expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
-    expect(mocks.restartGateway).toHaveBeenCalledTimes(1);
+    expect(mocks.restartGateway).not.toHaveBeenCalled();
   });
 
   it("只要还有任何用户任务在跑，就拒绝重启", async () => {
