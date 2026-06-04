@@ -51,7 +51,6 @@ function createDeps(openId: string, options: {
     config: options.config ?? {
       FEISHU_P2P_CHAT_POLICY: "all",
       FEISHU_P2P_CHAT_ALLOWLIST: [],
-      FEISHU_OWNER_OPEN_IDS: [],
     },
     p2pSettingsStore: options.persisted === undefined ? undefined : {
       readP2PRoutingConfig: vi.fn().mockResolvedValue(options.persisted),
@@ -74,7 +73,6 @@ describe("createMessageRouter 私聊准入", () => {
       config: {
         FEISHU_P2P_CHAT_POLICY: "whitelist",
         FEISHU_P2P_CHAT_ALLOWLIST: ["ou_2"],
-        FEISHU_OWNER_OPEN_IDS: [],
       },
     });
     const router = createMessageRouter(deps as any);
@@ -90,7 +88,6 @@ describe("createMessageRouter 私聊准入", () => {
       config: {
         FEISHU_P2P_CHAT_POLICY: "all",
         FEISHU_P2P_CHAT_ALLOWLIST: [],
-        FEISHU_OWNER_OPEN_IDS: [],
       },
       persisted: {
         FEISHU_P2P_CHAT_POLICY: "whitelist",
@@ -109,7 +106,6 @@ describe("createMessageRouter 私聊准入", () => {
       config: {
         FEISHU_P2P_CHAT_POLICY: "whitelist",
         FEISHU_P2P_CHAT_ALLOWLIST: [],
-        FEISHU_OWNER_OPEN_IDS: [],
       },
     });
     const router = createMessageRouter(deps as any);

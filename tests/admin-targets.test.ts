@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 import { createAdminTargetService } from "../src/admin/targets.js";
 
 describe("admin targets", () => {
@@ -39,13 +40,11 @@ describe("admin targets", () => {
 
     const service = createAdminTargetService({
       DATA_DIR: dataDir,
-      FEISHU_OWNER_OPEN_IDS: ["ou_owner_1"],
       FEISHU_GROUP_CHAT_ALLOWLIST: ["oc_group_4"],
     });
 
     const targets = await service.listTargets();
     expect(targets.map((target) => target.key)).toEqual([
-      "ou_owner_1",
       "ou_user_1",
       "oc_group_1",
       "oc_group_2",
@@ -60,13 +59,12 @@ describe("admin targets", () => {
     await mkdir(join(dataDir, "conversations", encodeURIComponent("oc_group_1")), { recursive: true });
     const service = createAdminTargetService({
       DATA_DIR: dataDir,
-      FEISHU_OWNER_OPEN_IDS: ["ou_owner_1"],
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
     });
 
     const resolved = await service.resolveTarget("oc_group_1");
 
-    expect(resolved?.identity.openId).toBe("ou_owner_1");
+    expect(resolved?.identity.openId).toBe(SUPER_ADMIN_OPEN_ID);
     expect(resolved?.conversationTarget).toMatchObject({
       kind: "group",
       key: "oc_group_1",

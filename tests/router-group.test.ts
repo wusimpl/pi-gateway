@@ -66,7 +66,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_POLICY: "disabled",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "mention",
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter(deps as any);
 
@@ -82,7 +81,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "all",
       FEISHU_GROUP_MESSAGE_KEYWORDS: [],
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter(deps as any);
 
@@ -100,7 +98,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: ["hello"],
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter(deps as any);
 
@@ -118,7 +115,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: ["pi"],
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     allowGroupOwner(deps);
     deps.parseMessageEvent.mockReturnValue({
@@ -156,7 +152,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: ["pi"],
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     deps.parseMessageEvent.mockReturnValue({
       ...groupEvent,
@@ -193,7 +188,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_MESSAGE_MODE: "keyword",
       FEISHU_GROUP_MESSAGE_KEYWORDS: [],
       FEISHU_BOT_OPEN_ID: "ou_bot_1",
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     allowGroupOwner(deps);
     deps.parseMessageEvent.mockReturnValue({
@@ -230,7 +224,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "all",
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     deps.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
@@ -259,7 +252,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "all",
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     allowGroupOwner(deps);
     deps.normalizeFeishuInboundMessage.mockReturnValue({
@@ -289,7 +281,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "all",
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter(deps as any);
 
@@ -319,7 +310,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_POLICY: "open",
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "all",
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter(deps as any);
 
@@ -356,7 +346,6 @@ describe("createMessageRouter 群聊入口", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: [],
       FEISHU_GROUP_MESSAGE_MODE: "mention",
       FEISHU_GROUP_MESSAGE_KEYWORDS: [],
-      FEISHU_OWNER_OPEN_IDS: [],
     });
     const router = createMessageRouter({
       ...(deps as any),

@@ -129,7 +129,6 @@ describe("handleFeishuMessage /restart", () => {
 
     initRouter({
       DATA_DIR: "/tmp/pi-gateway-data",
-      FEISHU_OWNER_OPEN_IDS: ["ou_1"],
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,

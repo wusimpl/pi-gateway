@@ -238,7 +238,6 @@ describe("group settings persistence", () => {
       promptService,
       config: {
         ...baseRoutingDefaults,
-        FEISHU_OWNER_OPEN_IDS: [],
       },
       groupSettingsStore,
       parseMessageEvent: vi

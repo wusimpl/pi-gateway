@@ -99,7 +99,6 @@ describe("loadConfig", () => {
       FEISHU_GROUP_CHAT_ALLOWLIST: "oc_1, oc_2,,",
       FEISHU_GROUP_MESSAGE_MODE: "all",
       FEISHU_BOT_OPEN_ID: " ou_bot_1 ",
-      FEISHU_OWNER_OPEN_IDS: "ou_owner_1, ou_owner_2",
     });
     const { loadConfig } = await import("../src/config.js");
 
@@ -108,7 +107,6 @@ describe("loadConfig", () => {
     expect(config.FEISHU_GROUP_CHAT_ALLOWLIST).toEqual(["oc_1", "oc_2"]);
     expect(config.FEISHU_GROUP_MESSAGE_MODE).toBe("all");
     expect(config.FEISHU_BOT_OPEN_ID).toBe("ou_bot_1");
-    expect(config.FEISHU_OWNER_OPEN_IDS).toEqual(["ou_owner_1", "ou_owner_2"]);
   });
 
   it("keyword 模式关键词应按空白分隔", async () => {

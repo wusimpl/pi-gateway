@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "../config.js";
+import { SUPER_ADMIN_OPEN_ID } from "../app/access-control.js";
 import {
   createGroupConversationTarget,
   createP2PConversationTarget,
@@ -13,7 +14,6 @@ import type { AdminTarget, ResolvedAdminTarget } from "./types.js";
 type TargetSource =
   | "历史私聊"
   | "历史群聊"
-  | "管理员配置"
   | "群白名单"
   | "定时任务";
 
@@ -24,18 +24,10 @@ export interface AdminTargetService {
 
 export function createAdminTargetService(config: Pick<
   Config,
-  "DATA_DIR" | "FEISHU_OWNER_OPEN_IDS" | "FEISHU_GROUP_CHAT_ALLOWLIST"
+  "DATA_DIR" | "FEISHU_GROUP_CHAT_ALLOWLIST"
 >): AdminTargetService {
   async function listTargets(): Promise<AdminTarget[]> {
     const collected = new Map<string, AdminTarget>();
-
-    for (const openId of config.FEISHU_OWNER_OPEN_IDS) {
-      addTarget(collected, {
-        key: openId,
-        kind: "p2p",
-        source: "管理员配置",
-      });
-    }
 
     for (const openId of await listUserOpenIds(config.DATA_DIR)) {
       addTarget(collected, {
@@ -116,7 +108,7 @@ export function createAdminTargetService(config: Pick<
 
     return {
       target,
-      identity: resolveIdentity(target, config.FEISHU_OWNER_OPEN_IDS),
+      identity: resolveIdentity(target),
       conversationTarget,
     };
   }
@@ -217,10 +209,10 @@ function safeDecodeURIComponent(value: string): string {
   }
 }
 
-function resolveIdentity(target: AdminTarget, ownerOpenIds: string[]): UserIdentity {
+function resolveIdentity(target: AdminTarget): UserIdentity {
   const openId = target.kind === "p2p"
     ? target.key
-    : target.ownerOpenId ?? ownerOpenIds[0] ?? "admin";
+    : target.ownerOpenId ?? SUPER_ADMIN_OPEN_ID;
   return { openId };
 }
 
