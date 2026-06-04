@@ -86,6 +86,7 @@ describe("command service group", () => {
         "关键词：日报 Pi\n" +
         "当前群：oc_1\n" +
         "\n" +
+        "切换群聊开关：/group policy disabled|allowlist|open\n" +
         "查看关键词：/group keywords show\n" +
         "设置未触发消息：/group unmatched capture|ignore",
       2000,
@@ -179,6 +180,7 @@ describe("command service group", () => {
         "\n" +
         "提醒：还没设置关键词，普通消息不会触发；@ 机器人仍可使用。\n" +
         "\n" +
+        "切换群聊开关：/group policy disabled|allowlist|open\n" +
         "查看关键词：/group keywords show\n" +
         "设置未触发消息：/group unmatched capture|ignore",
       2000,

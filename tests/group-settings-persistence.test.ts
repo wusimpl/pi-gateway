@@ -190,6 +190,7 @@ describe("group settings persistence", () => {
         "关键词：pi\n" +
         "当前群：oc_1\n" +
         "\n" +
+        "切换群聊开关：/group policy disabled|allowlist|open\n" +
         "查看关键词：/group keywords show\n" +
         "设置未触发消息：/group unmatched capture|ignore",
       2000,
@@ -204,6 +205,7 @@ describe("group settings persistence", () => {
         "关键词：（无）\n" +
         "当前群：oc_2\n" +
         "\n" +
+        "切换群聊开关：/group policy disabled|allowlist|open\n" +
         "查看关键词：/group keywords show\n" +
         "设置未触发消息：/group unmatched capture|ignore",
       2000,

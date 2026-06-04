@@ -2004,6 +2004,7 @@ function formatGroupSettingsReply(
 
   lines.push(
     "",
+    "切换群聊开关：/group policy disabled|allowlist|open",
     "查看关键词：/group keywords show",
     "设置未触发消息：/group unmatched capture|ignore",
   );
