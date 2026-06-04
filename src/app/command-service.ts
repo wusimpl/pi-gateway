@@ -2005,6 +2005,7 @@ function formatGroupSettingsReply(
   lines.push(
     "",
     "切换群聊开关：/group policy disabled|allowlist|open",
+    "切换触发方式：/group mode mention|all|keyword",
     "查看关键词：/group keywords show",
     "设置未触发消息：/group unmatched capture|ignore",
   );
