@@ -1,10 +1,11 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ConversationTarget } from "../conversation.js";
 import type { UserIdentity } from "../types.js";
 
 const DEFAULT_WORKSPACE_ROOT = join(homedir(), "code", "pi-workspace");
+const DEFAULT_AGENTS_CONTENT = "# 此文件为项目级别规则文件 请将用户的偏好习惯等默认写入到此文件\n";
 
 export interface WorkspaceService {
   getWorkspaceRoot(): string;
@@ -23,6 +24,7 @@ export function createWorkspaceService(root: string = DEFAULT_WORKSPACE_ROOT): W
   async function ensureUserWorkspace(identity: UserIdentity): Promise<string> {
     const dir = getUserWorkspaceDir(identity);
     await mkdir(dir, { recursive: true });
+    await ensureAgentsFile(dir);
     return dir;
   }
 
@@ -37,6 +39,7 @@ export function createWorkspaceService(root: string = DEFAULT_WORKSPACE_ROOT): W
   async function ensureConversationWorkspace(identity: UserIdentity, target: ConversationTarget): Promise<string> {
     const dir = getConversationWorkspaceDir(identity, target);
     await mkdir(dir, { recursive: true });
+    await ensureAgentsFile(dir);
     return dir;
   }
 
@@ -47,6 +50,20 @@ export function createWorkspaceService(root: string = DEFAULT_WORKSPACE_ROOT): W
     getConversationWorkspaceDir,
     ensureConversationWorkspace,
   };
+}
+
+async function ensureAgentsFile(dir: string): Promise<void> {
+  try {
+    await writeFile(join(dir, "AGENTS.md"), DEFAULT_AGENTS_CONTENT, { flag: "wx" });
+  } catch (err) {
+    if (!isFileExistsError(err)) {
+      throw err;
+    }
+  }
+}
+
+function isFileExistsError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "EEXIST";
 }
 
 function sanitizeWorkspaceSegment(value: string): string {
