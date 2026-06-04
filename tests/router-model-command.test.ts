@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 
 const mocks = vi.hoisted(() => ({
   sendTextMessage: vi.fn(),
@@ -260,9 +261,13 @@ describe("handleFeishuMessage 模型命令", () => {
         }),
       },
     };
+    mocks.parseMessageEvent.mockReturnValue({
+      ...baseEvent,
+      sender: { senderId: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" } },
+    });
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",

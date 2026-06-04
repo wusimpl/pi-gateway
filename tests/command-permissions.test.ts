@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canRunBridgeCommand } from "../src/app/command-permissions.js";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 
 const identity = { openId: "ou_1", userId: "u_1" };
 const groupTarget = {
@@ -17,8 +18,20 @@ const p2pTarget = {
 } as const;
 
 describe("canRunBridgeCommand", () => {
-  it("私聊命令不受群聊 owner 限制", () => {
+  it("私聊普通用户只能执行公开命令", () => {
+    expect(canRunBridgeCommand(identity, { name: "commands", args: "" }, p2pTarget, [])).toBe(true);
     expect(canRunBridgeCommand(identity, { name: "new", args: "" }, p2pTarget, [])).toBe(true);
+    expect(canRunBridgeCommand(identity, { name: "tools", args: "" }, p2pTarget, [])).toBe(true);
+    expect(canRunBridgeCommand(identity, { name: "restart", args: "" }, p2pTarget, [])).toBe(false);
+    expect(canRunBridgeCommand(identity, { name: "tools", args: "on read" }, p2pTarget, [])).toBe(false);
+    expect(canRunBridgeCommand(identity, { name: "p2p", args: "policy whitelist" }, p2pTarget, [])).toBe(false);
+  });
+
+  it("super admin 在私聊和群聊都可以执行受限命令", () => {
+    const superAdmin = { openId: SUPER_ADMIN_OPEN_ID };
+    expect(canRunBridgeCommand(superAdmin, { name: "restart", args: "" }, p2pTarget, [])).toBe(true);
+    expect(canRunBridgeCommand(superAdmin, { name: "tools", args: "on read" }, groupTarget, [])).toBe(true);
+    expect(canRunBridgeCommand(superAdmin, { name: "p2p", args: "policy whitelist" }, p2pTarget, [])).toBe(true);
   });
 
   it("群聊普通成员只能执行公开命令", () => {

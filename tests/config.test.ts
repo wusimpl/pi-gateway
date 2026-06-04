@@ -81,6 +81,18 @@ describe("loadConfig", () => {
     expect(config.ADMIN_PASSWORD).toBe("admin");
   });
 
+  it("私聊 allowlist 应按逗号解析", async () => {
+    applyBaseEnv({
+      FEISHU_P2P_CHAT_POLICY: "whitelist",
+      FEISHU_P2P_CHAT_ALLOWLIST: "ou_1, ou_2,,",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.FEISHU_P2P_CHAT_POLICY).toBe("whitelist");
+    expect(config.FEISHU_P2P_CHAT_ALLOWLIST).toEqual(["ou_1", "ou_2"]);
+  });
+
   it("群聊 allowlist 应按逗号解析", async () => {
     applyBaseEnv({
       FEISHU_GROUP_CHAT_POLICY: "allowlist",

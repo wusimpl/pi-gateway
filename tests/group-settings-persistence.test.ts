@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCommandService } from "../src/app/command-service.js";
 import { createMessageRouter } from "../src/app/router.js";
 import { createRuntimeConfigStore } from "../src/app/runtime-config.js";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 import { createGroupSettingsStore } from "../src/storage/group-settings.js";
 
 const groupTargetA = {
@@ -96,32 +97,34 @@ function createCommandDeps(dataDir: string) {
 }
 
 describe("group settings persistence", () => {
-  it("按群保存时，白名单提示应只展示当前群的用法", async () => {
+  it("私聊里的 /group allowlist 应持久化群白名单", async () => {
     const dataDir = await createTempDataDir();
-    const { service, messenger } = createCommandDeps(dataDir);
+    const first = createCommandDeps(dataDir);
 
-    await service.handleBridgeCommand(
-      { openId: "ou_1", userId: "u_1" },
-      { name: "group", args: "allowlist add here" },
-      groupTargetA,
+    await first.service.handleBridgeCommand(
+      { openId: SUPER_ADMIN_OPEN_ID },
+      { name: "group", args: "allowlist add oc_1 oc_2 oc_2" },
     );
 
-    expect(messenger.sendRenderedMessageToTarget).toHaveBeenCalledWith(
-      groupTargetA,
-      "✅ 已加入群白名单：oc_1\n" +
-        "\n" +
-        "📋 群白名单（1）\n" +
+    const second = createCommandDeps(dataDir);
+    await second.service.handleBridgeCommand(
+      { openId: SUPER_ADMIN_OPEN_ID },
+      { name: "group", args: "allowlist show" },
+    );
+
+    expect(second.messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      SUPER_ADMIN_OPEN_ID,
+      "📋 群白名单（2）\n" +
         "1. oc_1\n" +
+        "2. oc_2\n" +
         "\n" +
-        "当前群：oc_1（已在白名单）\n" +
-        "\n" +
-        "添加：/group allowlist add here\n" +
-        "移除：/group allowlist remove here",
+        "添加：/group allowlist add <chat_id...>\n" +
+        "移除：/group allowlist remove <chat_id...>",
       2000,
     );
   });
 
-  it("按群保存时，不应允许跨群改白名单", async () => {
+  it("群聊里的 /group 不应处理白名单", async () => {
     const dataDir = await createTempDataDir();
     const { service, messenger } = createCommandDeps(dataDir);
 
@@ -133,7 +136,15 @@ describe("group settings persistence", () => {
 
     expect(messenger.sendTextMessageToTarget).toHaveBeenCalledWith(
       groupTargetA,
-      "这个设置是按群单独保存的，请到目标群里用 /group allowlist add here 或 /group allowlist remove here。",
+      "用法：/group\n" +
+        "/group policy disabled|allowlist|open\n" +
+        "/group mode mention|all|keyword\n" +
+        "/group unmatched capture|ignore\n" +
+        "/group unmatched show\n" +
+        "/group unmatched clear\n" +
+        "/group keywords show\n" +
+        "/group keywords set <关键词...>\n" +
+        "/group keywords clear",
     );
   });
 
@@ -144,11 +155,6 @@ describe("group settings persistence", () => {
     await first.service.handleBridgeCommand(
       { openId: "ou_1", userId: "u_1" },
       { name: "group", args: "policy allowlist" },
-      groupTargetA,
-    );
-    await first.service.handleBridgeCommand(
-      { openId: "ou_1", userId: "u_1" },
-      { name: "group", args: "allowlist add here" },
       groupTargetA,
     );
     await first.service.handleBridgeCommand(
@@ -181,11 +187,9 @@ describe("group settings persistence", () => {
         "群聊开关：allowlist\n" +
         "触发方式：keyword\n" +
         "未触发消息：ignore\n" +
-        "白名单：1 个\n" +
         "关键词：pi\n" +
-        "当前群：oc_1（已在白名单）\n" +
+        "当前群：oc_1\n" +
         "\n" +
-        "查看白名单：/group allowlist show\n" +
         "查看关键词：/group keywords show\n" +
         "设置未触发消息：/group unmatched capture|ignore",
       2000,
@@ -197,11 +201,9 @@ describe("group settings persistence", () => {
         "群聊开关：disabled\n" +
         "触发方式：mention\n" +
         "未触发消息：ignore\n" +
-        "白名单：0 个\n" +
         "关键词：（无）\n" +
-        "当前群：oc_2（未在白名单）\n" +
+        "当前群：oc_2\n" +
         "\n" +
-        "查看白名单：/group allowlist show\n" +
         "查看关键词：/group keywords show\n" +
         "设置未触发消息：/group unmatched capture|ignore",
       2000,

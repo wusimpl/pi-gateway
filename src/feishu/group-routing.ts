@@ -1,11 +1,19 @@
 import type { Config } from "../config.js";
 import type { FeishuMessageEvent } from "../types.js";
-import { SUPPORTED_P2P_MESSAGE_TYPES } from "./events.js";
+import { canAccessP2PChat, type P2PAccessConfig } from "../app/access-control.js";
+
+const SUPPORTED_FEISHU_MESSAGE_TYPES = ["text", "post", "image", "audio", "file"] as const;
 import { logger } from "../app/logger.js";
 
 export type FeishuGroupChatPolicy = "disabled" | "allowlist" | "open";
 export type FeishuGroupMessageMode = "mention" | "all" | "keyword";
 export type FeishuMessageRoutingDecision = "route" | "capture_unmatched" | "ignore";
+
+export type FeishuP2PRoutingConfig = Pick<
+  Config,
+  | "FEISHU_P2P_CHAT_POLICY"
+  | "FEISHU_P2P_CHAT_ALLOWLIST"
+>;
 
 export type FeishuGroupRoutingConfig = Pick<
   Config,
@@ -24,6 +32,25 @@ export function isSupportedFeishuMessage(
   return getFeishuMessageRoutingDecision(event, config) === "route";
 }
 
+export function getFeishuP2PMessageRoutingDecision(
+  event: FeishuMessageEvent,
+  config?: P2PAccessConfig,
+): FeishuMessageRoutingDecision {
+  if (!isSupportedMessageType(event) || (event.message.chatType && event.message.chatType !== "p2p")) {
+    return "ignore";
+  }
+
+  if (!canAccessP2PChat(event.sender.senderId.openId, config)) {
+    logger.debug("忽略飞书私聊消息：用户不在白名单", {
+      openId: event.sender.senderId.openId,
+      policy: config?.FEISHU_P2P_CHAT_POLICY ?? "all",
+    });
+    return "ignore";
+  }
+
+  return "route";
+}
+
 export function getFeishuMessageRoutingDecision(
   event: FeishuMessageEvent,
   config: FeishuGroupRoutingConfig,
@@ -32,13 +59,13 @@ export function getFeishuMessageRoutingDecision(
     logger.debug("忽略飞书事件：消息类型暂不支持", {
       chatType: event.message.chatType,
       messageType: event.message.messageType,
-      supportedTypes: SUPPORTED_P2P_MESSAGE_TYPES,
+      supportedTypes: SUPPORTED_FEISHU_MESSAGE_TYPES,
     });
     return "ignore";
   }
 
   if (event.message.chatType === "p2p") {
-    return "route";
+    return getFeishuP2PMessageRoutingDecision(event);
   }
 
   if (event.message.chatType !== "group") {
@@ -108,8 +135,8 @@ export function isBotMentioned(event: FeishuMessageEvent, botOpenId?: string): b
 }
 
 function isSupportedMessageType(event: FeishuMessageEvent): boolean {
-  return SUPPORTED_P2P_MESSAGE_TYPES.includes(
-    event.message.messageType as (typeof SUPPORTED_P2P_MESSAGE_TYPES)[number],
+  return SUPPORTED_FEISHU_MESSAGE_TYPES.includes(
+    event.message.messageType as (typeof SUPPORTED_FEISHU_MESSAGE_TYPES)[number],
   );
 }
 

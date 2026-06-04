@@ -408,7 +408,8 @@ describe("handleBridgeCommand", () => {
 
   it("未知斜杠命令应返回不支持提示", () => {
     expect(formatUnsupportedSlashCommand("/compact now")).toContain("暂不支持命令：/compact");
-    expect(formatUnsupportedSlashCommand("/compact now")).toContain("当前支持：/new");
+    expect(formatUnsupportedSlashCommand("/compact now")).toContain("/commands");
+    expect(formatUnsupportedSlashCommand("/compact now")).toContain("/new");
     expect(formatUnsupportedSlashCommand("/compact now")).not.toContain("/models");
   });
 });

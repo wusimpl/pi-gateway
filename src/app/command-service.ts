@@ -22,9 +22,11 @@ import type { SkillStatsStore } from "../pi/skill-stats.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { GroupSettingsStore, PersistedGroupRoutingConfig } from "../storage/group-settings.js";
 import type { GroupUnmatchedMessageStore } from "../storage/group-unmatched-messages.js";
+import type { P2PSettingsStore, PersistedP2PRoutingConfig } from "../storage/p2p-settings.js";
 import type { UserStateStore } from "../storage/users.js";
 import type { ModelPreference, ModelRouteSlot, ThinkingLevel, ToolCallsDisplayMode, UserIdentity, UserState } from "../types.js";
-import { handleBridgeCommand, formatUnsupportedSlashCommand, type BridgeCommand } from "./commands.js";
+import { handleBridgeCommand, formatUnsupportedSlashCommand, type BridgeCommand, type BridgeCommandName } from "./commands.js";
+import { canRunBridgeCommand } from "./command-permissions.js";
 import { logger } from "./logger.js";
 import {
   clearRestartReadyNotification,
@@ -41,6 +43,7 @@ import {
   getCronRuntimeLockKey,
 } from "../cron/scope.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
+import { isSuperAdminOpenId, SUPER_ADMIN_OPEN_ID } from "./access-control.js";
 import {
   formatCronHelp,
   formatCronJobAdded,
@@ -103,14 +106,26 @@ interface CommandServiceDeps {
   cronService?: Pick<CronService, "isEnabled" | "getDefaultTimezone" | "listJobs" | "addJob" | "setJobEnabled" | "removeJob" | "stopJob" | "runJobNow">;
   deferredCronRunService?: Pick<DeferredCronRunService, "queueRun">;
   skillStatsStore?: Pick<SkillStatsStore, "listSkillUsage" | "reset">;
-  groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig" | "writeGroupRoutingConfig">;
+  groupSettingsStore?: Pick<
+    GroupSettingsStore,
+    | "readGlobalGroupRoutingConfig"
+    | "writeGlobalGroupRoutingConfig"
+    | "readGroupRoutingConfig"
+    | "writeGroupRoutingConfig"
+  >;
   groupUnmatchedMessageStore?: Pick<GroupUnmatchedMessageStore, "clear" | "count">;
+  p2pSettingsStore?: Pick<P2PSettingsStore, "readP2PRoutingConfig" | "writeP2PRoutingConfig">;
   runtimeConfig?: Pick<
     RuntimeConfigStore,
     | "getAudioTranscribeProvider"
     | "setAudioTranscribeProvider"
     | "getStreamingEnabled"
     | "setStreamingEnabled"
+    | "getP2PRoutingConfig"
+    | "getP2PChatPolicy"
+    | "setP2PChatPolicy"
+    | "getP2PChatAllowlist"
+    | "setP2PChatAllowlist"
     | "getGroupRoutingConfig"
     | "getGroupChatPolicy"
     | "setGroupChatPolicy"
@@ -245,6 +260,32 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     return createCronScopeSelector(identity.openId, conversationTarget);
   }
 
+  function getDefaultP2PRoutingConfig(): PersistedP2PRoutingConfig {
+    const runtimeConfig = deps.runtimeConfig;
+    if (runtimeConfig?.getP2PRoutingConfig) {
+      const config = runtimeConfig.getP2PRoutingConfig();
+      return {
+        FEISHU_P2P_CHAT_POLICY: config.FEISHU_P2P_CHAT_POLICY,
+        FEISHU_P2P_CHAT_ALLOWLIST: [...config.FEISHU_P2P_CHAT_ALLOWLIST],
+      };
+    }
+
+    return {
+      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: [],
+    };
+  }
+
+  async function readEffectiveP2PRoutingConfig(): Promise<PersistedP2PRoutingConfig> {
+    return (await deps.p2pSettingsStore?.readP2PRoutingConfig()) ?? getDefaultP2PRoutingConfig();
+  }
+
+  async function writeEffectiveP2PRoutingConfig(config: PersistedP2PRoutingConfig): Promise<void> {
+    deps.runtimeConfig?.setP2PChatPolicy(config.FEISHU_P2P_CHAT_POLICY);
+    deps.runtimeConfig?.setP2PChatAllowlist(config.FEISHU_P2P_CHAT_ALLOWLIST);
+    await deps.p2pSettingsStore?.writeP2PRoutingConfig(config);
+  }
+
   function getDefaultGroupRoutingConfig(): PersistedGroupRoutingConfig {
     const runtimeConfig = deps.runtimeConfig;
     if (runtimeConfig?.getGroupRoutingConfig) {
@@ -267,23 +308,32 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     };
   }
 
+  async function readEffectiveGlobalGroupRoutingConfig(): Promise<PersistedGroupRoutingConfig> {
+    return (await deps.groupSettingsStore?.readGlobalGroupRoutingConfig()) ?? getDefaultGroupRoutingConfig();
+  }
+
+  async function writeEffectiveGlobalGroupRoutingConfig(config: PersistedGroupRoutingConfig): Promise<void> {
+    deps.runtimeConfig?.setGroupChatPolicy(config.FEISHU_GROUP_CHAT_POLICY);
+    deps.runtimeConfig?.setGroupChatAllowlist(config.FEISHU_GROUP_CHAT_ALLOWLIST);
+    deps.runtimeConfig?.setGroupMessageMode(config.FEISHU_GROUP_MESSAGE_MODE);
+    deps.runtimeConfig?.setGroupMessageKeywords(config.FEISHU_GROUP_MESSAGE_KEYWORDS);
+    deps.runtimeConfig?.setGroupUnmatchedMessagePolicy(config.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY);
+    await deps.groupSettingsStore?.writeGlobalGroupRoutingConfig(config);
+  }
+
   async function readEffectiveGroupRoutingConfig(chatId?: string): Promise<PersistedGroupRoutingConfig> {
     if (deps.groupSettingsStore && chatId) {
-      return (await deps.groupSettingsStore.readGroupRoutingConfig(chatId)) ?? getDefaultGroupRoutingConfig();
+      const defaultConfig = await readEffectiveGlobalGroupRoutingConfig();
+      const persisted = await deps.groupSettingsStore.readGroupRoutingConfig(chatId);
+      return persisted
+        ? {
+            ...persisted,
+            FEISHU_GROUP_CHAT_ALLOWLIST: [...defaultConfig.FEISHU_GROUP_CHAT_ALLOWLIST],
+          }
+        : defaultConfig;
     }
 
-    const runtimeConfig = deps.runtimeConfig;
-    if (!runtimeConfig) {
-      return getDefaultGroupRoutingConfig();
-    }
-
-    return {
-      FEISHU_GROUP_CHAT_POLICY: runtimeConfig.getGroupChatPolicy(),
-      FEISHU_GROUP_CHAT_ALLOWLIST: runtimeConfig.getGroupChatAllowlist(),
-      FEISHU_GROUP_MESSAGE_MODE: runtimeConfig.getGroupMessageMode(),
-      FEISHU_GROUP_MESSAGE_KEYWORDS: runtimeConfig.getGroupMessageKeywords(),
-      FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY: runtimeConfig.getGroupUnmatchedMessagePolicy(),
-    };
+    return readEffectiveGlobalGroupRoutingConfig();
   }
 
   async function writeEffectiveGroupRoutingConfig(
@@ -314,7 +364,9 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     const openId = identity.openId;
     const conversationKey = getConversationTargetKey(conversationTarget, openId);
     try {
-      if (command.name === "new" || command.name === "reset") {
+      if (command.name === "commands") {
+        await sendCommandReply(identity, conversationTarget, formatAvailableCommandsReply(identity, conversationTarget));
+      } else if (command.name === "new" || command.name === "reset") {
         const sessionState = await createSession(identity, conversationTarget);
         const reply = handleBridgeCommand(command, {
           openId,
@@ -407,6 +459,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await handleReactionCommand(identity, command, conversationTarget);
       } else if (command.name === "group") {
         await handleGroupCommand(identity, command, conversationTarget);
+      } else if (command.name === "p2p") {
+        await handleP2PCommand(identity, command, conversationTarget);
       } else if (command.name === "stop") {
         await handleStopCommand(identity, command, conversationKey, conversationTarget);
       } else if (command.name === "next") {
@@ -1004,6 +1058,76 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     await sendCommandReply(identity, conversationTarget, `✅ 已开启处理中 reaction，表情继续使用 .env 里的 ${reactionType}。`);
   }
 
+  async function handleP2PCommand(
+    identity: UserIdentity,
+    command: BridgeCommand,
+    conversationTarget?: ConversationTarget,
+  ): Promise<void> {
+    if (!isSuperAdminOpenId(identity.openId)) {
+      await sendTextReply(identity, conversationTarget, "这个命令只有 super admin 可以使用。");
+      return;
+    }
+
+    const parsed = parseP2PArgs(command.args);
+    if (parsed.error) {
+      await sendTextReply(identity, conversationTarget, parsed.error);
+      return;
+    }
+
+    const settings = await readEffectiveP2PRoutingConfig();
+    if (parsed.kind === "show") {
+      await sendCommandReply(identity, conversationTarget, formatP2PSettingsReply(settings));
+      return;
+    }
+
+    if (parsed.kind === "set-policy") {
+      settings.FEISHU_P2P_CHAT_POLICY = parsed.policy;
+      await writeEffectiveP2PRoutingConfig(settings);
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatP2PSettingsReply(settings, `✅ 已切换私聊策略：${parsed.policy}`),
+      );
+      return;
+    }
+
+    if (parsed.kind === "show-allowlist") {
+      await sendCommandReply(identity, conversationTarget, formatP2PAllowlistReply(settings.FEISHU_P2P_CHAT_ALLOWLIST));
+      return;
+    }
+
+    if (parsed.kind !== "edit-allowlist") {
+      await sendTextReply(identity, conversationTarget, "p2p 参数解析失败。");
+      return;
+    }
+
+    const openIds = dedupeToolNames(parsed.openIds);
+    const currentAllowlist = [...settings.FEISHU_P2P_CHAT_ALLOWLIST];
+    const currentAllowlistSet = new Set(currentAllowlist);
+    const changedOpenIds = parsed.action === "add"
+      ? openIds.filter((openId) => !currentAllowlistSet.has(openId))
+      : openIds.filter((openId) => currentAllowlistSet.has(openId));
+
+    if (parsed.action === "add") {
+      settings.FEISHU_P2P_CHAT_ALLOWLIST = dedupeToolNames([...currentAllowlist, ...openIds]);
+    } else {
+      const removedOpenIds = new Set(openIds);
+      settings.FEISHU_P2P_CHAT_ALLOWLIST = currentAllowlist.filter((openId) => !removedOpenIds.has(openId));
+    }
+    await writeEffectiveP2PRoutingConfig(settings);
+
+    const summary = changedOpenIds.length > 0
+      ? `✅ 已${parsed.action === "add" ? "加入" : "移出"}私聊白名单：${changedOpenIds.join(", ")}`
+      : parsed.action === "add"
+        ? `这些用户本来就在私聊白名单里：${openIds.join(", ")}`
+        : `这些用户本来就不在私聊白名单里：${openIds.join(", ")}`;
+    await sendCommandReply(
+      identity,
+      conversationTarget,
+      formatP2PAllowlistReply(settings.FEISHU_P2P_CHAT_ALLOWLIST, summary),
+    );
+  }
+
   async function handleGroupCommand(
     identity: UserIdentity,
     command: BridgeCommand,
@@ -1014,16 +1138,69 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
       return;
     }
 
-    const groupScopedSettings = Boolean(deps.groupSettingsStore);
-    const parsed = parseGroupArgs(command.args, groupScopedSettings);
+    const currentChatId = getCurrentGroupChatId(conversationTarget);
+    const parsed = parseGroupArgs(command.args, { allowAllowlist: !currentChatId });
     if (parsed.error) {
       await sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
 
-    const currentChatId = getCurrentGroupChatId(conversationTarget);
-    if (deps.groupSettingsStore && !currentChatId) {
-      await sendTextReply(identity, conversationTarget, "这个命令是按群单独保存的，请到目标群里使用。");
+    if (parsed.kind === "show-allowlist") {
+      if (!isSuperAdminOpenId(identity.openId)) {
+        await sendTextReply(identity, conversationTarget, "这个命令只有 super admin 可以使用。");
+        return;
+      }
+
+      const settings = await readEffectiveGlobalGroupRoutingConfig();
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupAllowlistReply(settings.FEISHU_GROUP_CHAT_ALLOWLIST),
+      );
+      return;
+    }
+
+    if (parsed.kind === "edit-allowlist") {
+      if (!isSuperAdminOpenId(identity.openId)) {
+        await sendTextReply(identity, conversationTarget, "这个命令只有 super admin 可以使用。");
+        return;
+      }
+      if (parsed.targets.some((target) => target.toLowerCase() === "here")) {
+        await sendTextReply(identity, conversationTarget, "请填写群 chat_id，例如 /group allowlist add oc_xxx。");
+        return;
+      }
+
+      const settings = await readEffectiveGlobalGroupRoutingConfig();
+      const chatIds = dedupeToolNames(parsed.targets);
+      const currentAllowlist = [...settings.FEISHU_GROUP_CHAT_ALLOWLIST];
+      const currentAllowlistSet = new Set(currentAllowlist);
+      const changedChatIds = parsed.action === "add"
+        ? chatIds.filter((chatId) => !currentAllowlistSet.has(chatId))
+        : chatIds.filter((chatId) => currentAllowlistSet.has(chatId));
+
+      if (parsed.action === "add") {
+        settings.FEISHU_GROUP_CHAT_ALLOWLIST = dedupeToolNames([...currentAllowlist, ...chatIds]);
+      } else {
+        const removedChatIds = new Set(chatIds);
+        settings.FEISHU_GROUP_CHAT_ALLOWLIST = currentAllowlist.filter((chatId) => !removedChatIds.has(chatId));
+      }
+      await writeEffectiveGlobalGroupRoutingConfig(settings);
+
+      const summary = changedChatIds.length > 0
+        ? `✅ 已${parsed.action === "add" ? "加入" : "移出"}群白名单：${changedChatIds.join(", ")}`
+        : parsed.action === "add"
+          ? `这些群本来就在白名单里：${chatIds.join(", ")}`
+          : `这些群本来就不在白名单里：${chatIds.join(", ")}`;
+      await sendCommandReply(
+        identity,
+        conversationTarget,
+        formatGroupAllowlistReply(settings.FEISHU_GROUP_CHAT_ALLOWLIST, summary),
+      );
+      return;
+    }
+
+    if (!currentChatId) {
+      await sendTextReply(identity, conversationTarget, "群聊设置请到目标群里使用；群白名单请用 /group allowlist show|add|remove。");
       return;
     }
 
@@ -1036,7 +1213,6 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           formatGroupSettingsForReply(settings),
           currentChatId,
           undefined,
-          groupScopedSettings,
         ),
       );
       return;
@@ -1052,7 +1228,6 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           formatGroupSettingsForReply(settings),
           currentChatId,
           `✅ 已切换群聊开关：${parsed.policy}`,
-          groupScopedSettings,
         ),
       );
       return;
@@ -1068,7 +1243,6 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           formatGroupSettingsForReply(settings),
           currentChatId,
           `✅ 已切换群消息触发方式：${parsed.mode}`,
-          groupScopedSettings,
         ),
       );
       return;
@@ -1089,52 +1263,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
           parsed.policy === "capture"
             ? "✅ 已开启未触发群消息暂存。"
             : "✅ 已关闭未触发群消息暂存，未 @/未命中关键词的消息会按现有逻辑忽略。",
-          groupScopedSettings,
         ),
-      );
-      return;
-    }
-
-    if (parsed.kind === "show-allowlist") {
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupAllowlistReply(settings.FEISHU_GROUP_CHAT_ALLOWLIST, currentChatId, undefined, groupScopedSettings),
-      );
-      return;
-    }
-
-    if (parsed.kind === "edit-allowlist") {
-      const targetChatIds = resolveGroupAllowlistTargets(parsed.targets, currentChatId, groupScopedSettings);
-      if (!targetChatIds.ok) {
-        await sendTextReply(identity, conversationTarget, targetChatIds.error);
-        return;
-      }
-
-      const chatIds = targetChatIds.chatIds;
-      const currentAllowlist = [...settings.FEISHU_GROUP_CHAT_ALLOWLIST];
-      const currentAllowlistSet = new Set(currentAllowlist);
-      const changedChatIds = parsed.action === "add"
-        ? chatIds.filter((chatId) => !currentAllowlistSet.has(chatId))
-        : chatIds.filter((chatId) => currentAllowlistSet.has(chatId));
-
-      if (parsed.action === "add") {
-        settings.FEISHU_GROUP_CHAT_ALLOWLIST = dedupeToolNames([...currentAllowlist, ...chatIds]);
-      } else {
-        const removedChatIds = new Set(chatIds);
-        settings.FEISHU_GROUP_CHAT_ALLOWLIST = currentAllowlist.filter((chatId) => !removedChatIds.has(chatId));
-      }
-      await writeEffectiveGroupRoutingConfig(currentChatId, settings);
-
-      const summary = changedChatIds.length > 0
-        ? `✅ 已${parsed.action === "add" ? "加入" : "移出"}群白名单：${changedChatIds.join(", ")}`
-        : parsed.action === "add"
-          ? `这些群本来就在白名单里：${chatIds.join(", ")}`
-          : `这些群本来就不在白名单里：${chatIds.join(", ")}`;
-      await sendCommandReply(
-        identity,
-        conversationTarget,
-        formatGroupAllowlistReply(settings.FEISHU_GROUP_CHAT_ALLOWLIST, currentChatId, summary, groupScopedSettings),
       );
       return;
     }
@@ -1370,13 +1499,105 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     _command: BridgeCommand,
     conversationTarget?: ConversationTarget,
   ): Promise<void> {
-    await sendTextReply(identity, conversationTarget, "这个命令只有 owner 可以在群里使用。");
+    await sendTextReply(identity, conversationTarget, formatUnauthorizedCommandReply(identity, conversationTarget));
+  }
+
+  function formatAvailableCommandsReply(
+    identity: UserIdentity,
+    conversationTarget?: ConversationTarget,
+  ): string {
+    const resolvedTarget = conversationTarget ?? createFallbackP2PTarget(identity.openId);
+    const ownerOpenIds = ((deps.config as Partial<Config>).FEISHU_OWNER_OPEN_IDS ?? []) as string[];
+    const scopeLabel = resolvedTarget.kind === "p2p" ? "私聊" : "群聊";
+    const availableCommands = COMMAND_CATALOG.filter((item) => isCommandVisibleInTarget(item, resolvedTarget))
+      .filter((item) => canRunBridgeCommand(identity, { name: item.name, args: item.permissionArgs ?? "" }, resolvedTarget, ownerOpenIds));
+
+    const lines = [`📖 当前可用命令（${scopeLabel}）`];
+    if (availableCommands.length === 0) {
+      lines.push("（无）");
+    } else {
+      lines.push(...availableCommands.map((item) => `${item.usage} — ${item.description}`));
+    }
+
+    if (!isSuperAdminOpenId(identity.openId)) {
+      lines.push("", "受限命令不会显示；需要更高权限时请联系 super admin。");
+    }
+
+    return lines.join("\n");
+  }
+
+  function formatUnauthorizedCommandReply(
+    identity: UserIdentity,
+    conversationTarget?: ConversationTarget,
+  ): string {
+    if (conversationTarget?.kind === "p2p" || !conversationTarget) {
+      return "这个命令只有 super admin 可以在私聊里使用。用 /commands 查看当前可用命令。";
+    }
+
+    return "这个命令只有 owner 或 super admin 可以在群里使用。用 /commands 查看当前可用命令。";
   }
 
   return {
     handleBridgeCommand: handleBridgeCommandFlow,
     handleUnsupportedSlashCommand,
     handleUnauthorizedBridgeCommand,
+  };
+}
+
+interface CommandCatalogItem {
+  name: BridgeCommandName;
+  usage: string;
+  description: string;
+  permissionArgs?: string;
+  target?: "all" | "p2p" | "group";
+}
+
+const COMMAND_CATALOG: CommandCatalogItem[] = [
+  { name: "commands", usage: "/commands", description: "查看当前可用命令" },
+  { name: "new", usage: "/new", description: "新建会话" },
+  { name: "reset", usage: "/reset", description: "重置当前会话" },
+  { name: "status", usage: "/status", description: "查看当前会话状态" },
+  { name: "context", usage: "/context", description: "查看已加载上下文" },
+  { name: "skills", usage: "/skills", description: "查看可用技能" },
+  { name: "model", usage: "/model", description: "查看或切换模型" },
+  { name: "route", usage: "/route", description: "查看或管理模型路由" },
+  { name: "sessions", usage: "/sessions", description: "查看历史会话" },
+  { name: "resume", usage: "/resume <序号或会话ID>", description: "恢复历史会话" },
+  { name: "settings", usage: "/settings", description: "查看或调整当前设置" },
+  { name: "tools", usage: "/tools", description: "查看工具状态" },
+  { name: "tools", usage: "/tools on|off|set|reset", description: "管理工具启用状态", permissionArgs: "on read" },
+  { name: "toolcalls", usage: "/toolcalls", description: "设置工具调用展示" },
+  { name: "skill-folder", usage: "/skill-folder", description: "查看私有技能目录开关" },
+  { name: "skill-folder", usage: "/skill-folder on|off", description: "管理私有技能目录开关", permissionArgs: "on" },
+  { name: "stop", usage: "/stop", description: "停止当前任务" },
+  { name: "next", usage: "/next <内容>", description: "把补充内容排到当前任务后处理" },
+  { name: "restart", usage: "/restart", description: "重启网关" },
+  { name: "cron", usage: "/cron", description: "管理定时任务" },
+  { name: "stt", usage: "/stt provider <名称>", description: "切换语音转写方式" },
+  { name: "stream", usage: "/stream on|off", description: "开关流式回复" },
+  { name: "reaction", usage: "/reaction on|off", description: "开关处理中 reaction" },
+  { name: "group", usage: "/group", description: "管理群聊策略", target: "group" },
+  { name: "group", usage: "/group allowlist show|add|remove", description: "管理群白名单", target: "p2p" },
+  { name: "p2p", usage: "/p2p", description: "管理私聊访问策略" },
+  { name: "skillstat", usage: "/skillstat", description: "查看技能使用统计" },
+];
+
+function isCommandVisibleInTarget(item: CommandCatalogItem, conversationTarget: ConversationTarget): boolean {
+  if (!item.target || item.target === "all") {
+    return true;
+  }
+  if (item.target === "group") {
+    return conversationTarget.kind !== "p2p";
+  }
+  return conversationTarget.kind === "p2p";
+}
+
+function createFallbackP2PTarget(openId: string): ConversationTarget {
+  return {
+    kind: "p2p",
+    key: openId,
+    receiveIdType: "open_id",
+    receiveId: openId,
   };
 }
 
@@ -1491,9 +1712,107 @@ function formatToolsActionReply(
   return lines.join("\n");
 }
 
+type P2PChatPolicy = Config["FEISHU_P2P_CHAT_POLICY"];
 type GroupChatPolicy = Config["FEISHU_GROUP_CHAT_POLICY"];
 type GroupMessageMode = Config["FEISHU_GROUP_MESSAGE_MODE"];
 type GroupUnmatchedMessagePolicy = Config["FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"];
+
+type ParsedP2PCommand =
+  | { kind: "show"; error?: undefined }
+  | { kind: "set-policy"; policy: P2PChatPolicy; error?: undefined }
+  | { kind: "show-allowlist"; error?: undefined }
+  | { kind: "edit-allowlist"; action: "add" | "remove"; openIds: string[]; error?: undefined }
+  | { kind?: undefined; error: string };
+
+function parseP2PArgs(args: string): ParsedP2PCommand {
+  const trimmed = args.trim();
+  if (!trimmed) {
+    return { kind: "show" };
+  }
+
+  const policyMatched = trimmed.match(/^policy\s+(all|whitelist)$/i);
+  if (policyMatched) {
+    return {
+      kind: "set-policy",
+      policy: policyMatched[1]!.toLowerCase() as P2PChatPolicy,
+    };
+  }
+
+  if (/^allowlist\s+show$/i.test(trimmed)) {
+    return { kind: "show-allowlist" };
+  }
+
+  const allowlistMatched = trimmed.match(/^allowlist\s+(add|remove)\s+(.+)$/i);
+  if (allowlistMatched) {
+    const openIds = allowlistMatched[2]!.trim().split(/\s+/).filter(Boolean);
+    if (openIds.length === 0) {
+      return { error: formatP2PUsage() };
+    }
+    return {
+      kind: "edit-allowlist",
+      action: allowlistMatched[1]!.toLowerCase() as "add" | "remove",
+      openIds,
+    };
+  }
+
+  return { error: formatP2PUsage() };
+}
+
+function formatP2PUsage(): string {
+  return [
+    "用法：/p2p",
+    "/p2p policy all|whitelist",
+    "/p2p allowlist show",
+    "/p2p allowlist add <open_id...>",
+    "/p2p allowlist remove <open_id...>",
+    `super admin：${SUPER_ADMIN_OPEN_ID}（永远允许，不受白名单影响）`,
+  ].join("\n");
+}
+
+function formatP2PSettingsReply(settings: PersistedP2PRoutingConfig, summary?: string): string {
+  const lines: string[] = [];
+  if (summary) {
+    lines.push(summary, "");
+  }
+
+  lines.push(
+    "🔐 私聊设置",
+    `私聊策略：${settings.FEISHU_P2P_CHAT_POLICY}`,
+    `白名单：${settings.FEISHU_P2P_CHAT_ALLOWLIST.length} 个`,
+    `super admin：${SUPER_ADMIN_OPEN_ID}`,
+    "",
+    "策略：/p2p policy all|whitelist",
+    "白名单：/p2p allowlist show|add|remove",
+  );
+
+  if (settings.FEISHU_P2P_CHAT_POLICY === "whitelist" && settings.FEISHU_P2P_CHAT_ALLOWLIST.length === 0) {
+    lines.push("", "提醒：当前是 whitelist，但白名单为空；除 super admin 外其他私聊都会被忽略。");
+  }
+
+  return lines.join("\n");
+}
+
+function formatP2PAllowlistReply(allowlist: string[], summary?: string): string {
+  const lines: string[] = [];
+  if (summary) {
+    lines.push(summary, "");
+  }
+
+  lines.push(`📋 私聊白名单（${allowlist.length}）`);
+  if (allowlist.length === 0) {
+    lines.push("（空）");
+  } else {
+    lines.push(...allowlist.map((openId, index) => `${index + 1}. ${openId}`));
+  }
+
+  lines.push(
+    "",
+    `super admin：${SUPER_ADMIN_OPEN_ID}（永远允许，不需要加入白名单）`,
+    "添加：/p2p allowlist add <open_id...>",
+    "移除：/p2p allowlist remove <open_id...>",
+  );
+  return lines.join("\n");
+}
 
 type ParsedGroupCommand =
   | { kind: "show"; error?: undefined }
@@ -1509,7 +1828,10 @@ type ParsedGroupCommand =
   | { kind: "clear-keywords"; error?: undefined }
   | { kind?: undefined; error: string };
 
-function parseGroupArgs(args: string, groupScoped = false): ParsedGroupCommand {
+function parseGroupArgs(
+  args: string,
+  options: { allowAllowlist: boolean } = { allowAllowlist: false },
+): ParsedGroupCommand {
   const trimmed = args.trim();
   if (!trimmed) {
     return { kind: "show" };
@@ -1547,15 +1869,15 @@ function parseGroupArgs(args: string, groupScoped = false): ParsedGroupCommand {
     return { kind: "clear-unmatched" };
   }
 
-  if (/^allowlist\s+show$/i.test(trimmed)) {
+  if (options.allowAllowlist && /^allowlist\s+show$/i.test(trimmed)) {
     return { kind: "show-allowlist" };
   }
 
   const allowlistMatched = trimmed.match(/^allowlist\s+(add|remove)\s+(.+)$/i);
-  if (allowlistMatched) {
+  if (options.allowAllowlist && allowlistMatched) {
     const targets = allowlistMatched[2]!.trim().split(/\s+/).filter(Boolean);
     if (targets.length === 0) {
-      return { error: formatGroupUsage(groupScoped) };
+      return { error: formatPrivateGroupAllowlistUsage() };
     }
     return {
       kind: "edit-allowlist",
@@ -1584,7 +1906,7 @@ function parseGroupArgs(args: string, groupScoped = false): ParsedGroupCommand {
     };
   }
 
-  return { error: formatGroupUsage(groupScoped) };
+  return { error: options.allowAllowlist ? formatPrivateGroupAllowlistUsage() : formatGroupUsage() };
 }
 
 function parseGroupKeywordArgs(raw: string): string[] {
@@ -1604,7 +1926,7 @@ function normalizeGroupKeyword(raw: string): string {
   return raw.trim().replace(/^(["'“”‘’])+|(["'“”‘’])+$/g, "").trim();
 }
 
-function formatGroupUsage(groupScoped = false): string {
+function formatGroupUsage(): string {
   return [
     "用法：/group",
     "/group policy disabled|allowlist|open",
@@ -1612,12 +1934,17 @@ function formatGroupUsage(groupScoped = false): string {
     "/group unmatched capture|ignore",
     "/group unmatched show",
     "/group unmatched clear",
-    "/group allowlist show",
-    groupScoped ? "/group allowlist add here" : "/group allowlist add here|<chat_id...>",
-    groupScoped ? "/group allowlist remove here" : "/group allowlist remove here|<chat_id...>",
     "/group keywords show",
     "/group keywords set <关键词...>",
     "/group keywords clear",
+  ].join("\n");
+}
+
+function formatPrivateGroupAllowlistUsage(): string {
+  return [
+    "用法：/group allowlist show",
+    "/group allowlist add <chat_id...>",
+    "/group allowlist remove <chat_id...>",
   ].join("\n");
 }
 
@@ -1630,56 +1957,15 @@ function getCurrentGroupChatId(conversationTarget?: ConversationTarget): string 
     : undefined;
 }
 
-function resolveGroupAllowlistTargets(
-  rawTargets: string[],
-  currentChatId?: string,
-  groupScoped = false,
-): { ok: true; chatIds: string[] } | { ok: false; error: string } {
-  const normalizedTargets = rawTargets.map((target) => target.trim()).filter(Boolean);
-  if (normalizedTargets.length === 0) {
-    return { ok: false, error: formatGroupUsage(groupScoped) };
-  }
-
-  if (groupScoped && normalizedTargets.some((target) => target.toLowerCase() !== "here")) {
-    return {
-      ok: false,
-      error: "这个设置是按群单独保存的，请到目标群里用 /group allowlist add here 或 /group allowlist remove here。",
-    };
-  }
-
-  const chatIds = normalizedTargets.map((target) => {
-    if (target.toLowerCase() !== "here") {
-      return target;
-    }
-    return currentChatId;
-  });
-
-  if (chatIds.some((chatId) => !chatId)) {
-    return {
-      ok: false,
-      error: groupScoped
-        ? "这个设置是按群单独保存的，请到目标群里用 /group allowlist add here 或 /group allowlist remove here。"
-        : "这里只有在群里用才知道当前 chat_id；私聊里请改成 /group allowlist add <chat_id> 或 /group allowlist remove <chat_id>。",
-    };
-  }
-
-  return {
-    ok: true,
-    chatIds: dedupeToolNames(chatIds as string[]),
-  };
-}
-
 function formatGroupSettingsForReply(settings: PersistedGroupRoutingConfig): {
   policy: GroupChatPolicy;
   mode: GroupMessageMode;
-  allowlist: string[];
   keywords: string[];
   unmatchedPolicy: GroupUnmatchedMessagePolicy;
 } {
   return {
     policy: settings.FEISHU_GROUP_CHAT_POLICY,
     mode: settings.FEISHU_GROUP_MESSAGE_MODE,
-    allowlist: settings.FEISHU_GROUP_CHAT_ALLOWLIST,
     keywords: settings.FEISHU_GROUP_MESSAGE_KEYWORDS,
     unmatchedPolicy: settings.FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY,
   };
@@ -1689,13 +1975,11 @@ function formatGroupSettingsReply(
   settings: {
     policy: GroupChatPolicy;
     mode: GroupMessageMode;
-    allowlist: string[];
     keywords: string[];
     unmatchedPolicy: GroupUnmatchedMessagePolicy;
   },
   currentChatId?: string,
   summary?: string,
-  groupScoped = false,
 ): string {
   const lines: string[] = [];
   if (summary) {
@@ -1707,13 +1991,10 @@ function formatGroupSettingsReply(
     `群聊开关：${settings.policy}`,
     `触发方式：${settings.mode}`,
     `未触发消息：${settings.unmatchedPolicy}`,
-    `白名单：${settings.allowlist.length} 个`,
     `关键词：${settings.keywords.length > 0 ? settings.keywords.map(formatGroupKeywordForDisplay).join(" ") : "（无）"}`,
   );
   if (currentChatId) {
-    lines.push(
-      `当前群：${currentChatId}${settings.allowlist.includes(currentChatId) ? "（已在白名单）" : "（未在白名单）"}`,
-    );
+    lines.push(`当前群：${currentChatId}`);
   }
 
   const warning = formatGroupSettingsWarning(settings);
@@ -1723,7 +2004,6 @@ function formatGroupSettingsReply(
 
   lines.push(
     "",
-    "查看白名单：/group allowlist show",
     "查看关键词：/group keywords show",
     "设置未触发消息：/group unmatched capture|ignore",
   );
@@ -1732,9 +2012,7 @@ function formatGroupSettingsReply(
 
 function formatGroupAllowlistReply(
   allowlist: string[],
-  currentChatId?: string,
   summary?: string,
-  groupScoped = false,
 ): string {
   const lines: string[] = [];
   if (summary) {
@@ -1748,14 +2026,10 @@ function formatGroupAllowlistReply(
     lines.push(...allowlist.map((chatId, index) => `${index + 1}. ${chatId}`));
   }
 
-  if (currentChatId) {
-    lines.push("", `当前群：${currentChatId}${allowlist.includes(currentChatId) ? "（已在白名单）" : "（未在白名单）"}`);
-  }
-
   lines.push(
     "",
-    groupScoped ? "添加：/group allowlist add here" : "添加：/group allowlist add here|<chat_id...>",
-    groupScoped ? "移除：/group allowlist remove here" : "移除：/group allowlist remove here|<chat_id...>",
+    "添加：/group allowlist add <chat_id...>",
+    "移除：/group allowlist remove <chat_id...>",
   );
   return lines.join("\n");
 }
@@ -1783,14 +2057,9 @@ function formatGroupKeywordForDisplay(keyword: string): string {
 function formatGroupSettingsWarning(settings: {
   policy: GroupChatPolicy;
   mode: GroupMessageMode;
-  allowlist: string[];
   keywords: string[];
   unmatchedPolicy: GroupUnmatchedMessagePolicy;
 }): string | undefined {
-  if (settings.policy === "allowlist" && settings.allowlist.length === 0) {
-    return "提醒：当前是 allowlist，但白名单还是空的，群消息会继续被忽略。";
-  }
-
   if (settings.mode === "keyword" && settings.keywords.length === 0) {
     return "提醒：还没设置关键词，普通消息不会触发；@ 机器人仍可使用。";
   }

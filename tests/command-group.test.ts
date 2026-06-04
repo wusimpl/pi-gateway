@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCommandService } from "../src/app/command-service.js";
 import { createRuntimeConfigStore } from "../src/app/runtime-config.js";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 
 const groupTarget = {
   kind: "group",
@@ -82,18 +83,16 @@ describe("command service group", () => {
         "群聊开关：allowlist\n" +
         "触发方式：keyword\n" +
         "未触发消息：ignore\n" +
-        "白名单：1 个\n" +
         "关键词：日报 Pi\n" +
-        "当前群：oc_1（已在白名单）\n" +
+        "当前群：oc_1\n" +
         "\n" +
-        "查看白名单：/group allowlist show\n" +
         "查看关键词：/group keywords show\n" +
         "设置未触发消息：/group unmatched capture|ignore",
       2000,
     );
   });
 
-  it("`/group allowlist add here` 会把当前群加入白名单", async () => {
+  it("群聊里不处理 `/group allowlist`", async () => {
     const { service, messenger, runtimeConfig } = createDeps();
     runtimeConfig.setGroupChatAllowlist([]);
 
@@ -103,33 +102,56 @@ describe("command service group", () => {
       groupTarget,
     );
 
-    expect(runtimeConfig.getGroupChatAllowlist()).toEqual(["oc_1"]);
-    expect(messenger.sendRenderedMessageToTarget).toHaveBeenCalledWith(
+    expect(runtimeConfig.getGroupChatAllowlist()).toEqual([]);
+    expect(messenger.sendTextMessageToTarget).toHaveBeenCalledWith(
       groupTarget,
-      "✅ 已加入群白名单：oc_1\n" +
+      "用法：/group\n" +
+        "/group policy disabled|allowlist|open\n" +
+        "/group mode mention|all|keyword\n" +
+        "/group unmatched capture|ignore\n" +
+        "/group unmatched show\n" +
+        "/group unmatched clear\n" +
+        "/group keywords show\n" +
+        "/group keywords set <关键词...>\n" +
+        "/group keywords clear",
+    );
+  });
+
+  it("super admin 可以在私聊里用 `/group allowlist` 管理群白名单", async () => {
+    const { service, messenger, runtimeConfig } = createDeps();
+    runtimeConfig.setGroupChatAllowlist([]);
+
+    await service.handleBridgeCommand(
+      { openId: SUPER_ADMIN_OPEN_ID },
+      { name: "group", args: "allowlist add oc_1 oc_2 oc_2" },
+    );
+
+    expect(runtimeConfig.getGroupChatAllowlist()).toEqual(["oc_1", "oc_2"]);
+    expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      SUPER_ADMIN_OPEN_ID,
+      "✅ 已加入群白名单：oc_1, oc_2\n" +
         "\n" +
-        "📋 群白名单（1）\n" +
+        "📋 群白名单（2）\n" +
         "1. oc_1\n" +
+        "2. oc_2\n" +
         "\n" +
-        "当前群：oc_1（已在白名单）\n" +
-        "\n" +
-        "添加：/group allowlist add here|<chat_id...>\n" +
-        "移除：/group allowlist remove here|<chat_id...>",
+        "添加：/group allowlist add <chat_id...>\n" +
+        "移除：/group allowlist remove <chat_id...>",
       2000,
     );
   });
 
-  it("私聊里用 `here` 改白名单时会明确报错", async () => {
+  it("私聊里用 `here` 改群白名单时会明确报错", async () => {
     const { service, messenger } = createDeps();
 
     await service.handleBridgeCommand(
-      { openId: "ou_1", userId: "u_1" },
+      { openId: SUPER_ADMIN_OPEN_ID },
       { name: "group", args: "allowlist add here" },
     );
 
     expect(messenger.sendTextMessage).toHaveBeenCalledWith(
-      "ou_1",
-      "这里只有在群里用才知道当前 chat_id；私聊里请改成 /group allowlist add <chat_id> 或 /group allowlist remove <chat_id>。",
+      SUPER_ADMIN_OPEN_ID,
+      "请填写群 chat_id，例如 /group allowlist add oc_xxx。",
     );
   });
 
@@ -152,13 +174,11 @@ describe("command service group", () => {
         "群聊开关：allowlist\n" +
         "触发方式：keyword\n" +
         "未触发消息：ignore\n" +
-        "白名单：1 个\n" +
         "关键词：（无）\n" +
-        "当前群：oc_1（已在白名单）\n" +
+        "当前群：oc_1\n" +
         "\n" +
         "提醒：还没设置关键词，普通消息不会触发；@ 机器人仍可使用。\n" +
         "\n" +
-        "查看白名单：/group allowlist show\n" +
         "查看关键词：/group keywords show\n" +
         "设置未触发消息：/group unmatched capture|ignore",
       2000,

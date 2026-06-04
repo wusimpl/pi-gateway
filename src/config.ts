@@ -16,6 +16,8 @@ const envSchema = z.object({
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: z.string().default("iic/SenseVoiceSmall"),
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: z.string().default("cpu"),
   FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: z.string().default(""),
+  FEISHU_P2P_CHAT_POLICY: z.enum(["all", "whitelist"]).default("all"),
+  FEISHU_P2P_CHAT_ALLOWLIST: z.string().default("").transform(parseCommaSeparatedList),
   FEISHU_GROUP_CHAT_POLICY: z.enum(["disabled", "allowlist", "open"]).default("disabled"),
   FEISHU_GROUP_CHAT_ALLOWLIST: z.string().default("").transform(parseCommaSeparatedList),
   FEISHU_GROUP_MESSAGE_MODE: z.enum(["mention", "all", "keyword"]).default("mention"),

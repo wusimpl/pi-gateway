@@ -13,11 +13,21 @@ export type PersistedGroupRoutingConfig = Pick<
 >;
 
 export interface GroupSettingsStore {
+  readGlobalGroupRoutingConfig(): Promise<PersistedGroupRoutingConfig | null>;
+  writeGlobalGroupRoutingConfig(config: PersistedGroupRoutingConfig): Promise<void>;
   readGroupRoutingConfig(chatId: string): Promise<PersistedGroupRoutingConfig | null>;
   writeGroupRoutingConfig(chatId: string, config: PersistedGroupRoutingConfig): Promise<void>;
 }
 
 export function createGroupSettingsStore(dataDir: string): GroupSettingsStore {
+  function settingsDir(): string {
+    return join(dataDir, "settings");
+  }
+
+  function globalConfigPath(): string {
+    return join(settingsDir(), "group-routing.json");
+  }
+
   function conversationDir(chatId: string): string {
     return join(dataDir, "conversations", encodeURIComponent(chatId));
   }
@@ -28,6 +38,25 @@ export function createGroupSettingsStore(dataDir: string): GroupSettingsStore {
 
   async function ensureDir(dir: string): Promise<void> {
     await mkdir(dir, { recursive: true });
+  }
+
+  async function readGlobalGroupRoutingConfig(): Promise<PersistedGroupRoutingConfig | null> {
+    try {
+      const raw = await readFile(globalConfigPath(), "utf-8");
+      return normalizePersistedGroupRoutingConfig(JSON.parse(raw) as Partial<PersistedGroupRoutingConfig>);
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeGlobalGroupRoutingConfig(config: PersistedGroupRoutingConfig): Promise<void> {
+    await ensureDir(settingsDir());
+    const normalized = normalizePersistedGroupRoutingConfig(config);
+    await writeFile(globalConfigPath(), JSON.stringify(normalized, null, 2), "utf-8");
+    logger.debug("全局群聊路由配置已写入", {
+      policy: normalized.FEISHU_GROUP_CHAT_POLICY,
+      allowlistCount: normalized.FEISHU_GROUP_CHAT_ALLOWLIST.length,
+    });
   }
 
   async function readGroupRoutingConfig(chatId: string): Promise<PersistedGroupRoutingConfig | null> {
@@ -51,6 +80,8 @@ export function createGroupSettingsStore(dataDir: string): GroupSettingsStore {
   }
 
   return {
+    readGlobalGroupRoutingConfig,
+    writeGlobalGroupRoutingConfig,
     readGroupRoutingConfig,
     writeGroupRoutingConfig,
   };
@@ -94,7 +125,7 @@ function normalizeUnmatchedMessagePolicy(
   return policy === "capture" ? "capture" : "ignore";
 }
 
-function normalizeStringList(items: string[]): string[] {
+function normalizeStringList(items: readonly string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const item of items) {

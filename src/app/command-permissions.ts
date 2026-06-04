@@ -1,8 +1,9 @@
 import type { ConversationTarget } from "../conversation.js";
 import type { UserIdentity } from "../types.js";
+import { isSuperAdminOpenId } from "./access-control.js";
 import type { BridgeCommand } from "./commands.js";
 
-const GROUP_PUBLIC_COMMANDS = new Set(["new", "stop", "skills", "status", "model", "route"]);
+const PUBLIC_COMMANDS = new Set(["commands", "new", "stop", "skills", "status", "model", "route"]);
 
 export function canRunBridgeCommand(
   identity: UserIdentity,
@@ -10,8 +11,12 @@ export function canRunBridgeCommand(
   conversationTarget: ConversationTarget,
   ownerOpenIds: readonly string[],
 ): boolean {
-  if (conversationTarget.kind === "p2p") {
+  if (isSuperAdminOpenId(identity.openId)) {
     return true;
+  }
+
+  if (command.name === "p2p") {
+    return false;
   }
 
   if (command.name === "tools" && command.args.trim().length === 0) {
@@ -22,8 +27,12 @@ export function canRunBridgeCommand(
     return true;
   }
 
-  if (GROUP_PUBLIC_COMMANDS.has(command.name)) {
+  if (PUBLIC_COMMANDS.has(command.name)) {
     return true;
+  }
+
+  if (conversationTarget.kind === "p2p") {
+    return false;
   }
 
   return ownerOpenIds.includes(identity.openId);

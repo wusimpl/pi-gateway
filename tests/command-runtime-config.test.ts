@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCommandService } from "../src/app/command-service.js";
 import { createRuntimeConfigStore } from "../src/app/runtime-config.js";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 
 function createDeps(options: { doubaoApiKey?: string } = {}) {
   const messenger = {
@@ -13,6 +14,10 @@ function createDeps(options: { doubaoApiKey?: string } = {}) {
     FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
     FEISHU_STEERING_REACTION_TYPE: "OnIt",
   });
+  const p2pSettingsStore = {
+    readP2PRoutingConfig: vi.fn().mockResolvedValue(null),
+    writeP2PRoutingConfig: vi.fn().mockResolvedValue(undefined),
+  };
 
   const service = createCommandService({
     config: {
@@ -22,6 +27,7 @@ function createDeps(options: { doubaoApiKey?: string } = {}) {
       DATA_DIR: "/tmp/pi-gateway-data",
     },
     runtimeConfig,
+    p2pSettingsStore,
     messenger,
     sessionService: {
       getOrCreateActiveSession: vi.fn(),
@@ -53,6 +59,7 @@ function createDeps(options: { doubaoApiKey?: string } = {}) {
     service,
     messenger,
     runtimeConfig,
+    p2pSettingsStore,
   };
 }
 
@@ -182,5 +189,55 @@ describe("command service runtime config", () => {
       "当前 .env 里没配置 FEISHU_PROCESSING_REACTION_TYPE，不能开启 reaction。",
     );
     expect(messenger.sendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("/p2p policy 应持久化私聊策略", async () => {
+    const { service, runtimeConfig, p2pSettingsStore, messenger } = createDeps();
+
+    await service.handleBridgeCommand(
+      { openId: SUPER_ADMIN_OPEN_ID },
+      { name: "p2p", args: "policy whitelist" },
+    );
+
+    expect(runtimeConfig.getP2PChatPolicy()).toBe("whitelist");
+    expect(p2pSettingsStore.writeP2PRoutingConfig).toHaveBeenCalledWith({
+      FEISHU_P2P_CHAT_POLICY: "whitelist",
+      FEISHU_P2P_CHAT_ALLOWLIST: [],
+    });
+    expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      SUPER_ADMIN_OPEN_ID,
+      expect.stringContaining("已切换私聊策略：whitelist"),
+      2000,
+    );
+  });
+
+  it("/p2p allowlist add 应持久化私聊白名单", async () => {
+    const { service, runtimeConfig, p2pSettingsStore } = createDeps();
+
+    await service.handleBridgeCommand(
+      { openId: SUPER_ADMIN_OPEN_ID },
+      { name: "p2p", args: "allowlist add ou_1 ou_2 ou_2" },
+    );
+
+    expect(runtimeConfig.getP2PChatAllowlist()).toEqual(["ou_1", "ou_2"]);
+    expect(p2pSettingsStore.writeP2PRoutingConfig).toHaveBeenCalledWith({
+      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: ["ou_1", "ou_2"],
+    });
+  });
+
+  it("普通用户不能执行 /p2p", async () => {
+    const { service, p2pSettingsStore, messenger } = createDeps();
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "p2p", args: "policy whitelist" },
+    );
+
+    expect(p2pSettingsStore.writeP2PRoutingConfig).not.toHaveBeenCalled();
+    expect(messenger.sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "这个命令只有 super admin 可以使用。",
+    );
   });
 });

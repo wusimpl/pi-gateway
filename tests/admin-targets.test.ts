@@ -9,8 +9,9 @@ describe("admin targets", () => {
     const dataDir = await mkdtemp(join(tmpdir(), "pi-admin-targets-"));
     await mkdir(join(dataDir, "users", "ou_user_1"), { recursive: true });
     await mkdir(join(dataDir, "conversations", encodeURIComponent("oc_group_1")), { recursive: true });
+    await mkdir(join(dataDir, "settings"), { recursive: true });
     await writeFile(
-      join(dataDir, "conversations", encodeURIComponent("oc_group_1"), "group-routing.json"),
+      join(dataDir, "settings", "group-routing.json"),
       JSON.stringify({ FEISHU_GROUP_CHAT_ALLOWLIST: ["oc_group_2"] }),
       "utf-8",
     );

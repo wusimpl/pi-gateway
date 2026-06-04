@@ -158,10 +158,9 @@ describe("handleFeishuMessage /stop", () => {
     });
 
     const stopCall = handleFeishuMessage({});
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(piSession.abort).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(piSession.abort).toHaveBeenCalledTimes(1);
+    });
     expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
 
     resolvePrompt?.({ text: "", error: undefined, aborted: true });

@@ -35,9 +35,6 @@ const groupKeywordForm = document.querySelector("#group-keyword-form");
 const groupKeywords = document.querySelector("#group-keywords");
 const groupKeywordChips = document.querySelector("#group-keyword-chips");
 const groupKeywordsClear = document.querySelector("#group-keywords-clear");
-const groupAllowlist = document.querySelector("#group-allowlist");
-const groupAllowlistAdd = document.querySelector("#group-allowlist-add");
-const groupAllowlistRemove = document.querySelector("#group-allowlist-remove");
 const toolsCount = document.querySelector("#tools-count");
 const toolsList = document.querySelector("#tools-list");
 const controlStatus = document.querySelector("#control-status");
@@ -142,17 +139,6 @@ groupKeywordsClear?.addEventListener("click", async () => {
     return;
   }
   await runRawCommand("/group keywords clear");
-});
-
-groupAllowlistAdd?.addEventListener("click", async () => {
-  await runRawCommand("/group allowlist add here");
-});
-
-groupAllowlistRemove?.addEventListener("click", async () => {
-  if (!confirm("移出后当前群在白名单策略下不会响应。")) {
-    return;
-  }
-  await runRawCommand("/group allowlist remove here");
 });
 
 toolsList?.addEventListener("change", async (event) => {
@@ -651,7 +637,6 @@ function renderGroup(data) {
   groupKeywords.value = keywords.join(" ");
   renderGroupPolicyBadge(data.policy);
   renderGroupKeywords(keywords);
-  renderGroupAllowlist(data);
 }
 
 function renderGroupPolicyBadge(policy) {
@@ -679,27 +664,6 @@ function renderGroupKeywords(keywords) {
     chip.className = "chip";
     chip.textContent = keyword;
     groupKeywordChips.append(chip);
-  }
-}
-
-function renderGroupAllowlist(data) {
-  groupAllowlist.innerHTML = "";
-  const current = document.createElement("div");
-  current.className = "data-item";
-  current.innerHTML = `<div><strong>当前群</strong><span></span></div><span class="badge"></span>`;
-  current.querySelector("span").textContent = data.chatId ?? "--";
-  const currentBadge = current.querySelector(".badge");
-  currentBadge.textContent = data.currentInAllowlist ? "已加入" : "未加入";
-  currentBadge.classList.add(data.currentInAllowlist ? "green" : "red");
-  groupAllowlist.append(current);
-
-  const otherChatIds = (data.allowlist ?? []).filter((chatId) => chatId !== data.chatId);
-  for (const chatId of otherChatIds) {
-    const item = document.createElement("div");
-    item.className = "data-item";
-    item.innerHTML = `<div><strong>已加入的群</strong><span></span></div><span class="badge green">已加入</span>`;
-    item.querySelector("span").textContent = chatId;
-    groupAllowlist.append(item);
   }
 }
 

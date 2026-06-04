@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 
 const mocks = vi.hoisted(() => ({
   sendTextMessage: vi.fn(),
@@ -93,6 +94,14 @@ const baseEvent = {
   message: { messageId: "om_1", messageType: "text", content: "{}" },
 };
 
+function setSuperAdminP2PEvent(messageId = "om_1"): void {
+  mocks.parseMessageEvent.mockReturnValue({
+    ...baseEvent,
+    sender: { senderId: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" } },
+    message: { ...baseEvent.message, messageId },
+  });
+}
+
 describe("handleFeishuMessage /restart", () => {
   beforeEach(() => {
     clearAllState();
@@ -138,9 +147,10 @@ describe("handleFeishuMessage /restart", () => {
   });
 
   it("空闲时会先回复，再触发网关重启", async () => {
+    setSuperAdminP2PEvent();
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
@@ -152,15 +162,15 @@ describe("handleFeishuMessage /restart", () => {
 
     expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith(
       "/tmp/pi-gateway-data",
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       {
         kind: "p2p",
-        key: "ou_1",
+        key: SUPER_ADMIN_OPEN_ID,
         receiveIdType: "open_id",
-        receiveId: "ou_1",
+        receiveId: SUPER_ADMIN_OPEN_ID,
       },
     );
-    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith("ou_1", "🔄 正在重启网关...", 2000);
+    expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(SUPER_ADMIN_OPEN_ID, "🔄 正在重启网关...", 2000);
     expect(mocks.restartGateway).toHaveBeenCalledTimes(1);
     expect(mocks.clearRestartReadyNotification).not.toHaveBeenCalled();
   });
@@ -198,9 +208,10 @@ describe("handleFeishuMessage /restart", () => {
 
   it("只要还有任何用户任务在跑，就拒绝重启", async () => {
     acquireLock("ou_other", "busy_message");
+    setSuperAdminP2PEvent("om_2");
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_2",
       messageType: "text",
       createTime: "124",
@@ -211,7 +222,7 @@ describe("handleFeishuMessage /restart", () => {
     await handleFeishuMessage({});
 
     expect(mocks.sendTextMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "当前还有任务在跑，等这条回复结束后再重启网关。",
     );
     expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
@@ -220,10 +231,21 @@ describe("handleFeishuMessage /restart", () => {
   });
 
   it("开始重启后应拒绝新的普通消息任务", async () => {
+    mocks.parseMessageEvent
+      .mockReturnValueOnce({
+        ...baseEvent,
+        sender: { senderId: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" } },
+        message: { ...baseEvent.message, messageId: "om_restart" },
+      })
+      .mockReturnValueOnce({
+        ...baseEvent,
+        sender: { senderId: { openId: "ou_other", userId: "u_2" } },
+        message: { ...baseEvent.message, messageId: "om_prompt" },
+      });
     mocks.normalizeFeishuInboundMessage
       .mockReturnValueOnce({
         kind: "text",
-        identity: { openId: "ou_1", userId: "u_1" },
+        identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
         messageId: "om_restart",
         messageType: "text",
         createTime: "125",
@@ -253,9 +275,10 @@ describe("handleFeishuMessage /restart", () => {
 
   it("重启触发失败时会清掉上线通知记录", async () => {
     mocks.restartGateway.mockRejectedValue(new Error("restart failed"));
+    setSuperAdminP2PEvent("om_3");
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_3",
       messageType: "text",
       createTime: "127",
@@ -267,15 +290,15 @@ describe("handleFeishuMessage /restart", () => {
 
     expect(mocks.recordRestartReadyNotification).toHaveBeenCalledWith(
       "/tmp/pi-gateway-data",
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       {
         kind: "p2p",
-        key: "ou_1",
+        key: SUPER_ADMIN_OPEN_ID,
         receiveIdType: "open_id",
-        receiveId: "ou_1",
+        receiveId: SUPER_ADMIN_OPEN_ID,
       },
     );
     expect(mocks.clearRestartReadyNotification).toHaveBeenCalledWith("/tmp/pi-gateway-data");
-    expect(mocks.sendTextMessage).toHaveBeenCalledWith("ou_1", "❌ 错误: 命令处理失败，请稍后重试");
+    expect(mocks.sendTextMessage).toHaveBeenCalledWith(SUPER_ADMIN_OPEN_ID, "❌ 错误: 命令处理失败，请稍后重试");
   });
 });

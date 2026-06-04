@@ -1,6 +1,7 @@
 import type { Config } from "../config.js";
 
 type AudioTranscribeProvider = Config["FEISHU_AUDIO_TRANSCRIBE_PROVIDER"];
+type P2PChatPolicy = Config["FEISHU_P2P_CHAT_POLICY"];
 type GroupChatPolicy = Config["FEISHU_GROUP_CHAT_POLICY"];
 type GroupMessageMode = Config["FEISHU_GROUP_MESSAGE_MODE"];
 type GroupUnmatchedMessagePolicy = Config["FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY"];
@@ -10,6 +11,11 @@ export interface RuntimeConfigStore {
   setAudioTranscribeProvider(provider: AudioTranscribeProvider): void;
   getStreamingEnabled(): boolean;
   setStreamingEnabled(enabled: boolean): void;
+  getP2PChatPolicy(): P2PChatPolicy;
+  setP2PChatPolicy(policy: P2PChatPolicy): void;
+  getP2PChatAllowlist(): string[];
+  setP2PChatAllowlist(openIds: string[]): void;
+  getP2PRoutingConfig(): Pick<Config, "FEISHU_P2P_CHAT_POLICY" | "FEISHU_P2P_CHAT_ALLOWLIST">;
   getGroupChatPolicy(): GroupChatPolicy;
   setGroupChatPolicy(policy: GroupChatPolicy): void;
   getGroupChatAllowlist(): string[];
@@ -41,6 +47,8 @@ export function createRuntimeConfigStore(
       Config,
       | "FEISHU_AUDIO_TRANSCRIBE_PROVIDER"
       | "STREAMING_ENABLED"
+      | "FEISHU_P2P_CHAT_POLICY"
+      | "FEISHU_P2P_CHAT_ALLOWLIST"
       | "FEISHU_GROUP_CHAT_POLICY"
       | "FEISHU_GROUP_CHAT_ALLOWLIST"
       | "FEISHU_GROUP_MESSAGE_MODE"
@@ -55,6 +63,8 @@ export function createRuntimeConfigStore(
   let audioTranscribeProvider: AudioTranscribeProvider =
     config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER ?? "whisper";
   let streamingEnabled = config.STREAMING_ENABLED ?? false;
+  let p2pChatPolicy: P2PChatPolicy = config.FEISHU_P2P_CHAT_POLICY ?? "all";
+  let p2pChatAllowlist = normalizeStringList(config.FEISHU_P2P_CHAT_ALLOWLIST ?? []);
   let groupChatPolicy: GroupChatPolicy = config.FEISHU_GROUP_CHAT_POLICY ?? "disabled";
   let groupChatAllowlist = normalizeStringList(config.FEISHU_GROUP_CHAT_ALLOWLIST ?? []);
   let groupMessageMode: GroupMessageMode = config.FEISHU_GROUP_MESSAGE_MODE ?? "mention";
@@ -79,6 +89,29 @@ export function createRuntimeConfigStore(
 
   function setStreamingEnabled(enabled: boolean): void {
     streamingEnabled = enabled;
+  }
+
+  function getP2PChatPolicy(): P2PChatPolicy {
+    return p2pChatPolicy;
+  }
+
+  function setP2PChatPolicy(policy: P2PChatPolicy): void {
+    p2pChatPolicy = policy;
+  }
+
+  function getP2PChatAllowlist(): string[] {
+    return [...p2pChatAllowlist];
+  }
+
+  function setP2PChatAllowlist(openIds: string[]): void {
+    p2pChatAllowlist = normalizeStringList(openIds);
+  }
+
+  function getP2PRoutingConfig(): Pick<Config, "FEISHU_P2P_CHAT_POLICY" | "FEISHU_P2P_CHAT_ALLOWLIST"> {
+    return {
+      FEISHU_P2P_CHAT_POLICY: p2pChatPolicy,
+      FEISHU_P2P_CHAT_ALLOWLIST: getP2PChatAllowlist(),
+    };
   }
 
   function getGroupChatPolicy(): GroupChatPolicy {
@@ -165,6 +198,11 @@ export function createRuntimeConfigStore(
     setAudioTranscribeProvider,
     getStreamingEnabled,
     setStreamingEnabled,
+    getP2PChatPolicy,
+    setP2PChatPolicy,
+    getP2PChatAllowlist,
+    setP2PChatAllowlist,
+    getP2PRoutingConfig,
     getGroupChatPolicy,
     setGroupChatPolicy,
     getGroupChatAllowlist,

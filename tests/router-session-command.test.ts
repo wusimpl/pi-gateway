@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 
 const mocks = vi.hoisted(() => ({
   sendTextMessage: vi.fn(),
@@ -72,7 +73,7 @@ import { clearAllState, releaseLock } from "../src/app/state.js";
 import { handleFeishuMessage, initRouter } from "../src/app/router.js";
 
 const baseEvent = {
-  sender: { senderId: { openId: "ou_1", userId: "u_1" } },
+  sender: { senderId: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" } },
   message: { messageId: "om_1", messageType: "text", content: "{}" },
 };
 
@@ -82,7 +83,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
     vi.setSystemTime(new Date("2026-04-16T12:00:00.000Z"));
 
     clearAllState();
-    releaseLock("ou_1");
+    releaseLock(SUPER_ADMIN_OPEN_ID);
 
     mocks.sendTextMessage.mockReset();
     mocks.sendRenderedMessage.mockReset();
@@ -118,7 +119,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
   it("`/sessions` 会返回最近会话列表", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
@@ -150,7 +151,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
 
     expect(mocks.listSessions).toHaveBeenCalledTimes(1);
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "📚 最近会话（第 1/1 页，共 2 个）\n用 /resume <序号> 切换。翻页：/sessions -n <页码>。\n\n| 序号 | 会话 | 消息 | 时间 |\n| --- | --- | --- | --- |\n| 1 | 这个项目 | 2 | 12m |\n| 2 | hello! | 14 | 2d |",
       2000,
     );
@@ -159,7 +160,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
   it("`/sessions -n 2` 会返回第二页会话列表", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
@@ -181,7 +182,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
     await handleFeishuMessage({});
 
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "📚 最近会话（第 2/2 页，共 22 个）\n用 /resume <序号> 切换。翻页：/sessions -n <页码>。\n\n| 序号 | 会话 | 消息 | 时间 |\n| --- | --- | --- | --- |\n| 21 | 会话 21 | 21 | 12m |\n| 22 | 会话 22 | 22 | 12m |",
       2000,
     );
@@ -190,7 +191,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
   it("`/sessions -n 3` 超出页码时会返回提示", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
@@ -212,7 +213,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
     await handleFeishuMessage({});
 
     expect(mocks.sendTextMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "页码超出范围，目前只有 2 页。\n\n用 /sessions 看第一页，或用 /sessions -n <页码> 翻页。",
     );
   });
@@ -220,7 +221,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
   it("`/resume` 会切换到指定会话", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
@@ -243,11 +244,11 @@ describe("handleFeishuMessage 会话历史命令", () => {
     await handleFeishuMessage({});
 
     expect(mocks.resumeSession).toHaveBeenCalledWith(
-      { openId: "ou_1", userId: "u_1" },
+      { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       "1",
     );
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "✅ 已切换到会话: session_002\n🤖 当前模型: rightcodes/gpt-5.4-high\n\n历史消息：\nuser input: 第一轮问题\nmodel output: 第一轮回答\n\nuser input: 第二轮问题\nmodel output: 第二轮回答",
       2000,
     );
@@ -256,7 +257,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
   it("`/resume` 历史摘要不应回显引用/媒体包装提示", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
@@ -286,7 +287,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
     await handleFeishuMessage({});
 
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "✅ 已切换到会话: session_002\n\n历史消息：\nuser input: 继续处理这个报错\nmodel output: 先看日志\n\nuser input: [图片]\nmodel output: 我看到一张报错截图",
       2000,
     );
@@ -295,7 +296,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
   it("`/resume` 历史摘要应保留上一轮失败或停止状态", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
@@ -326,7 +327,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
     await handleFeishuMessage({});
 
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "✅ 已切换到会话: session_002\n\n历史消息：\nuser input: 第一轮问题\nmodel output: 第一轮回答到一半 （回复中断：网络断开）\n\nuser input: 第二轮问题\nmodel output: 第二轮回答到一半 （已停止）",
       2000,
     );
@@ -335,7 +336,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
   it("`/resume` 历史摘要应兼容旧的本地转写标记", async () => {
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_1",
       messageType: "text",
       createTime: "123",
@@ -359,7 +360,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
     await handleFeishuMessage({});
 
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "✅ 已切换到会话: session_002\n\n历史消息：\nuser input: 帮我继续排查这个报错\nmodel output: 先把完整日志贴出来",
       2000,
     );

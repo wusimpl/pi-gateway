@@ -3,8 +3,10 @@ import type { FeishuInboundMessage } from "../feishu/inbound/types.js";
 import { parseMessageEvent, isSupportedP2PMessage } from "../feishu/events.js";
 import {
   getFeishuMessageRoutingDecision,
+  getFeishuP2PMessageRoutingDecision,
   type FeishuGroupRoutingConfig,
   type FeishuMessageRoutingDecision,
+  type FeishuP2PRoutingConfig,
 } from "../feishu/group-routing.js";
 import {
   addProcessingReaction,
@@ -35,6 +37,7 @@ import {
   createGroupUnmatchedMessageStore,
   type GroupUnmatchedMessageStore,
 } from "../storage/group-unmatched-messages.js";
+import { createP2PSettingsStore, type P2PSettingsStore } from "../storage/p2p-settings.js";
 import { readUserState, writeUserState } from "../storage/users.js";
 import { createP2PConversationTarget, getConversationTargetKey } from "../conversation.js";
 import {
@@ -84,9 +87,11 @@ interface MessageRouterDeps {
   >;
   promptService: Pick<PromptService, "handleUserPrompt" | "queueRunningPrompt">;
   config?: Partial<Config>;
-  groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig">;
+  groupSettingsStore?: Pick<GroupSettingsStore, "readGroupRoutingConfig"> &
+    Partial<Pick<GroupSettingsStore, "readGlobalGroupRoutingConfig">>;
   groupUnmatchedMessageStore?: Pick<GroupUnmatchedMessageStore, "append" | "drain">;
-  runtimeConfig?: Pick<RuntimeConfigStore, "getGroupRoutingConfig">;
+  p2pSettingsStore?: Pick<P2PSettingsStore, "readP2PRoutingConfig">;
+  runtimeConfig?: Pick<RuntimeConfigStore, "getP2PRoutingConfig" | "getGroupRoutingConfig">;
   parseMessageEvent?: typeof parseMessageEvent;
   isSupportedP2PMessage?: typeof isSupportedP2PMessage;
   isSupportedMessage?: (
@@ -110,6 +115,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
   const resolveMessageRoutingDecision = deps.getMessageRoutingDecision
     ?? createMessageRoutingDecisionResolver(
       deps.config,
+      deps.p2pSettingsStore,
       deps.groupSettingsStore,
       deps.runtimeConfig,
       deps.isSupportedP2PMessage ?? isSupportedP2PMessage,
@@ -342,16 +348,59 @@ function createTextPromptMessage(message: FeishuInboundMessage, text: string): F
 }
 
 type ParsedFeishuMessageEvent = NonNullable<ReturnType<typeof parseMessageEvent>>;
+type P2PRoutingConfigResolver = () => Promise<FeishuP2PRoutingConfig>;
 type GroupRoutingConfigResolver = (event: ParsedFeishuMessageEvent) => Promise<FeishuGroupRoutingConfig | null>;
+
+function createP2PRoutingConfigResolver(
+  config: Partial<Config> | undefined,
+  p2pSettingsStore: Pick<P2PSettingsStore, "readP2PRoutingConfig"> | undefined,
+  runtimeConfig: Pick<RuntimeConfigStore, "getP2PRoutingConfig"> | undefined,
+): P2PRoutingConfigResolver {
+  return async () => {
+    const persisted = await p2pSettingsStore?.readP2PRoutingConfig();
+    if (persisted) {
+      return persisted;
+    }
+
+    if (runtimeConfig) {
+      return runtimeConfig.getP2PRoutingConfig();
+    }
+
+    return {
+      FEISHU_P2P_CHAT_POLICY: config?.FEISHU_P2P_CHAT_POLICY ?? "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: [...(config?.FEISHU_P2P_CHAT_ALLOWLIST ?? [])],
+    };
+  };
+}
 
 function createGroupRoutingConfigResolver(
   config: Partial<Config> | undefined,
-  groupSettingsStore: Pick<GroupSettingsStore, "readGroupRoutingConfig"> | undefined,
+  groupSettingsStore: (Pick<GroupSettingsStore, "readGroupRoutingConfig"> &
+    Partial<Pick<GroupSettingsStore, "readGlobalGroupRoutingConfig">>) | undefined,
   runtimeConfig: Pick<RuntimeConfigStore, "getGroupRoutingConfig"> | undefined,
 ): GroupRoutingConfigResolver {
   if (!groupSettingsStore && !runtimeConfig && !config?.FEISHU_GROUP_CHAT_POLICY) {
     return async () => null;
   }
+
+  const readDefaultConfig = async (): Promise<FeishuGroupRoutingConfig | null> => {
+    const persistedGlobal = await groupSettingsStore?.readGlobalGroupRoutingConfig?.();
+    if (persistedGlobal) {
+      const runtimeDefault = runtimeConfig?.getGroupRoutingConfig?.() ?? config;
+      return {
+        ...persistedGlobal,
+        FEISHU_BOT_OPEN_ID: runtimeDefault?.FEISHU_BOT_OPEN_ID,
+      } as FeishuGroupRoutingConfig;
+    }
+
+    if (runtimeConfig) {
+      return runtimeConfig.getGroupRoutingConfig();
+    }
+
+    return config?.FEISHU_GROUP_CHAT_POLICY
+      ? config as FeishuGroupRoutingConfig
+      : null;
+  };
 
   return async (event) => {
     if (event.message.chatType !== "group") {
@@ -360,10 +409,11 @@ function createGroupRoutingConfigResolver(
 
     if (groupSettingsStore) {
       const persisted = await groupSettingsStore.readGroupRoutingConfig(event.message.chatId);
-      const defaultConfig = runtimeConfig?.getGroupRoutingConfig?.() ?? config;
+      const defaultConfig = await readDefaultConfig();
       if (persisted) {
         return {
           ...persisted,
+          FEISHU_GROUP_CHAT_ALLOWLIST: [...(defaultConfig?.FEISHU_GROUP_CHAT_ALLOWLIST ?? [])],
           FEISHU_BOT_OPEN_ID: defaultConfig?.FEISHU_BOT_OPEN_ID,
         } as FeishuGroupRoutingConfig;
       }
@@ -435,18 +485,30 @@ function isAsciiKeyword(keyword: string): boolean {
 
 function createMessageRoutingDecisionResolver(
   config: Partial<Config> | undefined,
-  groupSettingsStore: Pick<GroupSettingsStore, "readGroupRoutingConfig"> | undefined,
-  runtimeConfig: Pick<RuntimeConfigStore, "getGroupRoutingConfig"> | undefined,
+  p2pSettingsStore: Pick<P2PSettingsStore, "readP2PRoutingConfig"> | undefined,
+  groupSettingsStore: (Pick<GroupSettingsStore, "readGroupRoutingConfig"> &
+    Partial<Pick<GroupSettingsStore, "readGlobalGroupRoutingConfig">>) | undefined,
+  runtimeConfig: Pick<RuntimeConfigStore, "getP2PRoutingConfig" | "getGroupRoutingConfig"> | undefined,
   fallback: typeof isSupportedP2PMessage,
 ): (event: NonNullable<ReturnType<typeof parseMessageEvent>>) => Promise<FeishuMessageRoutingDecision> {
+  const resolveP2PRoutingConfig = createP2PRoutingConfigResolver(config, p2pSettingsStore, runtimeConfig);
   const resolveGroupRoutingConfig = createGroupRoutingConfigResolver(config, groupSettingsStore, runtimeConfig);
   if (!groupSettingsStore && !runtimeConfig && !config?.FEISHU_GROUP_CHAT_POLICY) {
-    return async (event) => fallback(event) ? "route" : "ignore";
+    return async (event) => {
+      if (event.message.chatType !== "group") {
+        return fallback(event)
+          ? getFeishuP2PMessageRoutingDecision(event, await resolveP2PRoutingConfig())
+          : "ignore";
+      }
+      return "ignore";
+    };
   }
 
   return async (event) => {
     if (event.message.chatType !== "group") {
-      return fallback(event) ? "route" : "ignore";
+      return fallback(event)
+        ? getFeishuP2PMessageRoutingDecision(event, await resolveP2PRoutingConfig())
+        : "ignore";
     }
 
     const groupRoutingConfig = await resolveGroupRoutingConfig(event);
@@ -460,12 +522,14 @@ let defaultRouter: MessageRouter | null = null;
 
 export function initRouter(cfg: Config): void {
   const runtimeConfig = createRuntimeConfigStore(cfg);
+  const p2pSettingsStore = createP2PSettingsStore(cfg.DATA_DIR ?? "./data");
   const groupSettingsStore = createGroupSettingsStore(cfg.DATA_DIR ?? "./data");
   const groupUnmatchedMessageStore = createGroupUnmatchedMessageStore(cfg.DATA_DIR ?? "./data");
   const commandService = createCommandService({
     config: cfg,
     groupSettingsStore,
     groupUnmatchedMessageStore,
+    p2pSettingsStore,
     runtimeConfig,
     messenger: {
       sendRenderedMessage: (...args) => sendRenderedMessage(...args),
@@ -550,6 +614,7 @@ export function initRouter(cfg: Config): void {
     config: cfg,
     groupSettingsStore,
     groupUnmatchedMessageStore,
+    p2pSettingsStore,
     runtimeConfig,
   });
 }

@@ -173,23 +173,17 @@ async function listConversationChatIds(dataDir: string): Promise<string[]> {
 }
 
 async function listGroupRoutingAllowlist(dataDir: string): Promise<string[]> {
-  const chatIds = await listConversationChatIds(dataDir);
   const result: string[] = [];
-  for (const chatId of chatIds) {
-    try {
-      const raw = await readFile(
-        join(dataDir, "conversations", encodeURIComponent(chatId), "group-routing.json"),
-        "utf-8",
-      );
-      const parsed = JSON.parse(raw) as Partial<PersistedGroupRoutingConfig>;
-      for (const allowlistChatId of parsed.FEISHU_GROUP_CHAT_ALLOWLIST ?? []) {
-        if (typeof allowlistChatId === "string" && allowlistChatId.trim()) {
-          result.push(allowlistChatId.trim());
-        }
+  try {
+    const raw = await readFile(join(dataDir, "settings", "group-routing.json"), "utf-8");
+    const parsed = JSON.parse(raw) as Partial<PersistedGroupRoutingConfig>;
+    for (const allowlistChatId of parsed.FEISHU_GROUP_CHAT_ALLOWLIST ?? []) {
+      if (typeof allowlistChatId === "string" && allowlistChatId.trim()) {
+        result.push(allowlistChatId.trim());
       }
-    } catch {
-      // 没有单群配置时跳过
     }
+  } catch {
+    // 没有全局群配置时跳过
   }
   return result;
 }

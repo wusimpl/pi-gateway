@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 
 const mocks = vi.hoisted(() => ({
   sendTextMessage: vi.fn(),
@@ -311,6 +312,20 @@ describe("handleFeishuMessage 运行锁", () => {
       }),
     );
 
+    mocks.parseMessageEvent.mockReturnValue({
+      ...baseEvent,
+      sender: { senderId: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" } },
+    });
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"run"}',
+      text: "run",
+    });
+
     const firstCall = handleFeishuMessage({});
     await vi.waitFor(() => {
       expect(mocks.promptSession).toHaveBeenCalledTimes(1);
@@ -318,11 +333,12 @@ describe("handleFeishuMessage 运行锁", () => {
 
     mocks.parseMessageEvent.mockReturnValue({
       ...baseEvent,
+      sender: { senderId: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" } },
       message: { ...baseEvent.message, messageId: "om_2", content: '{}' },
     });
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_2",
       messageType: "text",
       createTime: "124",
@@ -352,9 +368,14 @@ describe("handleFeishuMessage 运行锁", () => {
   });
 
   it("空闲时收到 /next 文本应直接作为普通 prompt 处理", async () => {
+    mocks.parseMessageEvent.mockReturnValue({
+      ...baseEvent,
+      sender: { senderId: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" } },
+      message: { ...baseEvent.message, messageId: "om_next_idle" },
+    });
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_next_idle",
       messageType: "text",
       createTime: "123",
@@ -382,9 +403,14 @@ describe("handleFeishuMessage 运行锁", () => {
   });
 
   it("空 /next 应返回用法，不进入 prompt", async () => {
+    mocks.parseMessageEvent.mockReturnValue({
+      ...baseEvent,
+      sender: { senderId: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" } },
+      message: { ...baseEvent.message, messageId: "om_next_empty" },
+    });
     mocks.normalizeFeishuInboundMessage.mockReturnValue({
       kind: "text",
-      identity: { openId: "ou_1", userId: "u_1" },
+      identity: { openId: SUPER_ADMIN_OPEN_ID, userId: "u_super" },
       messageId: "om_next_empty",
       messageType: "text",
       createTime: "123",
@@ -396,7 +422,7 @@ describe("handleFeishuMessage 运行锁", () => {
 
     expect(mocks.promptSession).not.toHaveBeenCalled();
     expect(mocks.sendRenderedMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "用法：/next <要排到当前任务后处理的内容>",
       2000,
     );

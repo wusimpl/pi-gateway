@@ -38,6 +38,23 @@ describe("createRuntimeConfigStore", () => {
     expect(store.getProcessingReactionType()).toBeUndefined();
   });
 
+  it("应允许更新私聊策略和白名单", () => {
+    const store = createRuntimeConfigStore({
+      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: ["ou_1"],
+    });
+
+    store.setP2PChatPolicy("whitelist");
+    store.setP2PChatAllowlist(["ou_1", "ou_2", "ou_2"]);
+
+    expect(store.getP2PChatPolicy()).toBe("whitelist");
+    expect(store.getP2PChatAllowlist()).toEqual(["ou_1", "ou_2"]);
+    expect(store.getP2PRoutingConfig()).toEqual({
+      FEISHU_P2P_CHAT_POLICY: "whitelist",
+      FEISHU_P2P_CHAT_ALLOWLIST: ["ou_1", "ou_2"],
+    });
+  });
+
   it("应允许更新群聊开关、模式、白名单和关键词", () => {
     const store = createRuntimeConfigStore({
       FEISHU_GROUP_CHAT_POLICY: "open",

@@ -7,6 +7,7 @@ import { STOP_MESSAGE } from "./stop.js";
 
 /** 桥接层命令列表（不含斜杠） */
 const BRIDGE_COMMANDS = [
+  "commands",
   "new",
   "reset",
   "status",
@@ -28,6 +29,7 @@ const BRIDGE_COMMANDS = [
   "stream",
   "reaction",
   "group",
+  "p2p",
   "skillstat",
 ] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];
@@ -573,13 +575,17 @@ function groupSkillsByScope(skills: BridgeSkillInfo[]): Array<[string, BridgeSki
 function formatDisplayPath(filePath: string): string {
   const normalizedPath = filePath.replace(/\\/g, "/");
   const normalizedHome = homedir().replace(/\\/g, "/");
+  let result: string;
   if (normalizedPath === normalizedHome) {
-    return "~";
+    result = "~";
+  } else if (normalizedPath.startsWith(`${normalizedHome}/`)) {
+    result = `~${normalizedPath.slice(normalizedHome.length)}`;
+  } else {
+    result = normalizedPath;
   }
-  if (normalizedPath.startsWith(`${normalizedHome}/`)) {
-    return `~${normalizedPath.slice(normalizedHome.length)}`;
-  }
-  return normalizedPath;
+  // 缩写工作区目录名: ou_f63b0f6d9b91dca7dc09eca00b02c8af → ou_f63b*
+  result = result.replace(/\/ou_([a-f0-9]{4})[a-f0-9]{24,}(\/|$)/g, "/ou_$1*$2");
+  return result;
 }
 
 function parseSlashCommandName(rawText: string): string {
