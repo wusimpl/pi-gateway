@@ -65,7 +65,7 @@ export interface AdminSettingsPageData {
   streamingEnabled: boolean;
   audioTranscribeProvider: "whisper" | "sensevoice" | "doubao";
   processingReactionEnabled: boolean;
-  toolCallsDisplayMode: "off" | "name" | "full";
+  toolCallsDisplayMode: "off" | "name" | "focus" | "full";
   skillFolderEnabled: boolean;
 }
 

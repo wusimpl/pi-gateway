@@ -47,7 +47,9 @@ const PROMPT_ABSOLUTE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const STREAMING_UPDATE_INTERVAL_MS = 300;
 const MAX_VISIBLE_TOOL_CALLS = 5;
 const TOOL_CALL_NAMES_PER_LINE = 3;
+const TOOL_CALL_FOCUS_ITEMS_PER_LINE = 2;
 const TOOL_SUMMARY_MAX_CHARS = 80;
+const TOOL_FOCUS_SUMMARY_MAX_CHARS = 36;
 const TOOL_PROGRESS_SUMMARY_FIELDS = [
   "message",
   "summary",
@@ -1326,10 +1328,132 @@ function formatToolCallsSection(
     return lines.join("\n");
   }
 
+  if (displayMode === "focus") {
+    for (let index = 0; index < toolCalls.length; index += TOOL_CALL_FOCUS_ITEMS_PER_LINE) {
+      lines.push(
+        toolCalls
+          .slice(index, index + TOOL_CALL_FOCUS_ITEMS_PER_LINE)
+          .map(formatFocusedToolCall)
+          .join(" ｜ "),
+      );
+    }
+    return lines.join("\n");
+  }
+
   for (const toolCall of toolCalls) {
     lines.push(...formatToolCallLines(toolCall, displayMode));
   }
   return lines.join("\n");
+}
+
+function formatFocusedToolCall(toolCall: ToolCallState): string {
+  const label = formatFocusedToolLabel(toolCall.toolName);
+  const summary = formatFocusedToolSummary(toolCall);
+  const status = formatToolStatus(toolCall.status);
+  const summarySuffix = summary ? `：${summary}` : "";
+  const statusSuffix = status ? ` · ${status}` : "";
+  return `${label}${summarySuffix}${statusSuffix}`;
+}
+
+function formatFocusedToolLabel(toolName: string): string {
+  switch (toolName) {
+    case "bash":
+      return "终端命令";
+    case "read":
+      return "读取文件";
+    case "grep":
+      return "搜索文本";
+    case "find":
+      return "查找文件";
+    case "ls":
+      return "列出文件";
+    case "edit":
+      return "修改文件";
+    case "write":
+      return "写入文件";
+    case "feishu_doc_create":
+      return "创建文档";
+    case "feishu_doc_read":
+      return "读取文档";
+    case "feishu_doc_append":
+    case "feishu_doc_replace":
+      return "更新文档";
+    case "feishu_doc_delete_blocks":
+      return "删除文档内容";
+    case "feishu_doc_delete_document":
+      return "删除文档";
+    case "feishu_folder_create":
+      return "创建文件夹";
+    case "feishu_file_send":
+      return "发送文件";
+    case "feishu_image_send":
+      return "发送图片";
+    case "feishu_message_send":
+      return "发送消息";
+    case "cron_task":
+      return "定时任务";
+    case "ask_user_choice":
+      return "等待选择";
+    default:
+      return toolName;
+  }
+}
+
+function formatFocusedToolSummary(toolCall: ToolCallState): string | undefined {
+  if (toolCall.toolName === "bash") {
+    return undefined;
+  }
+
+  const rawSummary = shouldPreferToolArgsInFocus(toolCall.toolName)
+    ? toolCall.argsSummary ?? toolCall.resultSummary
+    : toolCall.resultSummary ?? toolCall.argsSummary;
+  if (!rawSummary) {
+    return undefined;
+  }
+
+  const summary = shouldCompactPathInFocus(toolCall.toolName)
+    ? compactPathSummary(rawSummary)
+    : rawSummary.replace(/\s+/g, " ").trim();
+  return truncateFocusedToolSummary(summary);
+}
+
+function shouldPreferToolArgsInFocus(toolName: string): boolean {
+  return toolName === "read"
+    || toolName === "write"
+    || toolName === "edit"
+    || toolName === "grep"
+    || toolName === "find"
+    || toolName === "ls";
+}
+
+function shouldCompactPathInFocus(toolName: string): boolean {
+  return toolName === "read"
+    || toolName === "write"
+    || toolName === "edit"
+    || toolName === "ls"
+    || toolName === "feishu_file_send"
+    || toolName === "feishu_image_send";
+}
+
+function compactPathSummary(value: string): string {
+  const normalized = value.replace(/\\/g, "/").replace(/\s+/g, " ").trim();
+  if (!normalized.includes("/")) {
+    return normalized;
+  }
+
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.slice(-2).join("/");
+}
+
+function truncateFocusedToolSummary(value: string): string | undefined {
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.length > TOOL_FOCUS_SUMMARY_MAX_CHARS
+    ? `${normalized.slice(0, TOOL_FOCUS_SUMMARY_MAX_CHARS - 1)}…`
+    : normalized;
 }
 
 function formatToolCallLines(toolCall: ToolCallState, displayMode: ToolCallsDisplayMode): string[] {

@@ -272,6 +272,7 @@ describe("handleBridgeCommand", () => {
         "\n" +
         "关闭：/toolcalls off\n" +
         "只显示工具名：/toolcalls name\n" +
+        "聚焦展示：/toolcalls focus\n" +
         "显示详情：/toolcalls full",
     );
   });

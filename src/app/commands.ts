@@ -294,6 +294,7 @@ function formatToolCallsReply(mode: ToolCallsDisplayMode, updated: boolean): str
     "",
     "关闭：/toolcalls off",
     "只显示工具名：/toolcalls name",
+    "聚焦展示：/toolcalls focus",
     "显示详情：/toolcalls full",
   ].join("\n");
 }
@@ -304,6 +305,8 @@ function formatToolCallsMode(mode: ToolCallsDisplayMode): string {
       return "关闭";
     case "name":
       return "只显示工具名";
+    case "focus":
+      return "聚焦展示";
     case "full":
       return "显示详情";
   }

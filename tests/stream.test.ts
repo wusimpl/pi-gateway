@@ -722,6 +722,114 @@ describe("promptSession", () => {
     );
   });
 
+  it("工具调用 focus 模式实时展示简洁动作，不展开 bash 命令和输出", async () => {
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_1",
+        toolName: "read",
+        args: { filePath: "/Users/williamsandy/.pi/agent/skills/webclaw-reader/SKILL.md" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_1",
+        toolName: "read",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "skill content" }],
+        },
+      } as any,
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_2",
+        toolName: "bash",
+        args: { command: "~/bin/webclaw 'https://data.eastmoney.com/stockdata/600741.html' -f llm" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_2",
+        toolName: "bash",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "股东数据 十大流通股东 十大股东" }],
+        },
+      } as any,
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_3",
+        toolName: "feishu_doc_create",
+        args: { title: "华域汽车(600741) 巴菲特框架分析" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_3",
+        toolName: "feishu_doc_create",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: JSON.stringify({ title: "华域汽车(600741) 巴菲特框架分析" }) }],
+          details: { title: "华域汽车(600741) 巴菲特框架分析" },
+        },
+      } as any,
+      { type: "message_end" },
+    ]);
+
+    const result = await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, false, 2000, "focus");
+
+    expect(result).toEqual({ text: "", error: undefined });
+    expect(mockSendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      " ---\n**工具调用**\n读取文件：webclaw-reader/SKILL.md ｜ 终端命令\n创建文档：华域汽车(600741) 巴菲特框架分析",
+      2000,
+    );
+  });
+
+  it("工具调用 focus 模式会在工具开始时更新流式卡片", async () => {
+    const mockStreamingMessage = {
+      updateBody: vi.fn().mockResolvedValue(undefined),
+      updateTools: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+    };
+    mockStartStreamingMessage.mockResolvedValue(mockStreamingMessage);
+    const { promptSession } = await import("../src/pi/stream.js");
+    const session = createSession([
+      {
+        type: "tool_execution_start",
+        toolCallId: "call_1",
+        toolName: "bash",
+        args: { command: "npm test" },
+      } as any,
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_1",
+        toolName: "bash",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "passed" }],
+        },
+      } as any,
+      { type: "message_end" },
+    ]);
+
+    await promptSession(session as any, "hi", "ou_1", "om_source_1", undefined, true, 2000, "focus");
+
+    expect(mockStartStreamingMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "",
+      " ---\n**工具调用**\n终端命令 · 运行中",
+      "",
+    );
+    expect(mockStreamingMessage.updateTools).toHaveBeenCalledWith(
+      " ---\n**工具调用**\n终端命令",
+    );
+    expect(mockStreamingMessage.finish).toHaveBeenCalledWith(
+      "已完成，但没有生成可展示的正文。",
+      2000,
+      " ---\n**工具调用**\n终端命令",
+      "",
+    );
+  });
+
   it("bash 工具无输出时也应保留命令和输出摘要", async () => {
     const { promptSession } = await import("../src/pi/stream.js");
     const session = createSession([

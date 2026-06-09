@@ -56,7 +56,7 @@ export interface ModelRoutingConfig {
 }
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-export type ToolCallsDisplayMode = "off" | "name" | "full";
+export type ToolCallsDisplayMode = "off" | "name" | "focus" | "full";
 
 /** 用户持久状态 */
 export interface UserState {

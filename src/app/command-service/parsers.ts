@@ -282,11 +282,11 @@ export function parseToolCallsArgs(
     return { kind: "show" };
   }
 
-  if (normalized === "off" || normalized === "name" || normalized === "full") {
+  if (normalized === "off" || normalized === "name" || normalized === "focus" || normalized === "full") {
     return { kind: "set", mode: normalized };
   }
 
-  return { error: "用法：/toolcalls、/toolcalls off、/toolcalls name 或 /toolcalls full。" };
+  return { error: "用法：/toolcalls、/toolcalls off、/toolcalls name、/toolcalls focus 或 /toolcalls full。" };
 }
 
 export function parseSkillFolderArgs(

@@ -27,7 +27,7 @@ export const COMMAND_CATALOG: CommandCatalogItem[] = [
   { name: "tools", usage: "/tools", description: "查看工具状态" },
   { name: "tools", usage: "/tools on|off|set|reset", description: "管理工具启用状态", permissionArgs: "on read" },
   { name: "toolcalls", usage: "/toolcalls", description: "查看工具调用展示" },
-  { name: "toolcalls", usage: "/toolcalls off|name|full", description: "设置工具调用展示", permissionArgs: "name" },
+  { name: "toolcalls", usage: "/toolcalls off|name|focus|full", description: "设置工具调用展示", permissionArgs: "name" },
   { name: "skill-folder", usage: "/skill-folder", description: "查看私有技能目录开关" },
   { name: "skill-folder", usage: "/skill-folder on|off", description: "管理私有技能目录开关", permissionArgs: "on" },
   { name: "stop", usage: "/stop", description: "停止当前任务" },

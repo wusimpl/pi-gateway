@@ -211,6 +211,32 @@ describe("command service tools", () => {
     );
   });
 
+  it("`/toolcalls focus` 会保存聚焦展示", async () => {
+    const piSession = createPiSessionMock({ activeTools: ["read", "bash"] });
+    const { service, messenger, userStateStore } = createDeps(piSession.session);
+    userStateStore.readUserState.mockResolvedValue({
+      activeSessionId: "session_1",
+      createdAt: "2026-04-27T00:00:00.000Z",
+      updatedAt: "2026-04-27T00:00:00.000Z",
+      lastActiveAt: "2026-04-27T00:00:00.000Z",
+    });
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "toolcalls", args: "focus" },
+    );
+
+    expect(userStateStore.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({ toolCallsDisplayMode: "focus" }),
+    );
+    expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "✅ 已更新工具调用展示\n当前模式：聚焦展示",
+      2000,
+    );
+  });
+
   it("`/toolcalls` 会返回当前展示模式", async () => {
     const piSession = createPiSessionMock({ activeTools: ["read", "bash"] });
     const { service, messenger, userStateStore } = createDeps(piSession.session);
@@ -230,7 +256,7 @@ describe("command service tools", () => {
     expect(userStateStore.writeUserState).not.toHaveBeenCalled();
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "🛠️ 工具调用展示\n当前模式：显示详情\n\n关闭：/toolcalls off\n只显示工具名：/toolcalls name\n显示详情：/toolcalls full",
+      "🛠️ 工具调用展示\n当前模式：显示详情\n\n关闭：/toolcalls off\n只显示工具名：/toolcalls name\n聚焦展示：/toolcalls focus\n显示详情：/toolcalls full",
       2000,
     );
   });
