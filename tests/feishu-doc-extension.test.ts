@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 import { createFeishuDocsExtension } from "../src/pi/extensions/feishu-docs.js";
 
 function collectTools(serviceOverrides?: Record<string, unknown>) {
@@ -12,7 +13,7 @@ function collectTools(serviceOverrides?: Record<string, unknown>) {
     transferDocumentOwner: vi.fn().mockResolvedValue({
       document_id: "doxcn_1",
       document_url: "https://feishu.cn/docx/doxcn_1",
-      member_id: "ou_1",
+      member_id: SUPER_ADMIN_OPEN_ID,
       member_type: "openid",
     }),
     readDocument: vi.fn().mockResolvedValue({
@@ -113,7 +114,7 @@ describe("feishu docs extension", () => {
     });
   });
 
-  it("新建文档后不会自动转移所有权", async () => {
+  it("新建文档后会自动把所有权转给 super admin，并保留应用自身权限", async () => {
     const { tools, service } = collectTools();
     const createTool = tools.find((tool) => tool.name === "feishu_doc_create");
 
@@ -127,13 +128,27 @@ describe("feishu docs extension", () => {
       createToolContext(undefined, "/tmp/workspace/ou_1"),
     );
 
-    expect(service.transferDocumentOwner).not.toHaveBeenCalled();
+    expect(service.transferDocumentOwner).toHaveBeenCalledWith({
+      document_id: "doxcn_1",
+      member_id: SUPER_ADMIN_OPEN_ID,
+      member_type: "openid",
+      need_notification: false,
+      remove_old_owner: false,
+      old_owner_perm: "full_access",
+    });
     expect(result.details).toEqual({
       document_id: "doxcn_1",
       revision_id: 1,
       document_url: "https://feishu.cn/docx/doxcn_1",
       inserted_block_ids: [],
+      owner_transfer: {
+        document_id: "doxcn_1",
+        document_url: "https://feishu.cn/docx/doxcn_1",
+        member_id: SUPER_ADMIN_OPEN_ID,
+        member_type: "openid",
+      },
     });
+    expect(createTool.promptGuidelines).toContain("新建文档后会自动把所有权转给 super admin，并保留应用自身编辑权限。");
   });
 
   it("读取工具会明确标注支持 wiki，写工具仍保持 docx 限制", () => {

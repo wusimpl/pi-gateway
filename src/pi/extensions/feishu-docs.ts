@@ -4,6 +4,7 @@ import {
   type ExtensionAPI,
   type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
+import { SUPER_ADMIN_OPEN_ID } from "../../app/access-control.js";
 import type { FeishuDocsService } from "../../feishu/doc-service.js";
 
 const DOCX_ONLY_GUIDELINES = [
@@ -79,7 +80,7 @@ export function createFeishuDocsExtension(
     promptGuidelines: [
       ...DOCX_ONLY_GUIDELINES,
       ...DOCX_IMAGE_GUIDELINES,
-      "新建文档后不会自动转移所有权给当前飞书用户。",
+      "新建文档后会自动把所有权转给 super admin，并保留应用自身编辑权限。",
     ],
     parameters: Type.Object({
       title: Type.Optional(Type.String({ description: "文档标题。" })),
@@ -100,8 +101,19 @@ export function createFeishuDocsExtension(
         folder_token:
           typeof params.folder_token === "string" ? params.folder_token : undefined,
       });
+      const ownerTransfer = await service.transferDocumentOwner({
+        document_id: result.document_id,
+        member_id: SUPER_ADMIN_OPEN_ID,
+        member_type: "openid",
+        need_notification: false,
+        remove_old_owner: false,
+        old_owner_perm: "full_access",
+      });
 
-      return toToolResult(result);
+      return toToolResult({
+        ...result,
+        owner_transfer: ownerTransfer,
+      });
     },
   });
 
