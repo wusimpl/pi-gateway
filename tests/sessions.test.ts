@@ -523,6 +523,45 @@ describe("session service", () => {
     expect(getSessionDefaultToolNames(session as any)).toEqual(["read", "bash", "edit"]);
   });
 
+  it("没有保存 tools 选择时默认启用语音合成工具", async () => {
+    const deps = createDeps();
+    const setActiveToolsByName = vi.fn();
+    const session = {
+      sessionId: "pi-session-789",
+      sessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      getActiveToolNames: vi.fn().mockReturnValue(["read", "bash", "edit"]),
+      getAllTools: vi.fn().mockReturnValue([
+        { name: "read" },
+        { name: "bash" },
+        { name: "edit" },
+        { name: "tts_synthesize" },
+        { name: "tts_clone_voice" },
+        { name: "tts_query_voice" },
+      ]),
+      setActiveToolsByName,
+      sessionManager: {
+        getBranch: vi.fn().mockReturnValue([]),
+      },
+      dispose: vi.fn(),
+    };
+    deps.userStateStore.readUserState.mockResolvedValue({
+      openId: "ou_1",
+      activeSessionId: "legacy-session-id",
+      piSessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+      lastMessageId: undefined,
+    });
+    deps.runtime.openPiSession.mockResolvedValue(session);
+
+    const service = createSessionService(deps as any);
+    await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
+
+    expect(setActiveToolsByName).toHaveBeenCalledWith(["read", "bash", "edit", "tts_synthesize"]);
+    expect(getSessionDefaultToolNames(session as any)).toEqual(["read", "bash", "edit", "tts_synthesize"]);
+  });
+
   it("恢复 session 时不读取 session 文件里的旧 tools-config", async () => {
     const deps = createDeps();
     const setActiveToolsByName = vi.fn();

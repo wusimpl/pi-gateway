@@ -32,6 +32,7 @@ interface SessionResult {
 const GROUP_CHAT_CONTEXT_ENTRY_TYPE = "feishu-group-chat-context";
 const GROUP_CHAT_CONTEXT_MESSAGE =
   "这是一个飞书群聊。不同消息可能来自不同群成员；每条用户消息前会标明发言人。回复会自动发送回当前群聊，直接回应当前发言人即可。";
+const GATEWAY_DEFAULT_ENABLED_TOOL_NAMES = ["tts_synthesize"];
 const defaultToolNamesBySession = new WeakMap<object, string[]>();
 const groupChatContextBySession = new WeakSet<object>();
 
@@ -729,14 +730,40 @@ function applySavedToolSelection(
   }
 
   if (!defaultToolNamesBySession.has(session as object)) {
-    defaultToolNamesBySession.set(session as object, [...session.getActiveToolNames()]);
+    defaultToolNamesBySession.set(session as object, getDefaultEnabledToolNames(session));
   }
 
   if (!Array.isArray(state?.enabledTools)) {
+    const defaultTools = defaultToolNamesBySession.get(session as object) ?? [];
+    const currentTools = session.getActiveToolNames();
+    if (!haveSameToolNames(currentTools, defaultTools)) {
+      session.setActiveToolsByName(defaultTools);
+    }
     return;
   }
 
   const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
   const savedTools = state.enabledTools.filter((tool): tool is string => typeof tool === "string");
   session.setActiveToolsByName(savedTools.filter((tool) => allToolNames.has(tool)));
+}
+
+function getDefaultEnabledToolNames(
+  session: Pick<AgentSession, "getActiveToolNames" | "getAllTools">,
+): string[] {
+  const defaultTools = [...session.getActiveToolNames()];
+  const defaultToolSet = new Set(defaultTools);
+  const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
+
+  for (const toolName of GATEWAY_DEFAULT_ENABLED_TOOL_NAMES) {
+    if (allToolNames.has(toolName) && !defaultToolSet.has(toolName)) {
+      defaultTools.push(toolName);
+      defaultToolSet.add(toolName);
+    }
+  }
+
+  return defaultTools;
+}
+
+function haveSameToolNames(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((toolName, index) => toolName === right[index]);
 }
