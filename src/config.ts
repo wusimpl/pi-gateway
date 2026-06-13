@@ -19,7 +19,7 @@ const envSchema = z.object({
   DASHSCOPE_API_KEY: z.string().default(""),
   ALIYUN_TTS_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/api/v1"),
   ALIYUN_TTS_MODEL: z.string().default("cosyvoice-v3-flash"),
-  ALIYUN_TTS_VOICE: z.string().default("longanyang"),
+  ALIYUN_TTS_VOICE: z.string().default("longlaoyi_v3"),
   ALIYUN_TTS_FORMAT: z.enum(["mp3", "wav", "pcm", "opus"]).default("mp3"),
   ALIYUN_TTS_SAMPLE_RATE: z.coerce.number().int().positive().default(24000),
   FEISHU_P2P_CHAT_POLICY: z.enum(["all", "whitelist"]).default("all"),

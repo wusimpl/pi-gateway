@@ -217,12 +217,14 @@ off, minimal, low, medium, high, xhigh
 
 Pi Gateway 使用阿里云百炼 CosyVoice 生成语音文件。配置 `DASHSCOPE_API_KEY` 后，用户可以直接要求朗读、配音或生成语音，机器人会先生成音频文件；如需发回飞书，会继续用文件发送工具发回当前会话。
 
+默认音色使用 `longlaoyi_v3`，语速偏慢，适合报告、财报等长文本朗读。
+
 常用配置：
 
 ```env
 DASHSCOPE_API_KEY=
 ALIYUN_TTS_MODEL=cosyvoice-v3-flash
-ALIYUN_TTS_VOICE=longanyang
+ALIYUN_TTS_VOICE=longlaoyi_v3
 ALIYUN_TTS_FORMAT=mp3
 ALIYUN_TTS_SAMPLE_RATE=24000
 ```

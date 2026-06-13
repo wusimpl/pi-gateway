@@ -51,9 +51,10 @@ interface QueryVoiceParams {
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
 const DEFAULT_MODEL = "cosyvoice-v3-flash";
-const DEFAULT_VOICE = "longanyang";
+const DEFAULT_VOICE = "longlaoyi_v3";
 const DEFAULT_FORMAT: AudioFormat = "mp3";
 const DEFAULT_SAMPLE_RATE = 24000;
+const DEFAULT_RATE = 0.85;
 const DEFAULT_OUTPUT_DIR = "tts";
 const SUPPORTED_FORMATS = new Set<AudioFormat>(["mp3", "wav", "pcm", "opus"]);
 
@@ -151,7 +152,7 @@ export function createAliyunTtsExtension(options: AliyunTtsOptions = {}): Extens
             format,
             sample_rate: params.sample_rate ?? defaultSampleRate,
             volume: params.volume,
-            rate: params.rate,
+            rate: params.rate ?? DEFAULT_RATE,
             pitch: params.pitch,
             language_hints: params.language?.trim() ? [params.language.trim()] : undefined,
             instruction: params.instruction?.trim() || undefined,

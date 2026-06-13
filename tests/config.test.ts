@@ -198,7 +198,7 @@ describe("loadConfig", () => {
     expect(config.DASHSCOPE_API_KEY).toBe("");
     expect(config.ALIYUN_TTS_BASE_URL).toBe("https://dashscope.aliyuncs.com/api/v1");
     expect(config.ALIYUN_TTS_MODEL).toBe("cosyvoice-v3-flash");
-    expect(config.ALIYUN_TTS_VOICE).toBe("longanyang");
+    expect(config.ALIYUN_TTS_VOICE).toBe("longlaoyi_v3");
     expect(config.ALIYUN_TTS_FORMAT).toBe("mp3");
     expect(config.ALIYUN_TTS_SAMPLE_RATE).toBe(24000);
   });

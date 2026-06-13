@@ -132,7 +132,7 @@ vi.mock("../src/config.js", () => ({
     DASHSCOPE_API_KEY: "dashscope-key",
     ALIYUN_TTS_BASE_URL: "https://dashscope.test/api/v1",
     ALIYUN_TTS_MODEL: "cosyvoice-v3-flash",
-    ALIYUN_TTS_VOICE: "longanyang",
+    ALIYUN_TTS_VOICE: "longlaoyi_v3",
     ALIYUN_TTS_FORMAT: "mp3",
     ALIYUN_TTS_SAMPLE_RATE: 24000,
     FEISHU_BOT_OPEN_ID: undefined,
@@ -335,7 +335,7 @@ describe("index wiring", () => {
       apiKey: "dashscope-key",
       baseUrl: "https://dashscope.test/api/v1",
       model: "cosyvoice-v3-flash",
-      voice: "longanyang",
+      voice: "longlaoyi_v3",
       format: "mp3",
       sampleRate: 24000,
     });

@@ -120,6 +120,47 @@ describe("aliyun tts extension", () => {
     });
   });
 
+  it("语音合成默认使用固定音色和偏慢语速", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/services/audio/tts/SpeechSynthesizer")) {
+        return new Response(JSON.stringify({
+          request_id: "req_default",
+          output: {
+            audio: {
+              data: Buffer.from("audio-bytes").toString("base64"),
+            },
+          },
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected url: ${url}`);
+    }) as any;
+    const tools = collectTools(fetchMock, { voice: undefined });
+    const synthesizeTool = tools.find((tool) => tool.name === "tts_synthesize");
+    const cwd = await createTempWorkspace();
+
+    await synthesizeTool.execute(
+      "call-1",
+      {
+        text: "你好",
+        output_name: "default.mp3",
+      },
+      undefined,
+      undefined,
+      createToolContext(cwd),
+    );
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+      model: "cosyvoice-v3-flash",
+      input: {
+        text: "你好",
+        voice: "longlaoyi_v3",
+        format: "mp3",
+        sample_rate: 24000,
+        rate: 0.85,
+      },
+    });
+  });
+
   it("声音复刻会用公网音频 URL 创建 voice_id", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       request_id: "req_clone",
