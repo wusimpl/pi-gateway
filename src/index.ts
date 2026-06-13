@@ -35,6 +35,7 @@ import { createFeishuFilesExtension } from "./pi/extensions/feishu-files.js";
 import { createFeishuMessageExtension } from "./pi/extensions/feishu-message.js";
 import { createCronTaskExtension } from "./pi/extensions/cron-task.js";
 import { createSkillStatsExtension } from "./pi/extensions/skill-stats.js";
+import { createAliyunTtsExtension } from "./pi/extensions/aliyun-tts.js";
 import { createModelRouter } from "./pi/model-routing.js";
 import { findAvailableModel, listAvailableModels } from "./pi/models.js";
 import { createPiRuntime, type PiRuntime } from "./pi/runtime.js";
@@ -131,6 +132,14 @@ async function main() {
         createFeishuDocsExtension(feishuDocsService),
         createFeishuFilesExtension(feishuMessenger),
         createFeishuMessageExtension(feishuMessenger),
+        createAliyunTtsExtension({
+          apiKey: config.DASHSCOPE_API_KEY,
+          baseUrl: config.ALIYUN_TTS_BASE_URL,
+          model: config.ALIYUN_TTS_MODEL,
+          voice: config.ALIYUN_TTS_VOICE,
+          format: config.ALIYUN_TTS_FORMAT,
+          sampleRate: config.ALIYUN_TTS_SAMPLE_RATE,
+        }),
         createSkillStatsExtension(skillStatsStore),
         ...(config.CRON_ENABLED
           ? [

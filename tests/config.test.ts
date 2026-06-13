@@ -189,4 +189,37 @@ describe("loadConfig", () => {
     expect(config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER).toBe("doubao");
     expect(config.FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY).toBe("test-doubao-key");
   });
+
+  it("阿里云语音合成配置应有默认值", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.DASHSCOPE_API_KEY).toBe("");
+    expect(config.ALIYUN_TTS_BASE_URL).toBe("https://dashscope.aliyuncs.com/api/v1");
+    expect(config.ALIYUN_TTS_MODEL).toBe("cosyvoice-v3-flash");
+    expect(config.ALIYUN_TTS_VOICE).toBe("longanyang");
+    expect(config.ALIYUN_TTS_FORMAT).toBe("mp3");
+    expect(config.ALIYUN_TTS_SAMPLE_RATE).toBe(24000);
+  });
+
+  it("阿里云语音合成配置应支持自定义", async () => {
+    applyBaseEnv({
+      DASHSCOPE_API_KEY: "dashscope-key",
+      ALIYUN_TTS_BASE_URL: "https://dashscope-intl.aliyuncs.com/api/v1",
+      ALIYUN_TTS_MODEL: "cosyvoice-v3.5-plus",
+      ALIYUN_TTS_VOICE: "voice_1",
+      ALIYUN_TTS_FORMAT: "wav",
+      ALIYUN_TTS_SAMPLE_RATE: "48000",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.DASHSCOPE_API_KEY).toBe("dashscope-key");
+    expect(config.ALIYUN_TTS_BASE_URL).toBe("https://dashscope-intl.aliyuncs.com/api/v1");
+    expect(config.ALIYUN_TTS_MODEL).toBe("cosyvoice-v3.5-plus");
+    expect(config.ALIYUN_TTS_VOICE).toBe("voice_1");
+    expect(config.ALIYUN_TTS_FORMAT).toBe("wav");
+    expect(config.ALIYUN_TTS_SAMPLE_RATE).toBe(48000);
+  });
 });

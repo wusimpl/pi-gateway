@@ -18,6 +18,7 @@ Pi Gateway 是一个把 **Pi 接到飞书**里的助手。
 - 分析网页、代码、报错、日志、需求文档
 - 读取图片、识别截图内容
 - 转写语音，并基于语音内容继续处理
+- 生成语音文件，并可使用阿里云百炼 CosyVoice 音色
 - 接收文件，并根据文件内容继续工作
 - 创建、读取、追加、替换飞书文档
 - 把生成好的文件直接发回飞书
@@ -211,6 +212,22 @@ off, minimal, low, medium, high, xhigh
 ```text
 /tools
 ```
+
+## 文字转语音
+
+Pi Gateway 使用阿里云百炼 CosyVoice 生成语音文件。配置 `DASHSCOPE_API_KEY` 后，用户可以直接要求朗读、配音或生成语音，机器人会先生成音频文件；如需发回飞书，会继续用文件发送工具发回当前会话。
+
+常用配置：
+
+```env
+DASHSCOPE_API_KEY=
+ALIYUN_TTS_MODEL=cosyvoice-v3-flash
+ALIYUN_TTS_VOICE=longanyang
+ALIYUN_TTS_FORMAT=mp3
+ALIYUN_TTS_SAMPLE_RATE=24000
+```
+
+如果要使用声音复刻，需要先把参考音频放到公网可访问地址，再创建音色。创建成功后拿到的 `voice_id` 可以填到 `ALIYUN_TTS_VOICE`，也可以在一次生成请求里临时指定。
 
 启用某些工具：
 

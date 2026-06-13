@@ -71,6 +71,7 @@ const mocks = vi.hoisted(() => {
       runJobNow: mocks.cronService.runJobNow,
     })),
     createCronTaskExtension: vi.fn(() => "cron-extension-factory"),
+    createAliyunTtsExtension: vi.fn(() => "aliyun-tts-extension-factory"),
     createSkillStatsStore: vi.fn(() => "skill-stats-store"),
     createSkillStatsExtension: vi.fn(() => "skill-stats-extension-factory"),
     createSessionService: vi.fn(() => ({
@@ -128,6 +129,12 @@ vi.mock("../src/config.js", () => ({
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL: "iic/SenseVoiceSmall",
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
     FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
+    DASHSCOPE_API_KEY: "dashscope-key",
+    ALIYUN_TTS_BASE_URL: "https://dashscope.test/api/v1",
+    ALIYUN_TTS_MODEL: "cosyvoice-v3-flash",
+    ALIYUN_TTS_VOICE: "longanyang",
+    ALIYUN_TTS_FORMAT: "mp3",
+    ALIYUN_TTS_SAMPLE_RATE: 24000,
     FEISHU_BOT_OPEN_ID: undefined,
     DATA_DIR: "/tmp/pi-gateway-data",
     PI_WORKSPACE_ROOT: "/tmp/pi-gateway-workspace",
@@ -187,6 +194,10 @@ vi.mock("../src/cron/service.js", () => ({
 
 vi.mock("../src/pi/extensions/cron-task.js", () => ({
   createCronTaskExtension: mocks.createCronTaskExtension,
+}));
+
+vi.mock("../src/pi/extensions/aliyun-tts.js", () => ({
+  createAliyunTtsExtension: mocks.createAliyunTtsExtension,
 }));
 
 vi.mock("../src/pi/skill-stats.js", () => ({
@@ -267,6 +278,7 @@ describe("index wiring", () => {
     mocks.createCronRunner.mockClear();
     mocks.createCronService.mockClear();
     mocks.createCronTaskExtension.mockClear();
+    mocks.createAliyunTtsExtension.mockClear();
     mocks.createSkillStatsStore.mockClear();
     mocks.createSkillStatsExtension.mockClear();
     mocks.cronService.start.mockClear();
@@ -313,11 +325,20 @@ describe("index wiring", () => {
         gatewayAgentsFile: "/tmp/pi-gateway-agents.md",
         extensionFactories: expect.arrayContaining([
           "cron-extension-factory",
+          "aliyun-tts-extension-factory",
           "skill-stats-extension-factory",
         ]),
       }),
     );
     expect(mocks.createSkillStatsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
+    expect(mocks.createAliyunTtsExtension).toHaveBeenCalledWith({
+      apiKey: "dashscope-key",
+      baseUrl: "https://dashscope.test/api/v1",
+      model: "cosyvoice-v3-flash",
+      voice: "longanyang",
+      format: "mp3",
+      sampleRate: 24000,
+    });
     expect(mocks.createGroupSettingsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
     expect(mocks.createMessageRouter.mock.calls[0]?.[0]?.config.FEISHU_BOT_OPEN_ID).toBe("ou_bot_1");
     expect(mocks.createSkillStatsExtension).toHaveBeenCalledWith("skill-stats-store");
