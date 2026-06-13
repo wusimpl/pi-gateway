@@ -106,13 +106,12 @@ export function createAliyunTtsExtension(options: AliyunTtsOptions = {}): Extens
       "tts_synthesize: 把文字转成语音文件；需要发送给用户时，先生成音频文件，再用 feishu_file_send 发回当前飞书会话。",
     promptGuidelines: [
       "用户要求配音、朗读、文字转语音、生成语音文件时，调用 tts_synthesize。",
-      "用户指定 voice id 或声音复刻音色时，把它作为 voice 传入。",
-      "如果用户要模仿某个声线，必须使用用户提供或明确授权的 voice id；不要主动寻找或伪造真实人物声线素材。",
+      "用户指定音色时，把它作为 voice 传入；没有指定时使用默认音色。",
       "生成音频后，如果用户希望在飞书里收到文件，继续调用 feishu_file_send 发送生成的音频文件。",
     ],
     parameters: Type.Object({
       text: Type.String({ description: "要生成语音的文字。" }),
-      voice: Type.Optional(Type.String({ description: "音色 ID。可使用系统音色或声音复刻生成的 voice_id。" })),
+      voice: Type.Optional(Type.String({ description: "音色 ID；不传时使用默认音色。" })),
       model: Type.Optional(Type.String({ description: "CosyVoice 模型名；默认使用环境配置。" })),
       format: Type.Optional(Type.String({ description: "音频格式：mp3、wav、pcm 或 opus。" })),
       sample_rate: Type.Optional(Type.Number({ description: "采样率，例如 24000。" })),
