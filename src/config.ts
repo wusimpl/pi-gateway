@@ -17,6 +17,10 @@ const envSchema = z.object({
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: z.string().default("cpu"),
   FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: z.string().default(""),
   DASHSCOPE_API_KEY: z.string().default(""),
+  GROK_SEARCH_ENABLED: z
+    .string()
+    .transform((v) => v !== "false")
+    .default("true"),
   GROK_SEARCH_API_KEY: z.string().default(""),
   GROK_SEARCH_BASE_URL: z.string().url().default("https://jiuuij.de5.net"),
   GROK_SEARCH_MODEL: z.string().default("grok-4.20-multi-agent-xhigh"),

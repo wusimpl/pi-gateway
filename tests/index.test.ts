@@ -74,6 +74,7 @@ const mocks = vi.hoisted(() => {
     createAliyunTtsExtension: vi.fn(() => "aliyun-tts-extension-factory"),
     aliyunTtsEnabled: true,
     createGrokSearchExtension: vi.fn(() => "grok-search-extension-factory"),
+    grokSearchEnabled: true,
     grokSearchApiKey: "grok-key",
     createSkillStatsStore: vi.fn(() => "skill-stats-store"),
     createSkillStatsExtension: vi.fn(() => "skill-stats-extension-factory"),
@@ -133,6 +134,7 @@ vi.mock("../src/config.js", () => ({
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
     FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
     DASHSCOPE_API_KEY: "dashscope-key",
+    GROK_SEARCH_ENABLED: mocks.grokSearchEnabled,
     GROK_SEARCH_API_KEY: mocks.grokSearchApiKey,
     GROK_SEARCH_BASE_URL: "https://grok.test",
     GROK_SEARCH_MODEL: "grok-search-model",
@@ -292,6 +294,7 @@ describe("index wiring", () => {
     mocks.createAliyunTtsExtension.mockClear();
     mocks.aliyunTtsEnabled = true;
     mocks.createGrokSearchExtension.mockClear();
+    mocks.grokSearchEnabled = true;
     mocks.grokSearchApiKey = "grok-key";
     mocks.createSkillStatsStore.mockClear();
     mocks.createSkillStatsExtension.mockClear();
@@ -395,7 +398,8 @@ describe("index wiring", () => {
     );
   });
 
-  it("GROK_SEARCH_API_KEY 为空时不应注册 Grok 搜索扩展", async () => {
+  it("GROK_SEARCH_ENABLED=false 时不应注册 Grok 搜索扩展", async () => {
+    mocks.grokSearchEnabled = false;
     mocks.grokSearchApiKey = "";
 
     await import("../src/index.ts");
@@ -407,6 +411,26 @@ describe("index wiring", () => {
     expect(mocks.createGrokSearchExtension).not.toHaveBeenCalled();
     expect(mocks.createPiRuntime.mock.calls[0]?.[0]?.extensionFactories).toEqual(
       expect.not.arrayContaining(["grok-search-extension-factory"]),
+    );
+  });
+
+  it("GROK_SEARCH_ENABLED=true 时应注册 Grok 搜索扩展", async () => {
+    mocks.grokSearchEnabled = true;
+    mocks.grokSearchApiKey = "";
+
+    await import("../src/index.ts");
+
+    await vi.waitFor(() => {
+      expect(mocks.createPiRuntime).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.createGrokSearchExtension).toHaveBeenCalledWith({
+      apiKey: "",
+      baseUrl: "https://grok.test",
+      model: "grok-search-model",
+    });
+    expect(mocks.createPiRuntime.mock.calls[0]?.[0]?.extensionFactories).toEqual(
+      expect.arrayContaining(["grok-search-extension-factory"]),
     );
   });
 });

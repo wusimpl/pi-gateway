@@ -70,7 +70,7 @@ async function main() {
     steeringReactionEnabled: Boolean(config.FEISHU_STEERING_REACTION_TYPE),
     cronEnabled: config.CRON_ENABLED,
     cronDefaultTz: config.CRON_DEFAULT_TZ,
-    grokSearchEnabled: Boolean(config.GROK_SEARCH_API_KEY.trim()),
+    grokSearchEnabled: config.GROK_SEARCH_ENABLED,
     aliyunTtsEnabled: config.ALIYUN_TTS_ENABLED,
   });
 
@@ -135,7 +135,7 @@ async function main() {
         createFeishuDocsExtension(feishuDocsService),
         createFeishuFilesExtension(feishuMessenger),
         createFeishuMessageExtension(feishuMessenger),
-        ...(config.GROK_SEARCH_API_KEY.trim()
+        ...(config.GROK_SEARCH_ENABLED
           ? [
               createGrokSearchExtension({
                 apiKey: config.GROK_SEARCH_API_KEY,

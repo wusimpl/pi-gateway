@@ -202,6 +202,7 @@ describe("loadConfig", () => {
     expect(config.ALIYUN_TTS_VOICE).toBe("longlaoyi_v3");
     expect(config.ALIYUN_TTS_FORMAT).toBe("mp3");
     expect(config.ALIYUN_TTS_SAMPLE_RATE).toBe(24000);
+    expect(config.GROK_SEARCH_ENABLED).toBe(true);
     expect(config.GROK_SEARCH_API_KEY).toBe("");
     expect(config.GROK_SEARCH_BASE_URL).toBe("https://jiuuij.de5.net");
     expect(config.GROK_SEARCH_MODEL).toBe("grok-4.20-multi-agent-xhigh");
@@ -219,6 +220,13 @@ describe("loadConfig", () => {
     expect(config.GROK_SEARCH_API_KEY).toBe("grok-key");
     expect(config.GROK_SEARCH_BASE_URL).toBe("https://grok.test");
     expect(config.GROK_SEARCH_MODEL).toBe("grok-search-model");
+  });
+
+  it("GROK_SEARCH_ENABLED=false 时应关闭 Grok 搜索", async () => {
+    applyBaseEnv({ GROK_SEARCH_ENABLED: "false" });
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(loadConfig().GROK_SEARCH_ENABLED).toBe(false);
   });
 
   it("ALIYUN_TTS_ENABLED 应解析为布尔值", async () => {
