@@ -17,6 +17,13 @@ const envSchema = z.object({
   FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: z.string().default("cpu"),
   FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: z.string().default(""),
   DASHSCOPE_API_KEY: z.string().default(""),
+  GROK_SEARCH_API_KEY: z.string().default(""),
+  GROK_SEARCH_BASE_URL: z.string().url().default("https://jiuuij.de5.net"),
+  GROK_SEARCH_MODEL: z.string().default("grok-4.20-multi-agent-xhigh"),
+  ALIYUN_TTS_ENABLED: z
+    .string()
+    .transform((v) => v === "true")
+    .default("false"),
   ALIYUN_TTS_BASE_URL: z.string().url().default("https://dashscope.aliyuncs.com/api/v1"),
   ALIYUN_TTS_MODEL: z.string().default("cosyvoice-v3-flash"),
   ALIYUN_TTS_VOICE: z.string().default("longlaoyi_v3"),

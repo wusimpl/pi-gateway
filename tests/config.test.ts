@@ -195,16 +195,43 @@ describe("loadConfig", () => {
     const { loadConfig } = await import("../src/config.js");
 
     const config = loadConfig();
+    expect(config.ALIYUN_TTS_ENABLED).toBe(false);
     expect(config.DASHSCOPE_API_KEY).toBe("");
     expect(config.ALIYUN_TTS_BASE_URL).toBe("https://dashscope.aliyuncs.com/api/v1");
     expect(config.ALIYUN_TTS_MODEL).toBe("cosyvoice-v3-flash");
     expect(config.ALIYUN_TTS_VOICE).toBe("longlaoyi_v3");
     expect(config.ALIYUN_TTS_FORMAT).toBe("mp3");
     expect(config.ALIYUN_TTS_SAMPLE_RATE).toBe(24000);
+    expect(config.GROK_SEARCH_API_KEY).toBe("");
+    expect(config.GROK_SEARCH_BASE_URL).toBe("https://jiuuij.de5.net");
+    expect(config.GROK_SEARCH_MODEL).toBe("grok-4.20-multi-agent-xhigh");
+  });
+
+  it("Grok 搜索配置应支持自定义", async () => {
+    applyBaseEnv({
+      GROK_SEARCH_API_KEY: "grok-key",
+      GROK_SEARCH_BASE_URL: "https://grok.test",
+      GROK_SEARCH_MODEL: "grok-search-model",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.GROK_SEARCH_API_KEY).toBe("grok-key");
+    expect(config.GROK_SEARCH_BASE_URL).toBe("https://grok.test");
+    expect(config.GROK_SEARCH_MODEL).toBe("grok-search-model");
+  });
+
+  it("ALIYUN_TTS_ENABLED 应解析为布尔值", async () => {
+    applyBaseEnv({ ALIYUN_TTS_ENABLED: "true" });
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.ALIYUN_TTS_ENABLED).toBe(true);
   });
 
   it("阿里云语音合成配置应支持自定义", async () => {
     applyBaseEnv({
+      ALIYUN_TTS_ENABLED: "true",
       DASHSCOPE_API_KEY: "dashscope-key",
       ALIYUN_TTS_BASE_URL: "https://dashscope-intl.aliyuncs.com/api/v1",
       ALIYUN_TTS_MODEL: "cosyvoice-v3.5-plus",
@@ -215,6 +242,7 @@ describe("loadConfig", () => {
     const { loadConfig } = await import("../src/config.js");
 
     const config = loadConfig();
+    expect(config.ALIYUN_TTS_ENABLED).toBe(true);
     expect(config.DASHSCOPE_API_KEY).toBe("dashscope-key");
     expect(config.ALIYUN_TTS_BASE_URL).toBe("https://dashscope-intl.aliyuncs.com/api/v1");
     expect(config.ALIYUN_TTS_MODEL).toBe("cosyvoice-v3.5-plus");

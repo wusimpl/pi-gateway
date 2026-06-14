@@ -72,6 +72,9 @@ const mocks = vi.hoisted(() => {
     })),
     createCronTaskExtension: vi.fn(() => "cron-extension-factory"),
     createAliyunTtsExtension: vi.fn(() => "aliyun-tts-extension-factory"),
+    aliyunTtsEnabled: true,
+    createGrokSearchExtension: vi.fn(() => "grok-search-extension-factory"),
+    grokSearchApiKey: "grok-key",
     createSkillStatsStore: vi.fn(() => "skill-stats-store"),
     createSkillStatsExtension: vi.fn(() => "skill-stats-extension-factory"),
     createSessionService: vi.fn(() => ({
@@ -130,6 +133,10 @@ vi.mock("../src/config.js", () => ({
     FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE: "cpu",
     FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY: "",
     DASHSCOPE_API_KEY: "dashscope-key",
+    GROK_SEARCH_API_KEY: mocks.grokSearchApiKey,
+    GROK_SEARCH_BASE_URL: "https://grok.test",
+    GROK_SEARCH_MODEL: "grok-search-model",
+    ALIYUN_TTS_ENABLED: mocks.aliyunTtsEnabled,
     ALIYUN_TTS_BASE_URL: "https://dashscope.test/api/v1",
     ALIYUN_TTS_MODEL: "cosyvoice-v3-flash",
     ALIYUN_TTS_VOICE: "longlaoyi_v3",
@@ -198,6 +205,10 @@ vi.mock("../src/pi/extensions/cron-task.js", () => ({
 
 vi.mock("../src/pi/extensions/aliyun-tts.js", () => ({
   createAliyunTtsExtension: mocks.createAliyunTtsExtension,
+}));
+
+vi.mock("../src/pi/extensions/grok-search.js", () => ({
+  createGrokSearchExtension: mocks.createGrokSearchExtension,
 }));
 
 vi.mock("../src/pi/skill-stats.js", () => ({
@@ -279,6 +290,9 @@ describe("index wiring", () => {
     mocks.createCronService.mockClear();
     mocks.createCronTaskExtension.mockClear();
     mocks.createAliyunTtsExtension.mockClear();
+    mocks.aliyunTtsEnabled = true;
+    mocks.createGrokSearchExtension.mockClear();
+    mocks.grokSearchApiKey = "grok-key";
     mocks.createSkillStatsStore.mockClear();
     mocks.createSkillStatsExtension.mockClear();
     mocks.cronService.start.mockClear();
@@ -326,6 +340,7 @@ describe("index wiring", () => {
         extensionFactories: expect.arrayContaining([
           "cron-extension-factory",
           "aliyun-tts-extension-factory",
+          "grok-search-extension-factory",
           "skill-stats-extension-factory",
         ]),
       }),
@@ -338,6 +353,11 @@ describe("index wiring", () => {
       voice: "longlaoyi_v3",
       format: "mp3",
       sampleRate: 24000,
+    });
+    expect(mocks.createGrokSearchExtension).toHaveBeenCalledWith({
+      apiKey: "grok-key",
+      baseUrl: "https://grok.test",
+      model: "grok-search-model",
     });
     expect(mocks.createGroupSettingsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
     expect(mocks.createMessageRouter.mock.calls[0]?.[0]?.config.FEISHU_BOT_OPEN_ID).toBe("ou_bot_1");
@@ -354,5 +374,39 @@ describe("index wiring", () => {
     expect(mocks.startMessageConnection).toHaveBeenCalledTimes(1);
     expect(mocks.signalRestartReadyIfNeeded).toHaveBeenCalledTimes(1);
     expect(mocks.notifyRestartReadyIfNeeded).toHaveBeenCalledTimes(1);
+    expect(mocks.logger.info).toHaveBeenCalledWith(
+      "配置加载成功",
+      expect.objectContaining({ aliyunTtsEnabled: true, grokSearchEnabled: true }),
+    );
+  });
+
+  it("ALIYUN_TTS_ENABLED=false 时不应注册阿里云 TTS 扩展", async () => {
+    mocks.aliyunTtsEnabled = false;
+
+    await import("../src/index.ts");
+
+    await vi.waitFor(() => {
+      expect(mocks.createPiRuntime).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.createAliyunTtsExtension).not.toHaveBeenCalled();
+    expect(mocks.createPiRuntime.mock.calls[0]?.[0]?.extensionFactories).toEqual(
+      expect.not.arrayContaining(["aliyun-tts-extension-factory"]),
+    );
+  });
+
+  it("GROK_SEARCH_API_KEY 为空时不应注册 Grok 搜索扩展", async () => {
+    mocks.grokSearchApiKey = "";
+
+    await import("../src/index.ts");
+
+    await vi.waitFor(() => {
+      expect(mocks.createPiRuntime).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.createGrokSearchExtension).not.toHaveBeenCalled();
+    expect(mocks.createPiRuntime.mock.calls[0]?.[0]?.extensionFactories).toEqual(
+      expect.not.arrayContaining(["grok-search-extension-factory"]),
+    );
   });
 });
