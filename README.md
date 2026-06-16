@@ -1,528 +1,768 @@
 # Pi Gateway
 
-Pi Gateway 是一个把 **Pi 接到飞书**里的助手。
+Pi Gateway 是一个把 **Pi Code Agent** 接到 **飞书** 的网关服务。
 
-你可以像跟同事聊天一样，在飞书私聊或群聊中直接让它帮你写东西、查资料、处理文件、整理语音、生成文档、设置定时任务，或者继续完成更复杂的工作。
+它运行在本机或服务器上，通过飞书开放平台长连接接收私聊/群聊消息，把消息整理成 Pi 会话输入，再把模型回复、工具结果、文档链接、文件、图片、定时任务结果发送回飞书。
 
-它的目标很简单：
-
-> 让你不用离开飞书，就能使用 Pi 的能力。
+一句话：**不用离开飞书，就能使用本机 Pi 的会话、工具、skills、文件处理和自动化能力。**
 
 ---
 
-## 它能做什么
+## 当前能力概览
 
-你可以直接把需求发给机器人，例如：
+### 飞书消息入口
 
-- 写文案、改稿、总结、翻译、润色
-- 分析网页、代码、报错、日志、需求文档
-- 读取图片、识别截图内容
-- 转写语音，并基于语音内容继续处理
-- 生成语音文件，并可使用阿里云百炼 CosyVoice 音色
-- 接收文件，并根据文件内容继续工作
-- 创建、读取、追加、替换飞书文档
-- 把生成好的文件直接发回飞书
-- 设置一次性或周期性的定时任务
-- 在群聊中协作使用同一个上下文
-- 管理会话、模型、工具和回复方式
+支持接收并处理：
 
-你不需要记住复杂规则。多数情况下，直接说你想做什么就可以。
+- 私聊文本消息
+- 群聊文本消息
+- 飞书富文本 post 消息
+- 图片消息
+- 富文本内嵌图片
+- 语音消息
+- 文件消息
+- 引用/回复消息
 
----
+图片、语音和文件会被下载到当前 workspace 的 `.feishu-inbox/<messageId>/` 下，再交给 Pi 处理。
 
-## 私聊怎么用
+### Pi 会话能力
 
-在飞书里打开和机器人的私聊，直接发送消息即可。
+- 每个私聊用户独立上下文
+- 每个群聊独立上下文
+- 会话可新建、重置、恢复和查看历史
+- 会话状态持久化到 `DATA_DIR`
+- 每个用户/群聊有独立 workspace
+- 支持项目级 `AGENTS.md` 自动创建和加载
+- 可注入网关专属规则文件 `PI_GATEWAY_AGENTS_FILE`
+- 可按会话配置模型、推理强度、启用工具、工具调用展示方式
+- 支持运行中追加 steering/follow-up 消息
+- 支持 `/stop` 中止当前任务
 
-私聊支持访问控制：默认 `FEISHU_P2P_CHAT_POLICY=all` 允许所有能私聊机器人的用户；设置为 `whitelist` 后只允许白名单里的用户。私聊白名单存的是飞书用户 `open_id`，可由 super admin 使用 `/p2p` 命令动态管理，修改会持久化保存，重启后仍生效。内置 super admin 永远允许私聊，不受白名单配置影响。
+### 飞书输出能力
 
-你可以发送：
+- 普通文本回复
+- 长文本自动分段
+- Markdown 渲染为飞书可读消息
+- 流式卡片更新
+- 处理中/排队中 reaction
+- 工具调用过程展示
+- 飞书文档预览卡片
+- 本地文件发送
+- 本地图片直接发送为飞书图片
+- 自动识别本地生成图片 URL 并转发为飞书图片
 
-- **文字**：直接提问或下指令
-- **图片**：截图、照片、图表、报错界面等
-- **语音**：机器人会先转写，再根据内容处理
-- **文件**：机器人会保存文件，并根据你的要求读取或处理
-- **引用消息**：引用之前的消息继续追问，机器人会带上引用内容
+### 内置扩展工具
 
-示例：
+Pi Gateway 会在 Pi runtime 中注册一组飞书相关 extension tools：
 
-```text
-帮我把这段话改得更适合发朋友圈
-```
-
-```text
-总结一下这个文件里的重点，给我列成待办
-```
-
-```text
-这张截图里报错是什么意思？怎么解决？
-```
-
----
-
-## 群聊怎么用
-
-在群聊里使用时，通常需要 **@ 机器人** 后再提问。  
-如果你把群消息接收模式配置成关键词触发，也可以直接发送带关键词的消息。
-
-示例：
-
-```text
-@Pi 帮我们总结一下刚才讨论的结论
-```
-
-群聊里的会话和私聊里的会话是分开的。一个群聊会有自己的上下文，不会默认混进你的私聊上下文。
-
-群聊中部分管理命令只有 super admin 或飞书群主可以使用，避免普通成员误删任务、切换会话或修改群设置。
-
----
-
-## 常用命令
-
-命令都以 `/` 开头。
-
-| 命令 | 用途 |
+| 工具 | 用途 |
 | --- | --- |
-| `/new` | 新建一个会话 |
-| `/reset` | 重置当前会话 |
-| `/status` | 查看当前会话状态 |
-| `/sessions` | 查看历史会话 |
-| `/resume <序号或会话ID前缀>` | 恢复某个历史会话 |
-| `/stop` | 停止当前正在执行的任务 |
-| `/next <内容>` | 把补充内容排到当前任务后处理 |
-| `/model` | 查看当前模型和可用模型 |
-| `/model <序号或模型名>` | 切换模型 |
-| `/settings` | 查看当前设置 |
-| `/tools` | 查看或管理工具 |
-| `/toolcalls` | 设置是否展示工具调用 |
-| `/cron` | 查看定时任务用法 |
-| `/cron list` | 查看当前定时任务 |
-| `/cron stop <jobId>` | 停止正在执行的定时任务 |
-| `/skills` | 查看当前可用技能 |
-| `/skillstat` | 查看技能使用统计 |
-| `/stt provider <名称>` | 切换语音转写方式 |
-| `/stream on/off` | 开关流式回复 |
-| `/reaction on/off` | 开关处理中表情 |
-| `/restart` | 重启网关 |
+| `ask_user_choice` | 在当前飞书会话发送单选按钮卡片，并等待用户点击 |
+| `feishu_doc_create` | 创建飞书新版文档 docx |
+| `feishu_doc_read` | 读取飞书新版文档 docx；也支持 wiki 链接解析后读取 |
+| `feishu_doc_append` | 向飞书 docx 末尾追加内容 |
+| `feishu_doc_replace` | 整篇替换飞书 docx 正文 |
+| `feishu_doc_delete_blocks` | 删除飞书 docx 根级块区间 |
+| `feishu_doc_delete_document` | 删除整篇飞书 docx，必须有用户明确确认 |
+| `feishu_folder_create` | 创建飞书云空间文件夹 |
+| `feishu_image_send` | 把 workspace 内本地图片发回当前飞书会话 |
+| `feishu_file_send` | 把 workspace 内本地非图片文件发回当前飞书会话 |
+| `feishu_message_send` | 向当前飞书会话发送文本，可结构化 @ 群成员 |
+| `cron_task` | 创建、查看、更新、暂停、恢复、删除、立即执行定时任务 |
+| `grok_search` | 通过配置好的 Grok 搜索模型联网搜索和事实核验 |
+| `tts_synthesize` | 使用阿里云百炼 CosyVoice 生成语音文件 |
+| `tts_clone_voice` | 使用公网参考音频创建声音复刻音色 |
+| `tts_query_voice` | 查询声音复刻音色状态 |
+
+其中：
+
+- `cron_task` 由 `CRON_ENABLED` 控制，默认开启。
+- `grok_search` 由 `GROK_SEARCH_ENABLED` 控制，默认开启，但需要配置 `GROK_SEARCH_API_KEY` 才能真正调用。
+- TTS 工具由 `ALIYUN_TTS_ENABLED` 控制，默认关闭。
+- 所有文件/图片发送工具都限制在当前 workspace 内，不能越界发送任意路径。
 
 ---
 
-## 会话管理
-
-Pi Gateway 会保留你的会话。你可以随时新建、重置或恢复历史会话。
-
-### 新建会话
+## 架构
 
 ```text
-/new
+飞书用户/群聊
+   ↓
+飞书开放平台 WebSocket 长连接
+   ↓
+Pi Gateway
+   ├─ 飞书事件解析与路由
+   ├─ 私聊/群聊访问控制
+   ├─ 消息归一化：text/post/image/audio/file
+   ├─ 媒体下载、OCR、语音转写
+   ├─ 会话状态与 workspace 管理
+   ├─ Pi Code Agent runtime
+   ├─ 飞书文档/文件/消息/定时任务 extension tools
+   ├─ Cron 定时任务 runner
+   └─ 本机后台管理页面
+   ↓
+Pi 模型、工具、skills、文件系统
 ```
 
-适合开始一个全新的主题。
+关键入口：
 
-### 重置当前会话
-
-```text
-/reset
-```
-
-适合当前对话已经跑偏，想清空上下文重新来。
-
-### 查看历史会话
-
-```text
-/sessions
-```
-
-如果会话很多，可以翻页：
-
-```text
-/sessions -n 2
-```
-
-### 恢复历史会话
-
-```text
-/resume 3
-```
-
-也可以用会话 ID 前缀恢复：
-
-```text
-/resume abc123
-```
+- `src/index.ts`：服务启动入口，装配飞书连接、Pi runtime、cron、后台管理和消息路由。
+- `src/app/router.ts`：飞书消息路由、命令识别、队列和运行中消息处理。
+- `src/app/prompt-service.ts`：准备 prompt、处理媒体、模型路由、调用 Pi session。
+- `src/pi/runtime.ts`：创建 Pi runtime，注册 extensions，处理 AGENTS/skills 加载策略。
+- `src/pi/stream.ts`：聚合 Pi 流式事件并发送飞书回复。
+- `src/cron/*`：定时任务解析、存储、调度和运行。
+- `src/admin/*`：本机管理后台。
+- `src/feishu/*`：飞书 API、消息发送、文档、资源下载、卡片交互。
 
 ---
 
-## 模型和回复设置
+## 环境要求
 
-### 查看可用模型
+- Node.js 22 或以上（当前开发环境验证版本：`v22.21.1`）
+- npm
+- 一个飞书自建应用
+- 已配置可用模型的 Pi Code Agent 环境
+- 可选：Ollama 图像 OCR 模型
+- 可选：语音转写脚本、SenseVoice 或豆包 ASR
+- 可选：Grok 搜索 API
+- 可选：阿里云百炼 DashScope API Key
 
-```text
-/model
-```
-
-按来源筛选：
-
-```text
-/model openai
-```
-
-### 切换模型
-
-```text
-/model 2
-```
-
-或：
-
-```text
-/model provider/model-name
-```
-
-### 调整推理强度
-
-```text
-/settings think medium
-```
-
-可选值：
-
-```text
-off, minimal, low, medium, high, xhigh
-```
-
-### 开关流式回复
-
-```text
-/settings stream on
-```
-
-或：
-
-```text
-/settings stream off
-```
+启动时会检查 Pi 模型注册表里的可用模型；如果没有任何可用模型，服务会直接退出。
 
 ---
 
-## 工具管理
+## 快速开始
 
-查看当前可用工具：
+### 1. 安装依赖
 
-```text
-/tools
+```bash
+npm install
 ```
 
-## 文字转语音
+### 2. 配置环境变量
 
-Pi Gateway 使用阿里云百炼 CosyVoice 生成语音文件。该功能默认关闭；设置 `ALIYUN_TTS_ENABLED=true` 并配置 `DASHSCOPE_API_KEY` 后，用户可以直接要求朗读、配音或生成语音，机器人会先生成音频文件；如需发回飞书，会继续用文件发送工具发回当前会话。
+```bash
+cp .env.example .env
+```
 
-默认音色使用 `longlaoyi_v3`，语速偏慢，适合报告、财报等长文本朗读。
-
-常用配置：
+至少需要填写：
 
 ```env
-ALIYUN_TTS_ENABLED=true
-DASHSCOPE_API_KEY=
-ALIYUN_TTS_MODEL=cosyvoice-v3-flash
-ALIYUN_TTS_VOICE=longlaoyi_v3
-ALIYUN_TTS_FORMAT=mp3
-ALIYUN_TTS_SAMPLE_RATE=24000
+FEISHU_APP_ID=cli_xxx
+FEISHU_APP_SECRET=xxx
 ```
 
-如果要使用声音复刻，需要先把参考音频放到公网可访问地址，再创建音色。创建成功后拿到的 `voice_id` 可以填到 `ALIYUN_TTS_VOICE`，也可以在一次生成请求里临时指定。
+再确认本机 Pi Code Agent 已经配置好至少一个可用模型。
 
-启用某些工具：
+### 3. 启动
 
-```text
-/tools on read bash
+```bash
+npm run start
 ```
 
-禁用某些工具：
+`npm run start` 会先执行 TypeScript 编译，再运行 `dist/index.js`。
 
-```text
-/tools off bash
+开发时也可以使用：
+
+```bash
+npm run dev
 ```
 
-只保留指定工具：
+当前 `dev` 和 `start` 都是 `tsc && node dist/index.js`。
 
-```text
-/tools set read write
-```
+### 4. 验证
 
-恢复默认工具：
-
-```text
-/tools reset
-```
+给飞书机器人私聊发送一条文本消息。如果配置正确，服务日志会出现收到消息、Pi prompt 开始和回复发送相关日志。
 
 ---
 
-## 工具调用展示
+## 飞书应用配置要点
 
-如果你想知道机器人执行过程中用了哪些工具，可以开启工具调用展示。
+Pi Gateway 使用飞书开放平台 Node SDK，通过 WebSocket 长连接接收事件。
 
-查看当前模式：
+飞书应用侧通常需要：
 
-```text
-/toolcalls
-```
+1. 创建自建应用并启用机器人能力。
+2. 获取 `App ID` 和 `App Secret`，填入 `.env`。
+3. 开通长连接事件订阅。
+4. 订阅消息接收事件 `im.message.receive_v1`。
+5. 如果使用卡片选择工具，需要支持卡片交互事件。
+6. 按需申请以下能力相关权限：
+   - 接收和发送消息
+   - 读取消息资源、下载图片/文件/语音
+   - 上传图片、上传文件
+   - 创建/读取/编辑/删除 docx 文档
+   - 创建文件夹、转移文档所有权
+   - 查询机器人信息、群信息、用户信息
 
-只显示工具名：
-
-```text
-/toolcalls name
-```
-
-显示详情：
-
-```text
-/toolcalls full
-```
-
-关闭展示：
-
-```text
-/toolcalls off
-```
+实际权限名称以飞书开放平台后台为准；不同功能不需要一次性全部开通。
 
 ---
 
-## 定时任务
+## 配置说明
 
-Pi Gateway 可以帮你创建提醒、日报、定时检查、周期总结等任务。
+配置集中在 `src/config.ts`，`.env.example` 提供常用项示例。
 
-### 查看定时任务
+### 飞书基础配置
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `FEISHU_APP_ID` | 必填 | 飞书自建应用 App ID |
+| `FEISHU_APP_SECRET` | 必填 | 飞书自建应用 App Secret |
+| `FEISHU_DOMAIN` | `feishu` | `feishu` 国内飞书；`larksuite` 海外 Lark |
+| `FEISHU_BOT_OPEN_ID` | 自动获取 | 机器人 open_id；通常不需要手填 |
+
+### 私聊与群聊访问控制
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `FEISHU_P2P_CHAT_POLICY` | `all` | 私聊策略：`all` 或 `whitelist` |
+| `FEISHU_P2P_CHAT_ALLOWLIST` | 空 | 私聊白名单 open_id，逗号分隔 |
+| `FEISHU_GROUP_CHAT_POLICY` | `disabled` | 群聊策略：`disabled`、`allowlist`、`open` |
+| `FEISHU_GROUP_CHAT_ALLOWLIST` | 空 | 允许响应的群 chat_id，逗号分隔 |
+| `FEISHU_GROUP_MESSAGE_MODE` | `mention` | 群消息触发方式：`mention`、`all`、`keyword` |
+| `FEISHU_GROUP_MESSAGE_KEYWORDS` | 空 | keyword 模式关键词，空白分隔 |
+| `FEISHU_GROUP_UNMATCHED_MESSAGE_POLICY` | `ignore` | 未触发群消息处理：`ignore` 或 `capture` |
+
+说明：
+
+- 私聊默认允许所有能私聊机器人的用户。
+- 群聊默认关闭。
+- `allowlist + capture` 时，群里未 @/未命中关键词的消息可以暂存，下一次真正触发时作为背景上下文附加给 Pi。
+- 内置 super admin 永远允许私聊，不受私聊白名单影响。
+
+### 数据与 workspace
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `DATA_DIR` | `./data` | 网关状态、用户会话索引、cron、设置等数据目录 |
+| `PI_WORKSPACE_ROOT` | `~/code/pi-workspace` | 每个私聊/群聊独立 workspace 的根目录 |
+| `PI_DISABLE_GLOBAL_AGENTS` | `false` | 是否禁用全局 AGENTS/CLAUDE 规则文件 |
+| `PI_GATEWAY_AGENTS_FILE` | `~/.pi/feishu-gateway/AGENTS.md` | 仅网关注入的全局规则文件 |
+
+workspace 规则：
+
+- 私聊 workspace：`<PI_WORKSPACE_ROOT>/<userId 或 openId>/`
+- 群聊 workspace：`<PI_WORKSPACE_ROOT>/conversations/<chatId>/`
+- 首次创建 workspace 时会自动生成一个基础 `AGENTS.md`。
+- 飞书下载的文件放在当前 workspace 的 `.feishu-inbox/<messageId>/` 下。
+
+### 回复与运行时
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` |
+| `STREAMING_ENABLED` | `false` | 默认是否启用飞书流式卡片回复 |
+| `TEXT_CHUNK_LIMIT` | `2000` | 飞书单条文本分段上限 |
+| `FEISHU_PROCESSING_REACTION_TYPE` | 空 | 处理中 reaction emoji_type；非法会自动禁用 |
+| `FEISHU_STEERING_REACTION_TYPE` | `OnIt` | 运行中追加消息时的 reaction emoji_type |
+
+### 图片与语音处理
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `FEISHU_MEDIA_OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | 模型不支持图片输入时使用的 Ollama 地址 |
+| `FEISHU_MEDIA_OCR_MODEL` | `glm-ocr:latest` | OCR/视觉 fallback 模型 |
+| `FEISHU_AUDIO_TRANSCRIBE_PROVIDER` | `whisper` | 语音转写：`whisper`、`sensevoice`、`doubao` |
+| `FEISHU_AUDIO_TRANSCRIBE_SCRIPT` | `~/.openclaw/skills/audio-transcribe/transcribe.sh` | whisper 外部转写脚本 |
+| `FEISHU_AUDIO_TRANSCRIBE_LANGUAGE` | 空 | 语音识别语言；常用 `zh` |
+| `FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_PYTHON` | `python3` | SenseVoice Python 可执行文件 |
+| `FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_MODEL` | `iic/SenseVoiceSmall` | SenseVoice 模型名或本地路径 |
+| `FEISHU_AUDIO_TRANSCRIBE_SENSEVOICE_DEVICE` | `cpu` | SenseVoice 设备 |
+| `FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY` | 空 | 豆包录音文件极速版 API Key |
+
+图片处理逻辑：
+
+- 当前模型支持图片输入时，图片以 base64 image content 直接传给 Pi。
+- 当前模型不支持图片输入时，走 Ollama OCR fallback。
+
+语音处理逻辑：
+
+- `whisper`：调用外部 shell 脚本。
+- `sensevoice`：调用仓库内 `scripts/sensevoice_transcribe.py`。
+- `doubao`：调用火山引擎豆包 ASR 接口，仅支持 WAV、MP3、OGG/OPUS 等已适配格式。
+
+### 定时任务
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CRON_ENABLED` | `true` | 是否启用定时任务服务和 `cron_task` 工具 |
+| `CRON_DEFAULT_TZ` | `Asia/Shanghai` | cron 表达式默认时区 |
+| `CRON_JOB_TIMEOUT_MS` | `1800000` | 单个定时任务执行超时，默认 30 分钟 |
+
+cron 数据保存在：
 
 ```text
-/cron list
+DATA_DIR/cron/jobs.json
 ```
 
-### 新建一次性任务
+### Grok 搜索
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `GROK_SEARCH_ENABLED` | `true` | 是否注册 `grok_search` 工具 |
+| `GROK_SEARCH_API_KEY` | 空 | 搜索模型 API Key |
+| `GROK_SEARCH_BASE_URL` | `https://jiuuij.de5.net` | OpenAI-compatible base URL |
+| `GROK_SEARCH_MODEL` | `grok-4.20-multi-agent-xhigh` | 搜索模型名 |
+
+### 阿里云百炼 TTS
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ALIYUN_TTS_ENABLED` | `false` | 是否注册 TTS 工具 |
+| `DASHSCOPE_API_KEY` | 空 | 阿里云百炼 API Key |
+| `ALIYUN_TTS_BASE_URL` | `https://dashscope.aliyuncs.com/api/v1` | DashScope API 地址 |
+| `ALIYUN_TTS_MODEL` | `cosyvoice-v3-flash` | 默认 TTS 模型 |
+| `ALIYUN_TTS_VOICE` | `longlaoyi_v3` | 默认音色 |
+| `ALIYUN_TTS_FORMAT` | `mp3` | 输出格式：`mp3`、`wav`、`pcm`、`opus` |
+| `ALIYUN_TTS_SAMPLE_RATE` | `24000` | 采样率 |
+
+启用后，`tts_synthesize` 默认会输出到当前 workspace 的 `tts/` 目录。若用户要求发回飞书，模型会继续调用 `feishu_file_send`。
+
+### 本机管理后台
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ADMIN_HOST` | `127.0.0.1` | 后台监听地址 |
+| `ADMIN_PORT` | `8787` | 后台端口 |
+| `ADMIN_PASSWORD` | `admin` | 后台登录密码 |
+| `ADMIN_SESSION_TTL_MS` | `86400000` | 后台登录态有效期 |
+
+后台地址默认是：
+
+```text
+http://127.0.0.1:8787/admin/
+```
+
+生产/长期运行请务必修改 `ADMIN_PASSWORD`，并优先只绑定本机地址。
+
+---
+
+## 飞书命令
+
+所有网关命令都以 `/` 开头。发送 `/commands` 可以查看当前会话中你有权限使用的命令。
+
+### 会话
+
+| 命令 | 说明 |
+| --- | --- |
+| `/new` | 新建会话 |
+| `/reset` | 重置当前会话 |
+| `/status` | 查看当前会话状态 |
+| `/context` | 查看已加载的 AGENTS/上下文文件 |
+| `/sessions` | 查看历史会话 |
+| `/sessions -n <页码>` | 翻页查看历史会话 |
+| `/resume <序号或会话ID前缀>` | 恢复历史会话 |
+
+### 模型与推理
+
+| 命令 | 说明 |
+| --- | --- |
+| `/model` | 查看模型配置和可用模型 |
+| `/model <provider>` | 按 provider 筛选可用模型 |
+| `/model <序号或provider/model>` | 设置 heavy 主模型 |
+| `/model router <序号或provider/model>` | 设置路由分类模型 |
+| `/model light <序号或provider/model>` | 设置轻量模型 |
+| `/model heavy <序号或provider/model>` | 设置重型模型 |
+| `/route` | 查看模型路由状态 |
+| `/route on` | 开启模型路由，要求 router/light/heavy 都已配置 |
+| `/route off` | 关闭模型路由 |
+| `/settings think off|minimal|low|medium|high|xhigh` | 设置推理强度 |
+
+模型路由逻辑：
+
+- 未配置 heavy 模型时不路由。
+- 路由关闭时使用 heavy 模型。
+- 有图片的任务直接使用 heavy 模型。
+- 路由开启后，router 模型只负责判断任务难度；simple/medium 走 light，hard 走 heavy。
+- 路由失败时自动回退 heavy。
+
+### 回复与工具展示
+
+| 命令 | 说明 |
+| --- | --- |
+| `/settings` | 查看当前设置 |
+| `/settings stream on|off` | 设置当前目标是否流式回复 |
+| `/toolcalls` | 查看工具调用展示方式 |
+| `/toolcalls off` | 关闭工具调用展示 |
+| `/toolcalls name` | 只展示工具名 |
+| `/toolcalls focus` | 聚焦展示工具进度 |
+| `/toolcalls full` | 展示较完整工具调用详情 |
+| `/tools` | 查看当前 session 可用工具和启用状态 |
+| `/tools on <tool...>` | 启用工具 |
+| `/tools off <tool...>` | 禁用工具 |
+| `/tools set <tool...>` | 只保留指定工具 |
+| `/tools reset` | 恢复默认工具集合 |
+| `/skill-folder` | 查看私有技能目录开关 |
+| `/skill-folder on|off` | 控制新会话是否加载 `~/.agents/skills` |
+
+### 运行控制
+
+| 命令 | 说明 |
+| --- | --- |
+| `/stop` | 停止当前正在执行的任务 |
+| `/next <内容>` | 把补充内容排到当前任务后处理 |
+| `/restart` | 重启网关；仅 super admin 私聊可用 |
+
+`/next` 适合长任务正在跑时补充要求。普通运行中消息也会尽量作为 steering 消息写入当前 Pi session。
+
+### 语音与 reaction
+
+| 命令 | 说明 |
+| --- | --- |
+| `/stt provider whisper|sensevoice|doubao` | 切换语音转写方式；仅 super admin 私聊可用 |
+| `/stream on|off` | 设置全局默认流式回复；仅 super admin 私聊可用 |
+| `/reaction on|off` | 开关处理中 reaction；仅 super admin 私聊可用 |
+
+### 私聊访问控制
+
+| 命令 | 说明 |
+| --- | --- |
+| `/p2p` | 查看私聊策略 |
+| `/p2p policy all|whitelist` | 切换私聊策略 |
+| `/p2p allowlist show` | 查看私聊白名单 |
+| `/p2p allowlist add <open_id...>` | 加入私聊白名单 |
+| `/p2p allowlist remove <open_id...>` | 移出私聊白名单 |
+
+`/p2p` 只允许 super admin 私聊使用。修改会持久化保存到 `DATA_DIR/settings/`。
+
+### 群聊设置
+
+群里可用：
+
+| 命令 | 说明 |
+| --- | --- |
+| `/group` | 查看当前群聊设置 |
+| `/group policy disabled|allowlist|open` | 设置当前群聊开关 |
+| `/group mode mention|all|keyword` | 设置当前群聊触发方式 |
+| `/group keywords show` | 查看关键词 |
+| `/group keywords set <关键词...>` | 设置关键词 |
+| `/group keywords clear` | 清空关键词 |
+| `/group unmatched capture|ignore` | 设置未触发消息暂存策略 |
+| `/group unmatched show` | 查看暂存状态 |
+| `/group unmatched clear` | 清空暂存消息 |
+
+私聊里 super admin 可用：
+
+| 命令 | 说明 |
+| --- | --- |
+| `/group allowlist show` | 查看全局群白名单 |
+| `/group allowlist add <chat_id...>` | 添加群白名单 |
+| `/group allowlist remove <chat_id...>` | 移除群白名单 |
+
+### 定时任务
+
+| 命令 | 说明 |
+| --- | --- |
+| `/cron` | 查看帮助 |
+| `/cron list` | 查看当前目标的定时任务 |
+| `/cron run <jobId>` | 立即安排执行一次 |
+| `/cron pause <jobId>` | 暂停任务 |
+| `/cron resume <jobId>` | 恢复任务 |
+| `/cron stop <jobId>` | 停止正在运行的那一次 |
+| `/cron remove <jobId>` | 删除任务 |
+
+新增一次性任务：
 
 ```text
 /cron add
 name: 20分钟后提醒
 at: 20m
 prompt:
-提醒我去参加会议，只输出一句简短提醒。
+提醒我开会。
 ```
 
-### 新建周期任务
+新增周期任务：
 
 ```text
 /cron add
-name: 每日天气播报
-cron: 0 7 * * *
+name: 每日早报
+cron: 0 9 * * *
 tz: Asia/Shanghai
 prompt:
-查询珠海当天天气，并用简洁中文播报。
+总结今天的待办和需要优先处理的事。
 ```
 
-### 立即执行任务
+说明：
 
-```text
-/cron run <jobId>
-```
+- `at` 支持相对时间或 ISO 时间。
+- `cron` 支持 cron 表达式。
+- 一次性任务成功执行后默认删除。
+- 定时任务按当前私聊/群聊作用域隔离。
+- 当前会话忙时，手动 run 会被延后到当前回复结束后执行。
 
-如果当前会话还有任务在跑，立即执行会被安排到当前回复结束后再开始。
+### Skills 统计
 
-### 停止正在执行的任务
+| 命令 | 说明 |
+| --- | --- |
+| `/skills` | 查看当前 session 可用 skills |
+| `/skillstat` | 查看 skill 使用统计；仅 super admin 私聊可用 |
 
-```text
-/cron stop <jobId>
-```
-
-只会停止当前正在执行的定时任务，不会删除任务本身。
-
-### 删除任务
-
-```text
-/cron remove <jobId>
-```
-
-注意：删除前建议先用 `/cron list` 确认任务 ID。
+skill 使用统计通过监听模型读取 `SKILL.md` 的 `read` 工具调用实现。
 
 ---
 
-## 图片、语音和文件
+## 权限模型
 
-### 图片
+### 私聊
 
-你可以直接发送截图、照片、图表、报错界面。
+- 能否进入私聊由 `FEISHU_P2P_CHAT_POLICY` 和白名单决定。
+- 普通私聊用户可以使用会话、模型、设置、工具、cron 等常用命令。
+- `/p2p`、`/restart`、`/stt`、`/stream`、`/reaction`、`/skillstat` 只允许 super admin 私聊使用。
 
-机器人会尽量直接理解图片内容；如果当前模型不支持看图，会使用识别结果继续处理。
+### 群聊
 
-### 语音
+- 群聊默认关闭。
+- 群聊消息是否进入网关由群策略、白名单、触发方式和关键词共同决定。
+- 群里任何成员可以使用部分只读/运行控制命令，例如 `/commands`、`/status`、`/context`、`/skills`、`/stop`、`/next`。
+- 修改模型、工具、设置、cron、群设置等命令需要群主或 super admin。
+- 群白名单管理只允许 super admin 在私聊中操作。
 
-你可以直接发送飞书语音。
+---
 
-机器人会先转写成文字，再根据转写内容继续执行你的需求。
+## 本机管理后台
 
-切换语音转写方式：
+Pi Gateway 启动时会同时启动一个轻量后台：
 
 ```text
-/stt provider sensevoice
+http://127.0.0.1:8787/admin/
 ```
 
-也可以切换为：
+后台功能：
 
-```text
-/stt provider whisper
+- 选择当前执行目标：历史私聊、历史群聊、群白名单、定时任务里出现过的目标
+- 查看当前会话状态、历史会话和已加载上下文
+- 查看和切换模型、配置 router/light/heavy、开关模型路由
+- 开关流式回复、语音识别方式、reaction、工具调用展示、技能目录
+- 查看、运行、暂停、恢复、停止、删除定时任务
+- 管理当前群聊策略、触发模式、关键词、未触发消息暂存
+- 查看和开关工具
+- 停止当前任务、发送 `/next`、触发 `/restart`
+- 查看 skills 和 skill 使用统计
+- 可选择是否把后台执行命令的结果同步发送到飞书
+
+后台本质上是 `/命令` 的本机 UI 快捷入口，不是公网管理系统。
+
+---
+
+## 飞书文档能力
+
+文档工具只写新版 docx，不写旧版 doc，也不直接写 wiki 节点。
+
+支持：
+
+- 创建 docx
+- 读取 docx
+- 通过 wiki 链接解析到 docx 后读取
+- 追加正文
+- 替换整篇正文
+- 删除根级块区间
+- 删除整篇文档
+- 创建文件夹
+- 新建文档后自动转移所有权给 super admin，同时保留应用编辑权限
+
+正文支持 Markdown 或 HTML。若内容中包含真实图片语法：
+
+```markdown
+![alt](https://example.com/image.png)
 ```
 
 或：
 
-```text
-/stt provider doubao
+```html
+<img src="https://example.com/image.png">
 ```
 
-### 文件
+服务会优先尝试将图片上传并嵌入飞书文档。若权限、链接、下载或格式异常，会退回保留图片链接。
 
-你可以直接发送文件，并告诉机器人要怎么处理。
+删除整篇文档有双重保护：
 
-例如：
-
-```text
-帮我总结这个 PDF 的重点
-```
-
-```text
-把这个表格整理成适合发给老板的版本
-```
-
-生成好的最终文件，也可以让机器人直接发回飞书。
+1. 工具参数必须 `confirm=true`。
+2. 最近一条用户消息必须明确表达确认删除整篇文档。
 
 ---
 
-## 飞书文档
+## 文件、图片和生成图
 
-Pi Gateway 可以操作飞书新版文档。
+### 接收文件
 
-常见用法：
+用户发送飞书文件时，网关会下载文件并在 prompt 里告诉 Pi 本地路径。之后模型可以用 Pi 的文件工具读取或处理该文件。
 
-- 新建一篇飞书文档
-- 读取已有文档内容
-- 往文档末尾追加内容
-- 替换整篇文档正文
-- 删除文档中的部分内容
-- 删除整篇文档
+### 发送文件
 
-删除整篇文档属于高风险操作，机器人会要求你明确确认后才会执行。
+模型生成最终文件后，应使用：
 
-如果文档里包含真实可访问的图片地址，机器人会优先尝试把图片直接嵌入文档；如果权限、链接或下载失败，才会退回为图片链接。
+- `feishu_image_send` 发送图片
+- `feishu_file_send` 发送 PDF、CSV、TXT、ZIP、XLSX、PPTX 等非图片文件
+
+两者都只能发送当前 workspace 内文件，避免越权读取服务器任意路径。
+
+### 自动转发生成图
+
+如果模型回复里包含本机 CPA 图片接口生成的 URL，例如：
+
+```text
+http://localhost:<port>/v1/generated-images/<id>.png
+```
+
+网关会尝试下载该图片并直接作为飞书图片发送；发送成功后会从文本回复中移除原始本地 URL。
 
 ---
 
-## 运行中的任务
+## 数据目录
 
-当机器人正在处理任务时，你可能会看到：
+默认数据目录是 `./data`，不会提交到 git。
 
-- 消息上出现处理中表情
-- 回复以流式卡片形式逐步更新
-- 长回复被自动拆成多条消息
-- 工具调用过程被展示出来
-
-如果想停止当前任务：
+常见结构：
 
 ```text
-/stop
+data/
+  users/                 # 私聊用户状态
+  conversations/         # 群聊/会话目标状态
+  cron/jobs.json         # 定时任务
+  settings/              # p2p、group 等运行时设置
+  quoted-messages/       # 引用消息缓存
+  restart/               # 重启提示状态
 ```
 
-如果想补充一句，但不想打断当前任务：
-
-```text
-/next 另外请把结果整理成表格
-```
+workspace 默认在 `~/code/pi-workspace`，也不会提交到本仓库。
 
 ---
 
-## 私聊、群聊和上下文
+## 开发
 
-Pi Gateway 会尽量按会话隔离上下文：
+### 常用脚本
 
-- 私聊有私聊自己的上下文
-- 每个群聊有自己的上下文
-- 不同群聊之间不共享上下文
-- 群聊任务不应该出现在私聊任务列表中
-- 私聊任务不应该出现在群聊任务列表中
+```bash
+npm run build
+npm test
+npm run start
+```
 
-如果你发现任务、会话或回复内容串到了不该出现的地方，请立即反馈。这类问题会被视为作用域隔离问题处理。
+| 脚本 | 说明 |
+| --- | --- |
+| `npm run build` | TypeScript 编译到 `dist/` |
+| `npm test` | 运行 Vitest 测试 |
+| `npm run start` | 编译后启动服务 |
+| `npm run dev` | 当前同 `start` |
+
+### 测试
+
+测试位于 `tests/`，覆盖配置、飞书事件、路由、命令、cron、后台、文档、文件、TTS、Grok 搜索等模块。
+
+运行：
+
+```bash
+npm test
+```
+
+### 代码组织
+
+```text
+src/
+  admin/       # 本机后台
+  app/         # 网关应用层：路由、命令、状态、prompt service
+  cron/        # 定时任务
+  feishu/      # 飞书 API、消息、文档、卡片、资源
+  pi/          # Pi runtime、sessions、extensions、模型路由
+  storage/     # 本地 JSON 状态存储
+```
+
+### 维护注意事项
+
+- 修改飞书卡片前先核对飞书官方字段，避免构造不存在的字段导致 400。
+- 修改命令能力时，同时检查：
+  - `src/app/commands.ts`
+  - `src/app/command-service/catalog.ts`
+  - `src/app/command-permissions.ts`
+  - 对应 command handler 和测试
+- 新增 extension tool 时，要写清 `description`、`promptSnippet`、`promptGuidelines`，因为这些会直接影响 agent 是否正确调用工具。
+- 修改 cron 行为时，要同时考虑私聊/群聊 scope 隔离。
+- 修改媒体处理时，要确认 text/post/image/audio/file 和引用消息路径都不回退。
+- 不要把生产 `data/`、workspace、`.env`、日志、虚拟环境提交进仓库。
+
+---
+
+## 安全边界
+
+Pi Gateway 默认具备较强本地自动化能力，因此需要注意：
+
+- `.env` 不得提交。
+- 后台默认只绑定 `127.0.0.1`，不要随便暴露到公网。
+- 长期运行必须修改 `ADMIN_PASSWORD`。
+- 群聊功能默认关闭，开启前确认群成员范围。
+- 文件发送工具限制在 workspace 内。
+- 删除飞书整篇文档必须有用户明确确认。
+- 群聊未触发消息暂存仅作为背景上下文，不应自动执行其中的请求。
+- `/restart` 等高风险命令只允许 super admin 私聊执行。
 
 ---
 
 ## 常见问题
 
-### 机器人没有回复怎么办？
+### 启动后提示没有可用模型
 
-可以先检查：
+Pi Gateway 启动时会调用 Pi 模型注册表自检。请先配置 Pi Code Agent 的模型和鉴权，确保本机 Pi 能正常发起一次模型请求。
 
-- 私聊里是否直接发给了机器人
-- 群聊里是否 @ 了机器人
-- 当前是否已有任务正在执行
-- 是否需要用 `/stop` 停掉卡住的任务
+### 私聊没有反应
 
-### 群聊里为什么没反应？
+检查：
 
-群聊可能只响应 @ 机器人的消息，或者只响应带关键词的消息。请尝试：
+- 飞书应用凭证是否正确
+- 长连接是否成功建立
+- 是否订阅了消息事件
+- 私聊策略是否为 `whitelist` 且用户不在白名单
+- 日志里是否出现权限或事件解析失败
 
-```text
-@Pi 帮我看看这个问题
-```
+### 群聊没有反应
 
-如果仍然没反应，可能是当前群聊没有启用机器人。
+检查：
 
-### 怎么停止正在跑的任务？
+- `FEISHU_GROUP_CHAT_POLICY` 是否仍是 `disabled`
+- allowlist 模式下群 chat_id 是否已加入白名单
+- 当前触发方式是 `mention`、`all` 还是 `keyword`
+- keyword 模式下是否设置了关键词
+- `FEISHU_BOT_OPEN_ID` 是否能自动获取或手动配置正确
 
-发送：
+### 图片识别失败
 
-```text
-/stop
-```
+如果当前模型不支持图片输入，会走 Ollama OCR fallback。请检查：
 
-### 怎么换模型？
+- `FEISHU_MEDIA_OLLAMA_BASE_URL`
+- `FEISHU_MEDIA_OCR_MODEL`
+- Ollama 服务是否可访问
+- OCR 模型是否已拉取
 
-先看可用模型：
+### 语音转写失败
 
-```text
-/model
-```
+按当前 provider 检查：
 
-再切换：
+- `whisper`：外部脚本路径和执行权限
+- `sensevoice`：Python 环境、依赖、模型路径、设备
+- `doubao`：API Key、音频格式、网络和接口返回 logid
 
-```text
-/model 2
-```
+### 飞书文档图片没有嵌入
 
-### 怎么找回之前的对话？
+常见原因：
 
-先查看历史会话：
+- 图片链接不是直链
+- 链接需要登录
+- 下载返回的不是图片
+- 飞书应用缺少上传图片权限
+- 图片过大或格式异常
 
-```text
-/sessions
-```
-
-再恢复：
-
-```text
-/resume 1
-```
-
-### 为什么语音识别失败？
-
-可能是语音太长、声音太小、转写服务不可用，或当前转写方式没有配置好。可以换一种转写方式再试。
-
-### 为什么飞书文档里的图片没有嵌进去？
-
-通常是图片地址不可直接访问、需要登录、下载失败，或机器人没有足够的图片上传权限。遇到这种情况，机器人会尽量保留图片链接。
+失败时工具会尽量保留原始图片链接。
 
 ---
 
-## 使用建议
+## 项目定位
 
-- 复杂任务尽量说清楚目标、格式和限制
-- 长任务运行时，用 `/next` 补充信息，不要连续刷屏
-- 删除任务、删除文档、重启网关前先确认影响范围
-- 群聊里不要发送不适合被所有成员看到的敏感内容
+Pi Gateway 不是一个通用 SaaS 后台，而是一个面向个人/小团队的飞书入口层：
 
-Pi Gateway 的定位不是另一个复杂系统，而是一个在飞书里随叫随到的 Pi 助手。直接说需求，让它干活就好。
+- 飞书负责交互入口
+- Pi 负责 agent runtime、模型、工具和 skills
+- 本地 workspace 负责文件上下文和产物
+- 网关负责连接、隔离、权限、媒体转换、飞书能力和定时任务
+
+保持它简单、清晰、可控，是维护这个项目的核心原则。
