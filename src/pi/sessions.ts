@@ -32,7 +32,7 @@ interface SessionResult {
 const GROUP_CHAT_CONTEXT_ENTRY_TYPE = "feishu-group-chat-context";
 const GROUP_CHAT_CONTEXT_MESSAGE =
   "这是一个飞书群聊。不同消息可能来自不同群成员；每条用户消息前会标明发言人。回复会自动发送回当前群聊，直接回应当前发言人即可。";
-const GATEWAY_DEFAULT_ENABLED_TOOL_NAMES = ["tts_synthesize"];
+const GATEWAY_DEFAULT_ENABLED_TOOL_NAMES = ["tts_synthesize", "firecrawl_search", "firecrawl_scrape"];
 const defaultToolNamesBySession = new WeakMap<object, string[]>();
 const groupChatContextBySession = new WeakSet<object>();
 

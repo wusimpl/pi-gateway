@@ -562,6 +562,62 @@ describe("session service", () => {
     expect(getSessionDefaultToolNames(session as any)).toEqual(["read", "bash", "edit", "tts_synthesize"]);
   });
 
+  it("没有保存 tools 选择时默认启用 firecrawl 搜索/抓取工具", async () => {
+    const deps = createDeps();
+    const setActiveToolsByName = vi.fn();
+    const session = {
+      sessionId: "pi-session-789",
+      sessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      getActiveToolNames: vi.fn().mockReturnValue(["read", "bash", "edit", "write"]),
+      getAllTools: vi.fn().mockReturnValue([
+        { name: "read" },
+        { name: "bash" },
+        { name: "edit" },
+        { name: "write" },
+        { name: "tts_synthesize" },
+        { name: "firecrawl_search" },
+        { name: "firecrawl_scrape" },
+      ]),
+      setActiveToolsByName,
+      sessionManager: {
+        getBranch: vi.fn().mockReturnValue([]),
+      },
+      dispose: vi.fn(),
+    };
+    deps.userStateStore.readUserState.mockResolvedValue({
+      openId: "ou_1",
+      activeSessionId: "legacy-session-id",
+      piSessionFile: "/tmp/sessions/ou_1/session.jsonl",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:00.000Z",
+      lastActiveAt: "2026-04-15T00:00:00.000Z",
+      lastMessageId: undefined,
+    });
+    deps.runtime.openPiSession.mockResolvedValue(session);
+
+    const service = createSessionService(deps as any);
+    await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
+
+    expect(setActiveToolsByName).toHaveBeenCalledWith([
+      "read",
+      "bash",
+      "edit",
+      "write",
+      "tts_synthesize",
+      "firecrawl_search",
+      "firecrawl_scrape",
+    ]);
+    expect(getSessionDefaultToolNames(session as any)).toEqual([
+      "read",
+      "bash",
+      "edit",
+      "write",
+      "tts_synthesize",
+      "firecrawl_search",
+      "firecrawl_scrape",
+    ]);
+  });
+
   it("恢复 session 时不读取 session 文件里的旧 tools-config", async () => {
     const deps = createDeps();
     const setActiveToolsByName = vi.fn();
