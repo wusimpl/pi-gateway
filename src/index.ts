@@ -37,6 +37,7 @@ import { createCronTaskExtension } from "./pi/extensions/cron-task.js";
 import { createSkillStatsExtension } from "./pi/extensions/skill-stats.js";
 import { createAliyunTtsExtension } from "./pi/extensions/aliyun-tts.js";
 import { createGrokSearchExtension } from "./pi/extensions/grok-search.js";
+import { createFirecrawlExtension } from "./pi/extensions/firecrawl.js";
 import { createModelRouter } from "./pi/model-routing.js";
 import { findAvailableModel, listAvailableModels } from "./pi/models.js";
 import { createPiRuntime, type PiRuntime } from "./pi/runtime.js";
@@ -71,6 +72,8 @@ async function main() {
     cronEnabled: config.CRON_ENABLED,
     cronDefaultTz: config.CRON_DEFAULT_TZ,
     grokSearchEnabled: config.GROK_SEARCH_ENABLED,
+    firecrawlEnabled: config.FIRECRAWL_ENABLED,
+    firecrawlAllowKeyless: config.FIRECRAWL_ALLOW_KEYLESS,
     aliyunTtsEnabled: config.ALIYUN_TTS_ENABLED,
   });
 
@@ -141,6 +144,15 @@ async function main() {
                 apiKey: config.GROK_SEARCH_API_KEY,
                 baseUrl: config.GROK_SEARCH_BASE_URL,
                 model: config.GROK_SEARCH_MODEL,
+              }),
+            ]
+          : []),
+        ...(config.FIRECRAWL_ENABLED
+          ? [
+              createFirecrawlExtension({
+                apiKey: config.FIRECRAWL_API_KEY,
+                baseUrl: config.FIRECRAWL_BASE_URL,
+                allowKeyless: config.FIRECRAWL_ALLOW_KEYLESS,
               }),
             ]
           : []),

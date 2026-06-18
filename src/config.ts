@@ -24,6 +24,16 @@ const envSchema = z.object({
   GROK_SEARCH_API_KEY: z.string().default(""),
   GROK_SEARCH_BASE_URL: z.string().url().default("https://jiuuij.de5.net"),
   GROK_SEARCH_MODEL: z.string().default("grok-4.20-multi-agent-xhigh"),
+  FIRECRAWL_ENABLED: z
+    .string()
+    .transform((v) => v !== "false")
+    .default("true"),
+  FIRECRAWL_API_KEY: z.string().default(""),
+  FIRECRAWL_BASE_URL: z.string().url().default("https://api.firecrawl.dev"),
+  FIRECRAWL_ALLOW_KEYLESS: z
+    .string()
+    .transform((v) => v === "true")
+    .default("false"),
   ALIYUN_TTS_ENABLED: z
     .string()
     .transform((v) => v === "true")
