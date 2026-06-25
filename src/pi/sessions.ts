@@ -32,7 +32,15 @@ interface SessionResult {
 const GROUP_CHAT_CONTEXT_ENTRY_TYPE = "feishu-group-chat-context";
 const GROUP_CHAT_CONTEXT_MESSAGE =
   "这是一个飞书群聊。不同消息可能来自不同群成员；每条用户消息前会标明发言人。回复会自动发送回当前群聊，直接回应当前发言人即可。";
-const GATEWAY_DEFAULT_ENABLED_TOOL_NAMES = ["tts_synthesize", "firecrawl_search", "firecrawl_scrape"];
+const GATEWAY_DEFAULT_ENABLED_TOOL_NAMES = [
+  "tts_synthesize",
+  "firecrawl_search",
+  "firecrawl_scrape",
+  "exa_search",
+  "serper_search",
+  "webclaw",
+];
+const GATEWAY_DEFAULT_DISABLED_TOOL_NAMES = new Set(["init_experiment", "run_experiment", "log_experiment"]);
 const defaultToolNamesBySession = new WeakMap<object, string[]>();
 const groupChatContextBySession = new WeakSet<object>();
 
@@ -750,7 +758,9 @@ function applySavedToolSelection(
 function getDefaultEnabledToolNames(
   session: Pick<AgentSession, "getActiveToolNames" | "getAllTools">,
 ): string[] {
-  const defaultTools = [...session.getActiveToolNames()];
+  const defaultTools = session
+    .getActiveToolNames()
+    .filter((toolName) => !GATEWAY_DEFAULT_DISABLED_TOOL_NAMES.has(toolName));
   const defaultToolSet = new Set(defaultTools);
   const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
 

@@ -104,6 +104,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
       sessionId: session.sessionId,
       sessionFile: session.sessionFile,
     });
+    await bindGatewayExtensions(session);
     installGatewayRetryClassifier(session);
     return session;
   }
@@ -131,6 +132,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
         sessionId: session.sessionId,
         sessionFile: session.sessionFile,
       });
+      await bindGatewayExtensions(session);
       installGatewayRetryClassifier(session);
       return { session, fallbackMessage: modelFallbackMessage };
     } catch (err) {
@@ -157,6 +159,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
       sessionId: session.sessionId,
       sessionFile: session.sessionFile,
     });
+    await bindGatewayExtensions(session);
     installGatewayRetryClassifier(session);
     return session;
   }
@@ -169,6 +172,10 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
     continueRecentPiSession,
     openPiSession,
   };
+}
+
+async function bindGatewayExtensions(session: AgentSession): Promise<void> {
+  await session.bindExtensions({});
 }
 
 function installGatewayRetryClassifier(session: AgentSession): void {

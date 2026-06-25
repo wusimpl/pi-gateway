@@ -81,13 +81,11 @@ export function createGrokSearchExtension(options: GrokSearchOptions = {}): Exte
   const searchTool = defineTool({
     name: "grok_search",
     label: "Grok Search",
-    description: "使用配置好的 Grok 模型进行联网搜索和事实核验，适合需要最新信息、来源链接或跨网页查证的问题。",
-    promptSnippet: "grok_search: 需要搜索最新信息、核验事实、查来源链接时，把完整问题传入 query。",
+    description: "使用配置好的 Grok 模型进行联网搜索和事实核验，可返回最新信息、来源链接和跨网页查证结果。",
+    promptSnippet: "grok_search: 联网搜索、事实核验、最新信息和来源链接查询。",
     promptGuidelines: [
-      "用户明确要求搜索、查最新信息、查网页资料、核验事实或需要来源链接时，调用 grok_search。",
-      "把用户问题和必要上下文合并成一个清楚的 query，不要拆成多次小查询。",
-      "普通本地文件、代码仓库或飞书会话内问题，不需要调用 grok_search。",
-      "不要把 API Key、base URL 或模型配置传入 query。",
+      "grok_search 提供联网搜索、事实核验、最新信息查询、来源链接整理和跨网页查证能力。",
+      "调用 grok_search 时，把用户问题和必要上下文合并成一个清楚的 query。",
     ],
     parameters: Type.Object({
       query: Type.String({ description: "要交给 Grok 搜索和核验的完整问题。" }),

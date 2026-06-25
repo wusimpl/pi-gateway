@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const loaderInstances: Array<{ options: Record<string, unknown>; reload: ReturnType<typeof vi.fn> }> = [];
+  const bindExtensions = vi.fn().mockResolvedValue(undefined);
 
   return {
     loaderInstances,
@@ -14,12 +15,14 @@ const mocks = vi.hoisted(() => {
     sessionManagerOpen: vi.fn(),
     getAgentDir: vi.fn(() => "/Users/test/.pi/agent"),
     loaderReload: vi.fn().mockResolvedValue(undefined),
-    createAgentSession: vi.fn().mockResolvedValue({
+    bindExtensions,
+    createAgentSession: vi.fn().mockImplementation(() => Promise.resolve({
       session: {
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.json",
+        bindExtensions,
       },
-    }),
+    })),
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -67,6 +70,7 @@ describe("pi runtime", () => {
     mocks.loaderInstances.length = 0;
     mocks.loaderReload.mockClear();
     mocks.createAgentSession.mockClear();
+    mocks.bindExtensions.mockClear();
     mocks.sessionManagerOpen.mockClear();
     mocks.getAgentDir.mockClear();
     mocks.logger.info.mockClear();
@@ -101,6 +105,7 @@ describe("pi runtime", () => {
       modelRegistry: mocks.modelRegistry,
       resourceLoader: mocks.loaderInstances[0],
     });
+    expect(mocks.bindExtensions).toHaveBeenCalledWith({});
     expect(session).toMatchObject({
       sessionId: "session-1",
       sessionFile: "/tmp/session-1.json",
@@ -112,6 +117,7 @@ describe("pi runtime", () => {
     const session = {
       sessionId: "session-1",
       sessionFile: "/tmp/session-1.json",
+      bindExtensions: mocks.bindExtensions,
       _isRetryableError: defaultRetryClassifier,
     };
     mocks.createAgentSession.mockResolvedValueOnce({ session });
