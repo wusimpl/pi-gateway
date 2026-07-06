@@ -46,7 +46,8 @@ const SEARCH_SYSTEM_PROMPT = [
   "涉及时间敏感信息时写出明确日期。",
   "能给来源链接时列出来源；不确定或查不到时直接说明。",
 ].join("\n");
-const MAX_EMPTY_RESPONSE_ATTEMPTS = 2;
+const MAX_SEARCH_RETRIES = 3;
+const MAX_SEARCH_ATTEMPTS = 1 + MAX_SEARCH_RETRIES;
 
 function toToolResult(details: unknown) {
   return {
@@ -156,31 +157,71 @@ async function postChatCompletion(
   body: unknown,
   signal?: AbortSignal,
 ): Promise<ChatCompletionResponse> {
-  for (let attempt = 1; attempt <= MAX_EMPTY_RESPONSE_ATTEMPTS; attempt += 1) {
-    const response = await requestFetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal,
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`Grok 搜索请求失败: ${response.status} ${text}`);
-    }
-    if (!text.trim() && attempt < MAX_EMPTY_RESPONSE_ATTEMPTS) {
-      continue;
-    }
-
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= MAX_SEARCH_ATTEMPTS; attempt += 1) {
     try {
-      return parseChatCompletionText(text);
-    } catch {
-      throw new Error("Grok 搜索返回格式无效");
+      const response = await requestFetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        const error = new Error(`Grok 搜索请求失败: ${response.status} ${text}`);
+        if (shouldRetryHttpStatus(response.status) && attempt < MAX_SEARCH_ATTEMPTS) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+      if (!text.trim()) {
+        const error = new Error("Grok 搜索返回格式无效");
+        if (attempt < MAX_SEARCH_ATTEMPTS) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+      let parsed: ChatCompletionResponse;
+      try {
+        parsed = parseChatCompletionText(text);
+      } catch {
+        const error = new Error("Grok 搜索返回格式无效");
+        if (attempt < MAX_SEARCH_ATTEMPTS) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+      if (!extractAssistantContent(parsed).trim()) {
+        const error = new Error("Grok 搜索没有返回内容");
+        if (attempt < MAX_SEARCH_ATTEMPTS) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+      return parsed;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (signal?.aborted || attempt >= MAX_SEARCH_ATTEMPTS || !shouldRetryError(lastError)) {
+        throw lastError;
+      }
     }
   }
-  throw new Error("Grok 搜索返回格式无效");
+  throw lastError ?? new Error("Grok 搜索返回格式无效");
+}
+
+function shouldRetryHttpStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+function shouldRetryError(error: Error): boolean {
+  return error.message === "Grok 搜索返回格式无效" || !error.message.startsWith("Grok 搜索请求失败:");
 }
 
 function parseChatCompletionText(text: string): ChatCompletionResponse {

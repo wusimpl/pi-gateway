@@ -132,6 +132,102 @@ describe("grok search extension", () => {
     expect(result.details.answer).toBe("ok");
   });
 
+  it("成功状态但没有回答内容时会重试", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: "",
+            },
+          },
+        ],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: "ok",
+            },
+          },
+        ],
+      }), { status: 200 })) as any;
+    const tools = collectTools(fetchMock);
+    const searchTool = tools.find((tool) => tool.name === "grok_search");
+
+    const result = await searchTool.execute(
+      "call-1",
+      { query: "Reply ok" },
+      undefined,
+      undefined,
+      createToolContext(),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.details.answer).toBe("ok");
+  });
+
+  it("临时性失败最多重试三次后返回成功结果", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+      .mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+      .mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: "ok",
+            },
+          },
+        ],
+      }), { status: 200 })) as any;
+    const tools = collectTools(fetchMock);
+    const searchTool = tools.find((tool) => tool.name === "grok_search");
+
+    const result = await searchTool.execute(
+      "call-1",
+      { query: "Reply ok" },
+      undefined,
+      undefined,
+      createToolContext(),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(result.details.answer).toBe("ok");
+  });
+
+  it("临时性失败持续发生时最多请求四次", async () => {
+    const fetchMock = vi.fn(async () => new Response("bad gateway", { status: 502 })) as any;
+    const tools = collectTools(fetchMock);
+    const searchTool = tools.find((tool) => tool.name === "grok_search");
+
+    await expect(searchTool.execute(
+      "call-1",
+      { query: "Reply ok" },
+      undefined,
+      undefined,
+      createToolContext(),
+    )).rejects.toThrow("Grok 搜索请求失败: 502");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("配置类失败不会重试", async () => {
+    const fetchMock = vi.fn(async () => new Response("unauthorized", { status: 401 })) as any;
+    const tools = collectTools(fetchMock);
+    const searchTool = tools.find((tool) => tool.name === "grok_search");
+
+    await expect(searchTool.execute(
+      "call-1",
+      { query: "Reply ok" },
+      undefined,
+      undefined,
+      createToolContext(),
+    )).rejects.toThrow("Grok 搜索请求失败: 401");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("支持网关返回流式响应", async () => {
     const fetchMock = vi.fn(async () => new Response([
       'data: {"id":"chatcmpl_1","model":"grok-search-model","choices":[{"delta":{"content":"o"}}]}',
