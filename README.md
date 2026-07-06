@@ -304,7 +304,7 @@ DATA_DIR/cron/jobs.json
 | `GROK_SEARCH_ENABLED` | `true` | 是否注册 `grok_search` 工具 |
 | `GROK_SEARCH_API_KEY` | 空 | 搜索模型 API Key |
 | `GROK_SEARCH_BASE_URL` | `https://jiuuij.de5.net` | OpenAI-compatible base URL |
-| `GROK_SEARCH_MODEL` | `grok-4.20-multi-agent-xhigh` | 搜索模型名 |
+| `GROK_SEARCH_MODEL` | `grok-4.20-multi-agent-console` | 搜索模型名 |
 
 ### 阿里云百炼 TTS
 

@@ -205,7 +205,7 @@ describe("loadConfig", () => {
     expect(config.GROK_SEARCH_ENABLED).toBe(true);
     expect(config.GROK_SEARCH_API_KEY).toBe("");
     expect(config.GROK_SEARCH_BASE_URL).toBe("https://jiuuij.de5.net");
-    expect(config.GROK_SEARCH_MODEL).toBe("grok-4.20-multi-agent-xhigh");
+    expect(config.GROK_SEARCH_MODEL).toBe("grok-4.20-multi-agent-console");
   });
 
   it("Grok 搜索配置应支持自定义", async () => {

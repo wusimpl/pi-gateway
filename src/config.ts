@@ -23,7 +23,7 @@ const envSchema = z.object({
     .default("true"),
   GROK_SEARCH_API_KEY: z.string().default(""),
   GROK_SEARCH_BASE_URL: z.string().url().default("https://jiuuij.de5.net"),
-  GROK_SEARCH_MODEL: z.string().default("grok-4.20-multi-agent-xhigh"),
+  GROK_SEARCH_MODEL: z.string().default("grok-4.20-multi-agent-console"),
   FIRECRAWL_ENABLED: z
     .string()
     .transform((v) => v !== "false")
