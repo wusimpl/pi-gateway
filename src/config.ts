@@ -20,10 +20,15 @@ const envSchema = z.object({
   GROK_SEARCH_ENABLED: z
     .string()
     .transform((v) => v !== "false")
-    .default("true"),
+    .default("false"),
   GROK_SEARCH_API_KEY: z.string().default(""),
   GROK_SEARCH_BASE_URL: z.string().url().default("https://jiuuij.de5.net"),
   GROK_SEARCH_MODEL: z.string().default("grok-4.20-multi-agent-console"),
+  WEB_SEARCH_ENABLED: z
+    .string()
+    .transform((v) => v !== "false")
+    .default("true"),
+  WEB_SEARCH_BASE_URL: z.string().url().default("https://sx.hkun.top"),
   FIRECRAWL_ENABLED: z
     .string()
     .transform((v) => v !== "false")

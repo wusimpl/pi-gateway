@@ -69,7 +69,8 @@ Pi Gateway 会在 Pi runtime 中注册一组飞书相关 extension tools：
 | `feishu_file_send` | 把 workspace 内本地非图片文件发回当前飞书会话 |
 | `feishu_message_send` | 向当前飞书会话发送文本，可结构化 @ 群成员 |
 | `cron_task` | 创建、查看、更新、暂停、恢复、删除、立即执行定时任务 |
-| `grok_search` | 通过配置好的 Grok 搜索模型联网搜索和事实核验 |
+| `grok_search` | 通过配置好的 Grok 搜索模型联网搜索和事实核验（默认关闭） |
+| `web_search` | 通过 SearXNG 元搜索引擎搜索网页，返回标题、URL 和摘要（默认开启，免费）|
 | `tts_synthesize` | 使用阿里云百炼 CosyVoice 生成语音文件 |
 | `tts_clone_voice` | 使用公网参考音频创建声音复刻音色 |
 | `tts_query_voice` | 查询声音复刻音色状态 |
@@ -77,7 +78,8 @@ Pi Gateway 会在 Pi runtime 中注册一组飞书相关 extension tools：
 其中：
 
 - `cron_task` 由 `CRON_ENABLED` 控制，默认开启。
-- `grok_search` 由 `GROK_SEARCH_ENABLED` 控制，默认开启，但需要配置 `GROK_SEARCH_API_KEY` 才能真正调用。
+- `web_search` 由 `WEB_SEARCH_ENABLED` 控制，默认开启，基于 SearXNG 免费元搜索引擎，无需 API Key。
+- `grok_search` 由 `GROK_SEARCH_ENABLED` 控制，默认关闭，需要配置 `GROK_SEARCH_API_KEY` 才能调用。
 - TTS 工具由 `ALIYUN_TTS_ENABLED` 控制，默认关闭。
 - 所有文件/图片发送工具都限制在当前 workspace 内，不能越界发送任意路径。
 
@@ -297,11 +299,18 @@ cron 数据保存在：
 DATA_DIR/cron/jobs.json
 ```
 
+### Web 搜索
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `WEB_SEARCH_ENABLED` | `true` | 是否注册 `web_search` 工具 |
+| `WEB_SEARCH_BASE_URL` | `https://sx.hkun.top` | SearXNG 实例地址 |
+
 ### Grok 搜索
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `GROK_SEARCH_ENABLED` | `true` | 是否注册 `grok_search` 工具 |
+| `GROK_SEARCH_ENABLED` | `false` | 是否注册 `grok_search` 工具 |
 | `GROK_SEARCH_API_KEY` | 空 | 搜索模型 API Key |
 | `GROK_SEARCH_BASE_URL` | `https://jiuuij.de5.net` | OpenAI-compatible base URL |
 | `GROK_SEARCH_MODEL` | `grok-4.20-multi-agent-console` | 搜索模型名 |
