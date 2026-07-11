@@ -2,13 +2,14 @@ import type { ConversationTarget } from "../../conversation.js";
 import type { UserIdentity } from "../../types.js";
 import { isSuperAdminOpenId } from "../access-control.js";
 import { type BridgeCommand, formatUnsupportedSlashCommand } from "../commands.js";
-import { canRunBridgeCommand, isPrivateSuperAdminCommand, type GroupOwnerResolver } from "../command-permissions.js";
+import { canRunBridgeCommand, isPrivateSuperAdminCommand, type AdminResolver, type GroupOwnerResolver } from "../command-permissions.js";
 import { COMMAND_CATALOG, isCommandVisibleInTarget, type CommandCatalogItem } from "./catalog.js";
 import { createFallbackP2PTarget } from "./helpers.js";
 import type { CommandReplySender } from "./types.js";
 
 interface CommandListHandlersDeps {
   groupOwnerResolver?: GroupOwnerResolver;
+  adminResolver?: AdminResolver;
   sendTextReply: CommandReplySender;
   sendCommandReply: CommandReplySender;
 }
@@ -53,6 +54,7 @@ export function createCommandListHandlers(deps: CommandListHandlersDeps) {
         { name: item.name, args: item.permissionArgs ?? "" },
         resolvedTarget,
         deps.groupOwnerResolver,
+        deps.adminResolver,
       )) {
         availableCommands.push(item);
       }

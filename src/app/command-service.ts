@@ -31,6 +31,9 @@ import { createSessionCommandHandlers } from "./command-service/session.js";
 import { createSettingsCommandHandlers } from "./command-service/settings.js";
 import { createSystemCommandHandlers } from "./command-service/system.js";
 import { createToolsCommandHandlers } from "./command-service/tools.js";
+import { createAdminCommandHandler } from "./command-service/admin.js";
+import type { AdminSettingsStore } from "../storage/admin-settings.js";
+import type { AdminResolver } from "./command-permissions.js";
 
 export interface CommandService {
   handleBridgeCommand(
@@ -92,6 +95,7 @@ interface CommandServiceDeps {
   >;
   groupUnmatchedMessageStore?: Pick<GroupUnmatchedMessageStore, "clear" | "count">;
   p2pSettingsStore?: Pick<P2PSettingsStore, "readP2PRoutingConfig" | "writeP2PRoutingConfig">;
+  adminSettingsStore?: AdminSettingsStore;
   runtimeConfig?: Pick<
     RuntimeConfigStore,
     | "getAudioTranscribeProvider"
@@ -420,8 +424,28 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     sendCommandReply,
   });
 
+  function createAdminResolver(): AdminResolver {
+    return {
+      isAdmin: async (openId: string) => {
+        if (!deps.adminSettingsStore) return false;
+        const ids = await deps.adminSettingsStore.readAdminOpenIds();
+        return ids.includes(openId);
+      },
+    };
+  }
+
+  const adminResolver = createAdminResolver();
+
+  const handleAdminCommand = createAdminCommandHandler({
+    readAdminOpenIds: async () => deps.adminSettingsStore?.readAdminOpenIds() ?? [],
+    writeAdminOpenIds: async (openIds) => { await deps.adminSettingsStore?.writeAdminOpenIds(openIds); },
+    sendTextReply,
+    sendCommandReply,
+  });
+
   const commandListHandlers = createCommandListHandlers({
     groupOwnerResolver: deps.groupOwnerResolver,
+    adminResolver,
     sendTextReply,
     sendCommandReply,
   });
@@ -478,6 +502,8 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
         await systemHandlers.handleNextCommand(identity, command, conversationTarget);
       } else if (command.name === "restart") {
         await systemHandlers.handleRestartCommand(identity, command, conversationTarget);
+      } else if (command.name === "admin") {
+        await handleAdminCommand(identity, command, conversationTarget);
       }
     } catch (err) {
       logger.error("桥接层命令处理失败", {

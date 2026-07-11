@@ -53,6 +53,7 @@ import { createP2PSettingsStore } from "./storage/p2p-settings.js";
 import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
 import { createRuntimeConfigStore } from "./app/runtime-config.js";
+import { createAdminSettingsStore } from "./storage/admin-settings.js";
 import { createAdminServer, type AdminServer } from "./admin/server.js";
 import { createAdminTargetService } from "./admin/targets.js";
 import { createAdminCommandExecutor, type AdminCaptureMessenger } from "./admin/command-executor.js";
@@ -238,6 +239,7 @@ async function main() {
     workspaceService,
   });
   const restartService = createRestartService();
+  const adminSettingsStore = createAdminSettingsStore(config.DATA_DIR);
   const createCommandServiceWithMessenger = (messenger: AdminCaptureMessenger | typeof feishuMessenger) => createCommandService({
     config,
     messenger,
@@ -256,6 +258,7 @@ async function main() {
     groupSettingsStore,
     groupUnmatchedMessageStore,
     p2pSettingsStore,
+    adminSettingsStore,
   });
   const commandService = createCommandServiceWithMessenger(feishuMessenger);
   const promptService = createPromptService({
@@ -287,6 +290,12 @@ async function main() {
     p2pSettingsStore,
     runtimeConfig,
     groupOwnerResolver: feishuChatInfoService,
+    adminResolver: {
+      isAdmin: async (openId: string) => {
+        const ids = await adminSettingsStore.readAdminOpenIds();
+        return ids.includes(openId);
+      },
+    },
   });
   logger.info("消息路由就绪");
 

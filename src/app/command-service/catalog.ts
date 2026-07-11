@@ -41,6 +41,7 @@ export const COMMAND_CATALOG: CommandCatalogItem[] = [
   { name: "group", usage: "/group allowlist show|add|remove", description: "管理群白名单", target: "p2p" },
   { name: "p2p", usage: "/p2p", description: "管理私聊访问策略", target: "p2p" },
   { name: "skillstat", usage: "/skillstat", description: "查看技能使用统计", target: "p2p" },
+  { name: "admin", usage: "/admin [add|remove|list]", description: "管理 admin 列表", target: "p2p" },
 ];
 
 export function isCommandVisibleInTarget(item: CommandCatalogItem, conversationTarget: ConversationTarget): boolean {

@@ -47,7 +47,7 @@ import {
 import type { Config } from "../config.js";
 import type { UserIdentity } from "../types.js";
 import { parseBridgeCommand } from "./commands.js";
-import { canRunBridgeCommand, type GroupOwnerResolver } from "./command-permissions.js";
+import { canRunBridgeCommand, type AdminResolver, type GroupOwnerResolver } from "./command-permissions.js";
 import { createCommandService, type CommandService } from "./command-service.js";
 import { logger } from "./logger.js";
 import {
@@ -102,6 +102,7 @@ interface MessageRouterDeps {
   ) => FeishuMessageRoutingDecision | Promise<FeishuMessageRoutingDecision>;
   normalizeFeishuInboundMessage?: typeof normalizeFeishuInboundMessage;
   groupOwnerResolver?: GroupOwnerResolver;
+  adminResolver?: AdminResolver;
 }
 
 interface QueuedPrompt {
@@ -185,7 +186,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     const hasSlashPrefix = commandText?.trim().startsWith("/") ?? false;
     const bridgeCommand = commandText ? parseBridgeCommand(commandText) : null;
     if (bridgeCommand?.name === "next") {
-      if (!await canRunBridgeCommand(identity, bridgeCommand, conversationTarget, deps.groupOwnerResolver)) {
+      if (!await canRunBridgeCommand(identity, bridgeCommand, conversationTarget, deps.groupOwnerResolver, deps.adminResolver)) {
         await deps.commandService.handleUnauthorizedBridgeCommand(identity, bridgeCommand, conversationTarget);
         return;
       }
@@ -200,7 +201,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
     }
 
     if (bridgeCommand) {
-      if (!await canRunBridgeCommand(identity, bridgeCommand, conversationTarget, deps.groupOwnerResolver)) {
+      if (!await canRunBridgeCommand(identity, bridgeCommand, conversationTarget, deps.groupOwnerResolver, deps.adminResolver)) {
         await deps.commandService.handleUnauthorizedBridgeCommand(identity, bridgeCommand, conversationTarget);
         return;
       }

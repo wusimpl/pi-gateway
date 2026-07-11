@@ -7,6 +7,10 @@ export interface GroupOwnerResolver {
   isGroupOwner(chatId: string, identity: UserIdentity): Promise<boolean>;
 }
 
+export interface AdminResolver {
+  isAdmin(openId: string): Promise<boolean>;
+}
+
 const P2P_USER_COMMANDS = new Set([
   "commands",
   "new",
@@ -34,6 +38,12 @@ const PRIVATE_SUPER_ADMIN_COMMANDS = new Set([
   "stream",
   "reaction",
   "skillstat",
+  "admin",
+]);
+
+/** admin 可用的群主级命令（渐进开放，目前只有 /new） */
+const ADMIN_GROUP_COMMANDS = new Set([
+  "new",
 ]);
 
 export async function canRunBridgeCommand(
@@ -41,6 +51,7 @@ export async function canRunBridgeCommand(
   command: BridgeCommand,
   conversationTarget: ConversationTarget,
   groupOwnerResolver?: GroupOwnerResolver,
+  adminResolver?: AdminResolver,
 ): Promise<boolean> {
   if (isPrivateSuperAdminCommand(command)) {
     return conversationTarget.kind === "p2p" && isSuperAdminOpenId(identity.openId);
@@ -48,6 +59,13 @@ export async function canRunBridgeCommand(
 
   if (isSuperAdminOpenId(identity.openId)) {
     return true;
+  }
+
+  if (adminResolver && await adminResolver.isAdmin(identity.openId)) {
+    // 群聊里 admin 可以使用开放的命令集
+    if (conversationTarget.kind !== "p2p" && ADMIN_GROUP_COMMANDS.has(command.name)) {
+      return true;
+    }
   }
 
   if (conversationTarget.kind === "p2p") {

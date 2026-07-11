@@ -31,6 +31,7 @@ const BRIDGE_COMMANDS = [
   "group",
   "p2p",
   "skillstat",
+  "admin",
 ] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];
 
