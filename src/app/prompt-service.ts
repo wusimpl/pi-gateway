@@ -319,7 +319,7 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
       );
     } finally {
       if (lockAcquired) {
-        deps.runtimeState.releaseLock(conversationKey);
+        deps.runtimeState.releaseLock(conversationKey, messageId);
         await deps.deferredCronRunService?.flush(conversationKey);
       }
     }

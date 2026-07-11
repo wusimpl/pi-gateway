@@ -129,6 +129,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
   const normalizeMessage = deps.normalizeFeishuInboundMessage ?? normalizeFeishuInboundMessage;
   const promptQueues = new Map<string, QueuedPrompt[]>();
   const drainingUsers = new Set<string>();
+  const activePromptOpenIds = new Map<string, string>();
 
   async function handleFeishuMessage(data: Record<string, unknown>): Promise<void> {
     const event = parseEvent(data);
@@ -259,10 +260,15 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
       const openId = identity.openId;
       const conversationKey = getConversationTargetKey(message.conversationTarget, openId);
       const hasLocalBacklog = (promptQueues.get(conversationKey)?.length ?? 0) > 0;
+      const activeOpenId = activePromptOpenIds.get(conversationKey);
+      const hasDifferentActiveGroupMember = message.conversationTarget.kind !== "p2p"
+        && Boolean(activeOpenId)
+        && activeOpenId !== identity.openId;
       if (
         drainingUsers.has(conversationKey)
         && message.kind === "text"
         && (runningBehavior === "steer" || !hasLocalBacklog)
+        && !hasDifferentActiveGroupMember
       ) {
         void deps.promptService.queueRunningPrompt(identity, message, runningBehavior)
           .then((result) => {
@@ -314,10 +320,15 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
         }
 
         try {
+          activePromptOpenIds.set(conversationKey, next.identity.openId);
           await deps.promptService.handleUserPrompt(next.identity, next.message);
           next.resolve();
         } catch (error) {
           next.reject(error);
+        } finally {
+          if (activePromptOpenIds.get(conversationKey) === next.identity.openId) {
+            activePromptOpenIds.delete(conversationKey);
+          }
         }
 
         if (queue && queue.length === 0) {
@@ -368,7 +379,7 @@ function createP2PRoutingConfigResolver(
     }
 
     return {
-      FEISHU_P2P_CHAT_POLICY: config?.FEISHU_P2P_CHAT_POLICY ?? "all",
+      FEISHU_P2P_CHAT_POLICY: config?.FEISHU_P2P_CHAT_POLICY ?? "whitelist",
       FEISHU_P2P_CHAT_ALLOWLIST: [...(config?.FEISHU_P2P_CHAT_ALLOWLIST ?? [])],
     };
   };

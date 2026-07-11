@@ -2,6 +2,7 @@ import type { ConversationTarget } from "../../conversation.js";
 import { getSessionDefaultToolNames } from "../../pi/sessions.js";
 import type { UserIdentity, UserState } from "../../types.js";
 import { handleBridgeCommand, type BridgeCommand } from "../commands.js";
+import { canEnableHostMachineTools, isHostMachineToolName } from "../tool-access.js";
 import {
   dedupeToolNames,
   getToolConfigSession,
@@ -36,15 +37,24 @@ export function createToolsCommandHandlers(deps: ToolsCommandHandlersDeps) {
       return;
     }
 
+    const allToolNames = toolSession.getAllTools().map((tool) => tool.name);
+    const allToolNameSet = new Set(allToolNames);
+    let currentActiveTools = dedupeToolNames(toolSession.getActiveToolNames().filter((name) => allToolNameSet.has(name)));
+    const hostMachineToolsAllowed = canEnableHostMachineTools(identity, conversationTarget);
+    if (!hostMachineToolsAllowed) {
+      const filteredActiveTools = currentActiveTools.filter((name) => !isHostMachineToolName(name));
+      if (filteredActiveTools.length !== currentActiveTools.length) {
+        currentActiveTools = filteredActiveTools;
+        toolSession.setActiveToolsByName(currentActiveTools);
+        await persistTargetToolSelection(identity, conversationTarget, sessionState, currentActiveTools);
+      }
+    }
+
     const parsed = parseToolsArgs(command.args);
     if (parsed.error) {
       await deps.sendTextReply(identity, conversationTarget, parsed.error);
       return;
     }
-
-    const allToolNames = toolSession.getAllTools().map((tool) => tool.name);
-    const allToolNameSet = new Set(allToolNames);
-    const currentActiveTools = dedupeToolNames(toolSession.getActiveToolNames().filter((name) => allToolNameSet.has(name)));
 
     if (parsed.action === "show") {
       await deps.sendCommandReply(
@@ -59,12 +69,23 @@ export function createToolsCommandHandlers(deps: ToolsCommandHandlersDeps) {
     }
 
     if (parsed.action === "reset") {
-      const defaultTools = dedupeToolNames(
+      const unfilteredDefaultTools = dedupeToolNames(
         getSessionDefaultToolNames(toolSession).filter((name) => allToolNameSet.has(name)),
       );
+      const restrictedDefaultTools = hostMachineToolsAllowed
+        ? []
+        : unfilteredDefaultTools.filter(isHostMachineToolName);
+      const defaultTools = restrictedDefaultTools.length > 0
+        ? unfilteredDefaultTools.filter((name) => !isHostMachineToolName(name))
+        : unfilteredDefaultTools;
       toolSession.setActiveToolsByName(defaultTools);
       await persistTargetToolSelection(identity, conversationTarget, sessionState, defaultTools);
-      await deps.sendCommandReply(identity, conversationTarget, formatToolsActionReply("reset", [], defaultTools, allToolNames));
+      const reply = appendHostMachineToolRestriction(
+        formatToolsActionReply("reset", [], defaultTools, allToolNames),
+        restrictedDefaultTools,
+        conversationTarget,
+      );
+      await deps.sendCommandReply(identity, conversationTarget, reply);
       return;
     }
 
@@ -75,6 +96,18 @@ export function createToolsCommandHandlers(deps: ToolsCommandHandlersDeps) {
     }
 
     const requestedTools = dedupeToolNames(parsed.toolNames);
+    const restrictedRequestedTools = !hostMachineToolsAllowed && (action === "on" || action === "set")
+      ? requestedTools.filter(isHostMachineToolName)
+      : [];
+    if (restrictedRequestedTools.length > 0) {
+      await deps.sendTextReply(
+        identity,
+        conversationTarget,
+        formatHostMachineToolRestriction(restrictedRequestedTools, conversationTarget),
+      );
+      return;
+    }
+
     const missingTools = requestedTools.filter((tool) => !allToolNameSet.has(tool));
     if (missingTools.length > 0) {
       await deps.sendTextReply(
@@ -194,4 +227,26 @@ export function createToolsCommandHandlers(deps: ToolsCommandHandlersDeps) {
     handleToolCallsCommand,
     handleSkillFolderCommand,
   };
+}
+
+function appendHostMachineToolRestriction(
+  reply: string,
+  restrictedTools: string[],
+  conversationTarget?: ConversationTarget,
+): string {
+  if (restrictedTools.length === 0) {
+    return reply;
+  }
+  return `${reply}\n\n${formatHostMachineToolRestriction(restrictedTools, conversationTarget)}`;
+}
+
+function formatHostMachineToolRestriction(
+  restrictedTools: string[],
+  conversationTarget?: ConversationTarget,
+): string {
+  const toolList = restrictedTools.join(", ");
+  if (conversationTarget && conversationTarget.kind !== "p2p") {
+    return `群聊中不能启用会直接操作机器人所在电脑的工具：${toolList}。`;
+  }
+  return `这些工具会直接操作机器人所在的电脑，只能由超级管理员在私聊中启用：${toolList}。`;
 }

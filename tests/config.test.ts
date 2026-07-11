@@ -10,6 +10,13 @@ function applyBaseEnv(extraEnv?: Record<string, string | undefined>) {
     STREAMING_ENABLED: undefined,
     PI_DISABLE_GLOBAL_AGENTS: undefined,
     PI_GATEWAY_AGENTS_FILE: undefined,
+    FEISHU_P2P_CHAT_POLICY: undefined,
+    FEISHU_P2P_CHAT_ALLOWLIST: undefined,
+    ADMIN_ENABLED: undefined,
+    ADMIN_HOST: undefined,
+    ADMIN_PORT: undefined,
+    ADMIN_PASSWORD: undefined,
+    ADMIN_SESSION_TTL_MS: undefined,
     ...extraEnv,
   };
 }
@@ -71,14 +78,34 @@ describe("loadConfig", () => {
     expect(config.CRON_DEFAULT_TZ).toBe("Asia/Shanghai");
   });
 
-  it("后台管理默认只监听本机", async () => {
+  it("私聊默认应使用白名单", async () => {
     applyBaseEnv();
     const { loadConfig } = await import("../src/config.js");
 
     const config = loadConfig();
+    expect(config.FEISHU_P2P_CHAT_POLICY).toBe("whitelist");
+    expect(config.FEISHU_P2P_CHAT_ALLOWLIST).toEqual([]);
+  });
+
+  it("后台管理默认应关闭", async () => {
+    applyBaseEnv();
+    const { loadConfig } = await import("../src/config.js");
+
+    const config = loadConfig();
+    expect(config.ADMIN_ENABLED).toBe(false);
     expect(config.ADMIN_HOST).toBe("127.0.0.1");
     expect(config.ADMIN_PORT).toBe(8787);
-    expect(config.ADMIN_PASSWORD).toBe("admin");
+    expect(config.ADMIN_PASSWORD).toBe("");
+  });
+
+  it("启用后台管理时密码至少需要 12 位", async () => {
+    applyBaseEnv({
+      ADMIN_ENABLED: "true",
+      ADMIN_PASSWORD: "too-short",
+    });
+    const { loadConfig } = await import("../src/config.js");
+
+    expect(() => loadConfig()).toThrow("ADMIN_PASSWORD 至少需要 12 位");
   });
 
   it("私聊 allowlist 应按逗号解析", async () => {
@@ -202,7 +229,7 @@ describe("loadConfig", () => {
     expect(config.ALIYUN_TTS_VOICE).toBe("longlaoyi_v3");
     expect(config.ALIYUN_TTS_FORMAT).toBe("mp3");
     expect(config.ALIYUN_TTS_SAMPLE_RATE).toBe(24000);
-    expect(config.GROK_SEARCH_ENABLED).toBe(true);
+    expect(config.GROK_SEARCH_ENABLED).toBe(false);
     expect(config.GROK_SEARCH_API_KEY).toBe("");
     expect(config.GROK_SEARCH_BASE_URL).toBe("https://jiuuij.de5.net");
     expect(config.GROK_SEARCH_MODEL).toBe("grok-4.20-multi-agent-console");

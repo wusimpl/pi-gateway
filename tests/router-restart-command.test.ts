@@ -86,7 +86,7 @@ vi.mock("../src/app/restart.js", () => ({
   }),
 }));
 
-import { acquireLock, clearAllState, releaseLock } from "../src/app/state.js";
+import { acquireLock, clearAllState } from "../src/app/state.js";
 import { handleFeishuMessage, initRouter } from "../src/app/router.js";
 
 const baseEvent = {
@@ -105,8 +105,6 @@ function setSuperAdminP2PEvent(messageId = "om_1"): void {
 describe("handleFeishuMessage /restart", () => {
   beforeEach(() => {
     clearAllState();
-    releaseLock("ou_1");
-    releaseLock("ou_other");
 
     mocks.sendTextMessage.mockReset();
     mocks.sendTextMessageToTarget.mockReset();
@@ -130,6 +128,8 @@ describe("handleFeishuMessage /restart", () => {
     initRouter({
       DATA_DIR: "/tmp/pi-gateway-data",
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: [],
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,
     } as any);

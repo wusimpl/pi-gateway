@@ -223,7 +223,7 @@ describe("command service runtime config", () => {
 
     expect(runtimeConfig.getP2PChatAllowlist()).toEqual(["ou_1", "ou_2"]);
     expect(p2pSettingsStore.writeP2PRoutingConfig).toHaveBeenCalledWith({
-      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_POLICY: "whitelist",
       FEISHU_P2P_CHAT_ALLOWLIST: ["ou_1", "ou_2"],
     });
   });

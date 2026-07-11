@@ -69,7 +69,7 @@ vi.mock("../src/pi/models.js", () => ({
   formatModelLabel: (provider: string, id: string) => `${provider}/${id}`,
 }));
 
-import { clearAllState, releaseLock } from "../src/app/state.js";
+import { clearAllState } from "../src/app/state.js";
 import { handleFeishuMessage, initRouter } from "../src/app/router.js";
 
 const baseEvent = {
@@ -83,7 +83,6 @@ describe("handleFeishuMessage 会话历史命令", () => {
     vi.setSystemTime(new Date("2026-04-16T12:00:00.000Z"));
 
     clearAllState();
-    releaseLock(SUPER_ADMIN_OPEN_ID);
 
     mocks.sendTextMessage.mockReset();
     mocks.sendRenderedMessage.mockReset();

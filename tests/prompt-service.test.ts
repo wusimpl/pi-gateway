@@ -270,7 +270,7 @@ describe("createPromptService", () => {
     expect(promptSession).toHaveBeenCalled();
     expect(promptSession.mock.calls[0]?.[7]).toBe("name");
     expect(sendTextMessage).not.toHaveBeenCalled();
-    expect(releaseLock).toHaveBeenCalledWith("ou_1");
+    expect(releaseLock).toHaveBeenCalledWith("ou_1", "om_1");
   });
 
   it("群聊 prompt 应使用群会话、群 workspace，并把回复目标传给 runner", async () => {
@@ -370,7 +370,7 @@ describe("createPromptService", () => {
     expect(resolveSenderName).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target);
     expect(touchSessionForTarget).toHaveBeenCalledWith({ openId: "ou_1", userId: "u_1" }, target, "om_group_1");
     expect(touchSession).not.toHaveBeenCalled();
-    expect(releaseLock).toHaveBeenCalledWith("oc_1");
+    expect(releaseLock).toHaveBeenCalledWith("oc_1", "om_group_1");
   });
 
   it("回复结束释放锁后会触发延后补跑的 cron", async () => {
@@ -433,7 +433,7 @@ describe("createPromptService", () => {
       },
     );
 
-    expect(releaseLock).toHaveBeenCalledWith("ou_1");
+    expect(releaseLock).toHaveBeenCalledWith("ou_1", "om_flush_1");
     expect(flushDeferredCronRuns).toHaveBeenCalledWith("ou_1");
     expect(releaseLock.mock.invocationCallOrder[0]).toBeLessThan(
       flushDeferredCronRuns.mock.invocationCallOrder[0],
@@ -903,7 +903,7 @@ describe("createPromptService", () => {
     expect(preparePromptInput).not.toHaveBeenCalled();
     expect(promptSession).not.toHaveBeenCalled();
     expect(sendTextMessage).not.toHaveBeenCalled();
-    expect(releaseLock).toHaveBeenCalledWith("ou_1");
+    expect(releaseLock).toHaveBeenCalledWith("ou_1", "om_stop_1");
   });
 
   it("豆包不支持的音频格式应直接返回具体错误", async () => {
@@ -974,7 +974,7 @@ describe("createPromptService", () => {
       "ou_1",
       "❌ 错误: 豆包语音暂不支持当前音频格式（audio/mp4 / .m4a），请先改用 WAV、MP3 或 OGG/OPUS。",
     );
-    expect(releaseLock).toHaveBeenCalledWith("ou_1");
+    expect(releaseLock).toHaveBeenCalledWith("ou_1", "om_audio_unsupported");
   });
 
   it("排空期间应拒绝启动新任务并提示稍后再试", async () => {

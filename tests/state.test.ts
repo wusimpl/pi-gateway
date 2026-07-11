@@ -3,6 +3,7 @@ import {
   acquireLock,
   beginRestartDrain,
   cancelRestartDrain,
+  createRuntimeStateStore,
   releaseLock,
   isLocked,
   hasActiveLocks,
@@ -35,19 +36,19 @@ describe("运行锁", () => {
 
   it("释放锁后可重新获取", () => {
     acquireLock("ou_user1", "msg_1");
-    releaseLock("ou_user1");
+    releaseLock("ou_user1", "msg_1");
     expect(acquireLock("ou_user1", "msg_2")).toBe(true);
   });
 
   it("释放未持有的锁不应报错", () => {
-    expect(() => releaseLock("ou_nonexistent")).not.toThrow();
+    expect(() => releaseLock("ou_nonexistent", "msg_none")).not.toThrow();
   });
 
   it("isLocked 应反映锁状态", () => {
     expect(isLocked("ou_user1")).toBe(false);
     acquireLock("ou_user1", "msg_1");
     expect(isLocked("ou_user1")).toBe(true);
-    releaseLock("ou_user1");
+    releaseLock("ou_user1", "msg_1");
     expect(isLocked("ou_user1")).toBe(false);
   });
 
@@ -55,8 +56,44 @@ describe("运行锁", () => {
     expect(hasActiveLocks()).toBe(false);
     acquireLock("ou_user1", "msg_1");
     expect(hasActiveLocks()).toBe(true);
-    releaseLock("ou_user1");
+    releaseLock("ou_user1", "msg_1");
     expect(hasActiveLocks()).toBe(false);
+  });
+
+  it("默认锁在普通任务的 2 小时上限内仍能停止并阻止重启", async () => {
+    vi.useFakeTimers();
+    const store = createRuntimeStateStore();
+
+    try {
+      expect(store.acquireLock("ou_user1", "msg_long_running")).toBe(true);
+      await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+
+      await expect(store.requestStop("ou_user1", "msg_long_running")).resolves.toBe("requested");
+      expect(store.beginRestartDrain()).toBe("busy");
+    } finally {
+      store.clearAllState();
+      vi.useRealTimers();
+    }
+  });
+
+  it("旧任务释放时不应删掉同 scope 的新锁", async () => {
+    vi.useFakeTimers();
+    const store = createRuntimeStateStore({ lockTimeoutMs: 1000 });
+
+    try {
+      expect(store.acquireLock("ou_user1", "msg_old")).toBe(true);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.acquireLock("ou_user1", "msg_new")).toBe(true);
+
+      store.releaseLock("ou_user1", "msg_old");
+      expect(store.isLocked("ou_user1")).toBe(true);
+
+      store.releaseLock("ou_user1", "msg_new");
+      expect(store.isLocked("ou_user1")).toBe(false);
+    } finally {
+      store.clearAllState();
+      vi.useRealTimers();
+    }
   });
 
   it("clearAllState 应清理所有锁和定时器", () => {

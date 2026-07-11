@@ -16,8 +16,13 @@ import {
   type ConversationStateStore,
 } from "../storage/conversations.js";
 import { logger } from "../app/logger.js";
+import { enforceHostMachineToolAccess } from "../app/tool-access.js";
 import { ensureConversationWorkspace, ensureUserWorkspace, type WorkspaceService } from "./workspace.js";
-import { bindWorkspaceIdentity, clearWorkspaceIdentities } from "./workspace-identity.js";
+import {
+  bindSessionIdentity,
+  bindWorkspaceIdentity,
+  clearWorkspaceIdentities,
+} from "./workspace-identity.js";
 import type { ModelPreference, ThinkingLevel, UserIdentity, UserState } from "../types.js";
 import type { ConversationTarget } from "../conversation.js";
 import { getConversationTargetKey } from "../conversation.js";
@@ -213,8 +218,12 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 
     const cached = sessionCache.get(scope.cacheKey);
     if (cached) {
+      if (!cached.isStreaming) {
+        bindSessionIdentity(cached, identity, target);
+      }
       ensureGroupChatContext(cached, scope);
       const state = await scope.readState();
+      applySavedToolSelection(cached, state, identity, target);
       return {
         activeSessionId: state?.activeSessionId ?? "unknown",
         piSession: cached,
@@ -226,7 +235,8 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       try {
         const workspaceDir = await scope.ensureWorkspace();
         const session = await openRuntimePiSession(state.piSessionFile, workspaceDir, state);
-        applySavedToolSelection(session, state);
+        bindSessionIdentity(session, identity, target);
+        applySavedToolSelection(session, state, identity, target);
         applyUserPreferences(session, state?.thinkingLevel);
         ensureGroupChatContext(session, scope);
         const activeSessionId = session.sessionId;
@@ -260,7 +270,8 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         const workspaceDir = await scope.ensureWorkspace();
         const result = await continueRuntimePiSession(workspaceDir, sessionDir, state);
         if (result) {
-          applySavedToolSelection(result.session, state);
+          bindSessionIdentity(result.session, identity, target);
+          applySavedToolSelection(result.session, state, identity, target);
           applyUserPreferences(result.session, state?.thinkingLevel);
           ensureGroupChatContext(result.session, scope);
           const activeSessionId = result.session.sessionId;
@@ -285,7 +296,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       }
     }
 
-    return doCreateNewSession(identity, scope);
+    return doCreateNewSession(identity, scope, target);
   }
 
   function resolvePreferredModel(preference?: ModelPreference): Model<any> | undefined {
@@ -321,16 +332,21 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
   ): Promise<SessionResult> {
     const scope = resolveScope(identity, target);
     disposeCachedSession(scope.cacheKey);
-    return doCreateNewSession(identity, scope);
+    return doCreateNewSession(identity, scope, target);
   }
 
-  async function doCreateNewSession(identity: UserIdentity, scope: SessionScope): Promise<SessionResult> {
+  async function doCreateNewSession(
+    identity: UserIdentity,
+    scope: SessionScope,
+    target?: ConversationTarget,
+  ): Promise<SessionResult> {
     const sessionDir = scope.sessionsDir();
     const workspaceDir = await scope.ensureWorkspace();
     const existing = await scope.readState();
     const preferredModel = resolvePreferredModel(existing?.modelRouting?.heavyModel ?? existing?.modelPreference);
     const piSession = await createRuntimePiSession(workspaceDir, sessionDir, preferredModel, existing);
-    applySavedToolSelection(piSession, existing);
+    bindSessionIdentity(piSession, identity, target);
+    applySavedToolSelection(piSession, existing, identity, target);
     applyUserPreferences(piSession, existing?.thinkingLevel);
     ensureGroupChatContext(piSession, scope);
     const newSessionId = piSession.sessionId;
@@ -427,7 +443,8 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 
     const state = await scope.readState();
     const piSession = await openRuntimePiSession(targetSession.sessionFile, workspaceDir, state);
-    applySavedToolSelection(piSession, state);
+    bindSessionIdentity(piSession, identity, target);
+    applySavedToolSelection(piSession, state, identity, target);
     applyUserPreferences(piSession, state?.thinkingLevel);
     ensureGroupChatContext(piSession, scope);
     const activeSessionId = piSession.sessionId;
@@ -728,6 +745,8 @@ function getSessionResourceOptions(
 function applySavedToolSelection(
   session: Pick<AgentSession, "getActiveToolNames" | "getAllTools" | "setActiveToolsByName">,
   state?: Pick<UserState, "enabledTools"> | null,
+  identity?: UserIdentity,
+  conversationTarget?: ConversationTarget,
 ): void {
   if (
     typeof session.getActiveToolNames !== "function"
@@ -747,12 +766,15 @@ function applySavedToolSelection(
     if (!haveSameToolNames(currentTools, defaultTools)) {
       session.setActiveToolsByName(defaultTools);
     }
-    return;
+  } else {
+    const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
+    const savedTools = state.enabledTools.filter((tool): tool is string => typeof tool === "string");
+    session.setActiveToolsByName(savedTools.filter((tool) => allToolNames.has(tool)));
   }
 
-  const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
-  const savedTools = state.enabledTools.filter((tool): tool is string => typeof tool === "string");
-  session.setActiveToolsByName(savedTools.filter((tool) => allToolNames.has(tool)));
+  if (identity) {
+    enforceHostMachineToolAccess(session, identity, conversationTarget);
+  }
 }
 
 function getDefaultEnabledToolNames(

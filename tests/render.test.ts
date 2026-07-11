@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { renderAssistantMessage } from "../src/feishu/render.js";
 
@@ -75,5 +76,24 @@ describe("renderAssistantMessage", () => {
     expect(messages).toHaveLength(3);
     expect(messages.every((message) => message.msgType === "text")).toBe(true);
     expect(messages.map((message) => (message.content.text as string).length)).toEqual([2000, 2000, 5]);
+  });
+
+  it("特殊空白字符不应让 Markdown 解析耗尽内存", () => {
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--max-old-space-size=64",
+        "--input-type=module",
+        "-e",
+        "import { marked } from 'marked'; process.stdout.write(String(marked.lexer('\\x09\\x0b\\n', { gfm: true }).length));",
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        timeout: 10_000,
+      },
+    );
+
+    expect(output).toBe("1");
   });
 });

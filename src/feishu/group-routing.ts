@@ -43,7 +43,7 @@ export function getFeishuP2PMessageRoutingDecision(
   if (!canAccessP2PChat(event.sender.senderId.openId, config)) {
     logger.debug("忽略飞书私聊消息：用户不在白名单", {
       openId: event.sender.senderId.openId,
-      policy: config?.FEISHU_P2P_CHAT_POLICY ?? "all",
+      policy: config?.FEISHU_P2P_CHAT_POLICY ?? "whitelist",
     });
     return "ignore";
   }

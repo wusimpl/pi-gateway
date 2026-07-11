@@ -96,6 +96,8 @@ describe("handleFeishuMessage /stop", () => {
 
     initRouter({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: [],
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,
     } as any);

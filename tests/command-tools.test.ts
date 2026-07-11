@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 import { createCommandService } from "../src/app/command-service.js";
 
 function createPiSessionMock(options?: { activeTools?: string[]; allTools?: string[] }) {
@@ -89,9 +90,12 @@ function createDeps(piSession: ReturnType<typeof createPiSessionMock>["session"]
 }
 
 describe("command service tools", () => {
-  it("`/tools` 会返回当前 tool 状态", async () => {
-    const piSession = createPiSessionMock({ activeTools: ["read", "bash"] });
-    const { service, messenger } = createDeps(piSession.session);
+  it("普通私聊查看 `/tools` 时会清除已启用的宿主机工具", async () => {
+    const piSession = createPiSessionMock({
+      activeTools: ["read", "bash", "tts_synthesize"],
+      allTools: ["read", "bash", "edit", "write", "grep", "tts_synthesize"],
+    });
+    const { service, messenger, userStateStore } = createDeps(piSession.session);
 
     await service.handleBridgeCommand(
       { openId: "ou_1", userId: "u_1" },
@@ -100,12 +104,13 @@ describe("command service tools", () => {
 
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "🧰 当前 tools（2/5 已启用）\n" +
-        "✅ read\n" +
-        "✅ bash\n" +
+      "🧰 当前 tools（1/6 已启用）\n" +
+        "❌ read\n" +
+        "❌ bash\n" +
         "❌ edit\n" +
         "❌ write\n" +
         "❌ grep\n" +
+        "✅ tts_synthesize\n" +
         "\n" +
         "查看：/tools\n" +
         "启用：/tools on <tool...>\n" +
@@ -114,9 +119,14 @@ describe("command service tools", () => {
         "恢复默认：/tools reset",
       2000,
     );
+    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["tts_synthesize"]);
+    expect(userStateStore.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({ enabledTools: ["tts_synthesize"] }),
+    );
   });
 
-  it("`/tools on` 会更新 active tools 并按私聊状态持久化", async () => {
+  it("私聊超级管理员可以启用宿主机工具", async () => {
     const piSession = createPiSessionMock({ activeTools: ["read", "bash"] });
     const { service, messenger, userStateStore } = createDeps(piSession.session);
     userStateStore.readUserState.mockResolvedValue({
@@ -127,27 +137,100 @@ describe("command service tools", () => {
     });
 
     await service.handleBridgeCommand(
-      { openId: "ou_1", userId: "u_1" },
+      { openId: SUPER_ADMIN_OPEN_ID, userId: "u_1" },
       { name: "tools", args: "on grep" },
     );
 
     expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["read", "bash", "grep"]);
     expect(piSession.spies.appendCustomEntry).not.toHaveBeenCalled();
     expect(userStateStore.writeUserState).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       expect.objectContaining({ enabledTools: ["read", "bash", "grep"] }),
     );
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
-      "ou_1",
+      SUPER_ADMIN_OPEN_ID,
       "✅ 已启用 tools。\n变更：grep\n当前启用（3/5）：read, bash, grep\n\n查看详情：/tools",
       2000,
     );
   });
 
-  it("群聊 `/tools off` 会写入对应 conversation 状态", async () => {
+  it("普通私聊不能启用宿主机工具", async () => {
+    const piSession = createPiSessionMock({
+      activeTools: ["tts_synthesize"],
+      allTools: ["read", "grep", "tts_synthesize"],
+    });
+    const { service, messenger, userStateStore } = createDeps(piSession.session);
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "tools", args: "on grep" },
+    );
+
+    expect(messenger.sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "这些工具会直接操作机器人所在的电脑，只能由超级管理员在私聊中启用：grep。",
+    );
+    expect(piSession.spies.setActiveToolsByName).not.toHaveBeenCalled();
+    expect(userStateStore.writeUserState).not.toHaveBeenCalled();
+  });
+
+  it("普通私聊仍可启用非宿主机工具", async () => {
+    const piSession = createPiSessionMock({
+      activeTools: ["tts_synthesize"],
+      allTools: ["read", "tts_synthesize", "firecrawl_search"],
+    });
+    const { service, userStateStore } = createDeps(piSession.session);
+
+    await service.handleBridgeCommand(
+      { openId: "ou_1", userId: "u_1" },
+      { name: "tools", args: "on firecrawl_search" },
+    );
+
+    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["tts_synthesize", "firecrawl_search"]);
+    expect(userStateStore.writeUserState).toHaveBeenCalledWith(
+      "ou_1",
+      expect.objectContaining({ enabledTools: ["tts_synthesize", "firecrawl_search"] }),
+    );
+  });
+
+  it("群聊超级管理员也不能启用宿主机工具", async () => {
+    const piSession = createPiSessionMock({
+      activeTools: ["tts_synthesize"],
+      allTools: ["read", "tts_synthesize"],
+    });
+    const { service, messenger, sessionService } = createDeps(piSession.session);
+    const target = {
+      kind: "group" as const,
+      key: "chat_1",
+      receiveIdType: "chat_id" as const,
+      receiveId: "chat_1",
+      chatId: "chat_1",
+    };
+
+    await service.handleBridgeCommand(
+      { openId: SUPER_ADMIN_OPEN_ID, userId: "u_1" },
+      { name: "tools", args: "on read" },
+      target,
+    );
+
+    expect(messenger.sendTextMessageToTarget).toHaveBeenCalledWith(
+      target,
+      "群聊中不能启用会直接操作机器人所在电脑的工具：read。",
+    );
+    expect(piSession.spies.setActiveToolsByName).not.toHaveBeenCalled();
+    expect(sessionService.writeSessionState).not.toHaveBeenCalled();
+  });
+
+  it("群聊处理工具命令时会过滤现有宿主机工具", async () => {
     const piSession = createPiSessionMock({ activeTools: ["read", "bash", "grep"] });
     const { service, sessionService } = createDeps(piSession.session);
-    const target = { kind: "group" as const, key: "chat_1", chatId: "chat_1" };
+    const target = {
+      kind: "group" as const,
+      key: "chat_1",
+      receiveIdType: "chat_id" as const,
+      receiveId: "chat_1",
+      chatId: "chat_1",
+    };
     sessionService.readSessionState.mockResolvedValue({
       activeSessionId: "group_session_1",
       createdAt: "2026-04-27T00:00:00.000Z",
@@ -161,16 +244,16 @@ describe("command service tools", () => {
       target,
     );
 
-    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["read", "bash"]);
+    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith([]);
     expect(sessionService.writeSessionState).toHaveBeenCalledWith(
       { openId: "ou_1", userId: "u_1" },
       target,
-      expect.objectContaining({ enabledTools: ["read", "bash"] }),
+      expect.objectContaining({ enabledTools: [] }),
     );
   });
 
   it("`/tools on` 遇到不存在的 tool 会直接报错", async () => {
-    const piSession = createPiSessionMock({ activeTools: ["read", "bash"] });
+    const piSession = createPiSessionMock({ activeTools: [] });
     const { service, messenger } = createDeps(piSession.session);
 
     await service.handleBridgeCommand(

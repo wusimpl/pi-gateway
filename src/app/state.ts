@@ -1,14 +1,14 @@
 import { logger } from "./logger.js";
 
-/** 默认锁超时时间：10 分钟 */
-const LOCK_TIMEOUT_MS = 10 * 60 * 1000;
+/** 默认锁超时时间：普通任务 2 小时上限 + 10 分钟收尾余量 */
+const LOCK_TIMEOUT_MS = (2 * 60 + 10) * 60 * 1000;
 const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 分钟
 
 export type StopRequestResult = "not_running" | "requested" | "already_requested";
 
 export interface RuntimeStateStore {
   acquireLock(openId: string, messageId: string): boolean;
-  releaseLock(openId: string): void;
+  releaseLock(openId: string, messageId: string): void;
   isLocked(openId: string): boolean;
   hasActiveLocks(): boolean;
   beginRestartDrain(): "started" | "busy" | "already_draining";
@@ -121,14 +121,16 @@ export function createRuntimeStateStore(options?: {
     return true;
   }
 
-  function releaseLock(openId: string): void {
+  function releaseLock(openId: string, messageId: string): void {
     const lock = userLocks.get(openId);
-    if (lock) {
-      clearTimeout(lock.timer);
-      userLocks.delete(openId);
-      notifyReleaseWaiters(lock);
-      logger.debug("锁已释放", { openId });
+    if (!lock || lock.messageId !== messageId) {
+      return;
     }
+
+    clearTimeout(lock.timer);
+    userLocks.delete(openId);
+    notifyReleaseWaiters(lock);
+    logger.debug("锁已释放", { openId, messageId });
   }
 
   function notifyReleaseWaiters(lock: LockEntry): void {
@@ -321,8 +323,8 @@ export function acquireLock(openId: string, messageId: string): boolean {
   return defaultRuntimeStateStore.acquireLock(openId, messageId);
 }
 
-export function releaseLock(openId: string): void {
-  defaultRuntimeStateStore.releaseLock(openId);
+export function releaseLock(openId: string, messageId: string): void {
+  defaultRuntimeStateStore.releaseLock(openId, messageId);
 }
 
 export function isLocked(openId: string): boolean {

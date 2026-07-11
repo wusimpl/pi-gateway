@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { Type } from "@mariozechner/pi-ai";
 import {
@@ -136,9 +137,12 @@ export function createAliyunTtsExtension(options: AliyunTtsOptions = {}): Extens
       }
 
       const format = normalizeAudioFormat(params.format ?? defaultFormat);
-      const outputDir = resolveWorkspacePath(ctx.cwd, params.output_dir ?? DEFAULT_OUTPUT_DIR);
       const outputName = resolveOutputName(params.output_name, format);
-      const outputPath = resolveWorkspacePath(outputDir, outputName);
+      const outputPath = await prepareWorkspaceOutputFile(
+        ctx.cwd,
+        params.output_dir ?? DEFAULT_OUTPUT_DIR,
+        outputName,
+      );
 
       const response = await postJson<DashScopeTtsResponse>(
         requestFetch,
@@ -168,8 +172,7 @@ export function createAliyunTtsExtension(options: AliyunTtsOptions = {}): Extens
       const audioBytes = audio?.data
         ? Buffer.from(audio.data, "base64")
         : await downloadAudio(requestFetch, audio?.url, signal);
-      await mkdir(outputDir, { recursive: true });
-      await writeFile(outputPath, audioBytes);
+      await writeWorkspaceFile(outputPath, audioBytes);
 
       return toToolResult({
         path: outputPath,
@@ -382,6 +385,78 @@ function ensurePathUnderRoot(resolvedPath: string, root: string): void {
     || isAbsolute(relativePath)
   ) {
     throw new Error("路径必须在当前 workspace 里");
+  }
+}
+
+async function prepareWorkspaceOutputFile(
+  cwd: string,
+  rawOutputDir: string,
+  outputName: string,
+): Promise<string> {
+  const workspacePath = resolve(cwd);
+  const lexicalOutputDir = resolveWorkspacePath(workspacePath, rawOutputDir);
+  const realWorkspacePath = await realpath(workspacePath);
+  const outputDir = resolve(realWorkspacePath, relative(workspacePath, lexicalOutputDir));
+  ensurePathUnderRoot(outputDir, realWorkspacePath);
+  await ensureDirectoryWithoutSymlinks(realWorkspacePath, outputDir);
+
+  const outputPath = resolve(outputDir, outputName);
+  ensurePathUnderRoot(outputPath, realWorkspacePath);
+  await ensureOutputFileIsSafe(outputPath);
+  return outputPath;
+}
+
+async function ensureDirectoryWithoutSymlinks(root: string, directory: string): Promise<void> {
+  const relativeDirectory = relative(root, directory);
+  if (!relativeDirectory) {
+    return;
+  }
+
+  let current = root;
+  for (const segment of relativeDirectory.split(/[\\/]+/).filter(Boolean)) {
+    current = resolve(current, segment);
+    try {
+      await mkdir(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+    }
+
+    const stats = await lstat(current);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) {
+      throw new Error("输出目录不能包含符号链接，且必须是当前 workspace 里的目录");
+    }
+  }
+}
+
+async function ensureOutputFileIsSafe(outputPath: string): Promise<void> {
+  try {
+    const stats = await lstat(outputPath);
+    if (stats.isSymbolicLink()) {
+      throw new Error("输出文件不能是符号链接");
+    }
+    if (!stats.isFile()) {
+      throw new Error("输出路径必须是文件");
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function writeWorkspaceFile(outputPath: string, contents: Buffer): Promise<void> {
+  const file = await open(
+    outputPath,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    await file.writeFile(contents);
+  } finally {
+    await file.close();
   }
 }
 

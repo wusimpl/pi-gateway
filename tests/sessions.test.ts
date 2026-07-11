@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSessionService, getSessionDefaultToolNames } from "../src/pi/sessions.js";
-import { clearWorkspaceIdentities, getWorkspaceIdentity } from "../src/pi/workspace-identity.js";
+import { createAskUserChoiceExtension } from "../src/pi/extensions/ask-user-choice.js";
+import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
+import {
+  clearWorkspaceIdentities,
+  getWorkspaceContext,
+  getWorkspaceIdentity,
+} from "../src/pi/workspace-identity.js";
 
 function createDeps() {
   const modelRegistry = {
@@ -207,6 +213,152 @@ describe("session service", () => {
       false,
       { scopeKind: "group" },
     );
+  });
+
+  it("群会话由后续成员命中缓存时，选择卡片会等待后续成员", async () => {
+    const deps = createDeps();
+    let conversationState: any = null;
+    const conversationStateStore = {
+      readConversationState: vi.fn().mockImplementation(async () => conversationState),
+      writeConversationState: vi.fn().mockImplementation(async (_key: string, state: any) => {
+        conversationState = state;
+      }),
+      createConversationState: vi.fn().mockImplementation(async (_key: string, sessionId: string) => ({
+        activeSessionId: sessionId,
+        createdAt: "2026-04-15T00:00:00.000Z",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        lastActiveAt: "2026-04-15T00:00:00.000Z",
+      })),
+      touchConversationState: vi.fn().mockResolvedValue(undefined),
+      conversationSessionsDir: vi.fn().mockReturnValue("/tmp/conversations/oc_1/sessions"),
+    };
+    const sessionManager = {
+      appendCustomMessageEntry: vi.fn(),
+      getBranch: vi.fn().mockReturnValue([]),
+    };
+    const piSession = {
+      sessionId: "pi-session-group",
+      sessionFile: "/tmp/conversations/oc_1/sessions/session.jsonl",
+      sessionManager,
+      dispose: vi.fn(),
+    };
+    deps.runtime.createPiSession.mockResolvedValue(piSession);
+
+    const service = createSessionService({
+      ...deps,
+      conversationStateStore,
+    } as any);
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const memberA = { openId: "ou_a", userId: "u_a" };
+    const memberB = { openId: "ou_b", userId: "u_b" };
+
+    await service.createNewSessionForTarget(memberA, target);
+    const cached = await service.getOrCreateActiveSessionForTarget(memberB, target);
+
+    const messenger = {
+      sendFeishuMessage: vi.fn().mockResolvedValue("om_choice_p2p"),
+      sendFeishuMessageToTarget: vi.fn().mockResolvedValue("om_choice_group"),
+    };
+    const choiceStore = {
+      waitForChoice: vi.fn().mockResolvedValue({
+        status: "answered",
+        request_id: "req_1",
+        selected: "a",
+        label: "A",
+      }),
+    };
+    const tools: any[] = [];
+    createAskUserChoiceExtension(messenger, choiceStore)({
+      registerTool(tool) {
+        tools.push(tool);
+      },
+    } as any);
+    await tools[0].execute(
+      "call-1",
+      {
+        question: "选哪个？",
+        options: [
+          { label: "A", value: "a" },
+          { label: "B", value: "b" },
+        ],
+      },
+      undefined,
+      undefined,
+      {
+        cwd: "/tmp/workspace/conversations/oc_1",
+        sessionManager,
+      },
+    );
+
+    expect(cached.piSession).toBe(piSession);
+    expect(deps.runtime.createPiSession).toHaveBeenCalledTimes(1);
+    expect(getWorkspaceContext("/tmp/workspace/conversations/oc_1", sessionManager)).toEqual({
+      identity: memberB,
+      conversationTarget: target,
+    });
+    expect(choiceStore.waitForChoice).toHaveBeenCalledWith(expect.objectContaining({
+      openId: "ou_b",
+    }));
+  });
+
+  it("运行中的群会话不会被后来查看会话的成员覆盖身份", async () => {
+    const deps = createDeps();
+    let conversationState: any = null;
+    const conversationStateStore = {
+      readConversationState: vi.fn().mockImplementation(async () => conversationState),
+      writeConversationState: vi.fn().mockImplementation(async (_key: string, state: any) => {
+        conversationState = state;
+      }),
+      createConversationState: vi.fn().mockImplementation(async (_key: string, sessionId: string) => ({
+        activeSessionId: sessionId,
+        createdAt: "2026-04-15T00:00:00.000Z",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        lastActiveAt: "2026-04-15T00:00:00.000Z",
+      })),
+      touchConversationState: vi.fn().mockResolvedValue(undefined),
+      conversationSessionsDir: vi.fn().mockReturnValue("/tmp/conversations/oc_1/sessions"),
+    };
+    const sessionManager = {
+      appendCustomMessageEntry: vi.fn(),
+      getBranch: vi.fn().mockReturnValue([]),
+    };
+    const piSession = {
+      sessionId: "pi-session-group",
+      sessionFile: "/tmp/conversations/oc_1/sessions/session.jsonl",
+      sessionManager,
+      isStreaming: false,
+      dispose: vi.fn(),
+    };
+    deps.runtime.createPiSession.mockResolvedValue(piSession);
+
+    const service = createSessionService({
+      ...deps,
+      conversationStateStore,
+    } as any);
+    const target = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    const memberA = { openId: "ou_a", userId: "u_a" };
+    const memberB = { openId: "ou_b", userId: "u_b" };
+
+    await service.createNewSessionForTarget(memberA, target);
+    piSession.isStreaming = true;
+    await service.getOrCreateActiveSessionForTarget(memberB, target);
+
+    expect(getWorkspaceContext("/tmp/workspace/conversations/oc_1", sessionManager)).toEqual({
+      identity: memberA,
+      conversationTarget: target,
+    });
   });
 
   it("创建新会话时应使用当前私聊保存的模型偏好", async () => {
@@ -519,7 +671,7 @@ describe("session service", () => {
     const result = await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
 
     expect(result.activeSessionId).toBe("pi-session-789");
-    expect(setActiveToolsByName).toHaveBeenCalledWith(["read", "bash"]);
+    expect(setActiveToolsByName).toHaveBeenLastCalledWith([]);
     expect(getSessionDefaultToolNames(session as any)).toEqual(["read", "bash", "edit"]);
   });
 
@@ -556,7 +708,7 @@ describe("session service", () => {
     deps.runtime.openPiSession.mockResolvedValue(session);
 
     const service = createSessionService(deps as any);
-    await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
+    await service.getOrCreateActiveSession({ openId: SUPER_ADMIN_OPEN_ID, userId: "u_1" });
 
     expect(setActiveToolsByName).toHaveBeenCalledWith(["read", "bash", "edit", "tts_synthesize"]);
     expect(getSessionDefaultToolNames(session as any)).toEqual(["read", "bash", "edit", "tts_synthesize"]);
@@ -596,7 +748,7 @@ describe("session service", () => {
     deps.runtime.openPiSession.mockResolvedValue(session);
 
     const service = createSessionService(deps as any);
-    await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
+    await service.getOrCreateActiveSession({ openId: SUPER_ADMIN_OPEN_ID, userId: "u_1" });
 
     expect(setActiveToolsByName).toHaveBeenCalledWith([
       "read",
@@ -651,7 +803,7 @@ describe("session service", () => {
     deps.runtime.openPiSession.mockResolvedValue(session);
 
     const service = createSessionService(deps as any);
-    await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
+    await service.getOrCreateActiveSession({ openId: SUPER_ADMIN_OPEN_ID, userId: "u_1" });
 
     expect(setActiveToolsByName).not.toHaveBeenCalled();
   });

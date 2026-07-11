@@ -59,7 +59,7 @@ export function normalizePersistedP2PRoutingConfig(
 function normalizeP2PPolicy(
   policy: Config["FEISHU_P2P_CHAT_POLICY"] | undefined,
 ): Config["FEISHU_P2P_CHAT_POLICY"] {
-  return policy === "whitelist" ? "whitelist" : "all";
+  return policy === "all" ? "all" : "whitelist";
 }
 
 function normalizeStringList(items: readonly string[]): string[] {

@@ -1,5 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFeishuFilesExtension } from "../src/pi/extensions/feishu-files.js";
+
+const tmpDirs: string[] = [];
+
+async function createTempWorkspace(): Promise<string> {
+  const workspace = await mkdtemp(join(tmpdir(), "pi-gateway-files-"));
+  tmpDirs.push(workspace);
+  return workspace;
+}
+
+async function createWorkspaceFile(relativePath: string, contents = "file-data") {
+  const workspace = await createTempWorkspace();
+  const filePath = join(workspace, relativePath);
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, contents);
+  return { workspace, filePath: await realpath(filePath) };
+}
 
 function collectTools(
   messengerOverrides?: Record<string, unknown>,
@@ -43,6 +62,10 @@ function createToolContext(cwd: string) {
 }
 
 describe("feishu files extension", () => {
+  afterEach(async () => {
+    await Promise.all(tmpDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
   it("会注册发送飞书图片和文件工具", () => {
     const { tools } = collectTools();
 
@@ -52,17 +75,18 @@ describe("feishu files extension", () => {
   it("图片工具会把本地图片发成可直接查看的飞书图片", async () => {
     const { tools, messenger } = collectTools();
     const sendTool = tools.find((tool) => tool.name === "feishu_image_send");
+    const { workspace, filePath } = await createWorkspaceFile("exports/preview.png");
 
     const result = await sendTool.execute(
       "call-1",
       { path: "exports/preview.png" },
       undefined,
       undefined,
-      createToolContext("/tmp/workspace/ou_1"),
+      createToolContext(workspace),
     );
 
     expect(messenger.sendLocalImageMessage).toHaveBeenCalledWith("ou_1", {
-      path: "/tmp/workspace/ou_1/exports/preview.png",
+      path: filePath,
       fileName: undefined,
     });
     expect(result.details).toMatchObject({
@@ -75,6 +99,7 @@ describe("feishu files extension", () => {
   it("会把 camelCase 文件名兼容成 snake_case，并按 workspace 解析相对路径", async () => {
     const { tools, messenger } = collectTools();
     const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
+    const { workspace, filePath } = await createWorkspaceFile("exports/report.txt");
 
     const prepared = sendTool.prepareArguments({
       path: "exports/report.txt",
@@ -85,11 +110,11 @@ describe("feishu files extension", () => {
       prepared,
       undefined,
       undefined,
-      createToolContext("/tmp/workspace/ou_1"),
+      createToolContext(workspace),
     );
 
     expect(messenger.sendLocalFileMessage).toHaveBeenCalledWith("ou_1", {
-      path: "/tmp/workspace/ou_1/exports/report.txt",
+      path: filePath,
       fileName: "日报.txt",
     });
   });
@@ -110,17 +135,18 @@ describe("feishu files extension", () => {
       conversationTarget: target,
     }));
     const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
+    const { workspace, filePath } = await createWorkspaceFile("exports/report.txt");
 
     const result = await sendTool.execute(
       "call-1",
       { path: "exports/report.txt" },
       undefined,
       undefined,
-      createToolContext("/tmp/workspace/conversations/oc_1"),
+      createToolContext(workspace),
     );
 
     expect(messenger.sendLocalFileMessage).toHaveBeenCalledWith(target, {
-      path: "/tmp/workspace/conversations/oc_1/exports/report.txt",
+      path: filePath,
       fileName: undefined,
     });
     expect(result.details).toMatchObject({
@@ -132,17 +158,18 @@ describe("feishu files extension", () => {
   it("文件工具误传图片时会自动改成图片发送", async () => {
     const { tools, messenger } = collectTools();
     const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
+    const { workspace, filePath } = await createWorkspaceFile("exports/chart.webp");
 
     const result = await sendTool.execute(
       "call-1",
       { path: "exports/chart.webp" },
       undefined,
       undefined,
-      createToolContext("/tmp/workspace/ou_1"),
+      createToolContext(workspace),
     );
 
     expect(messenger.sendLocalImageMessage).toHaveBeenCalledWith("ou_1", {
-      path: "/tmp/workspace/ou_1/exports/chart.webp",
+      path: filePath,
       fileName: undefined,
     });
     expect(messenger.sendLocalFileMessage).not.toHaveBeenCalled();
@@ -155,6 +182,7 @@ describe("feishu files extension", () => {
   it("越出 workspace 的路径会被直接拦住", async () => {
     const { tools, messenger } = collectTools();
     const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
+    const workspace = await createTempWorkspace();
 
     await expect(
       sendTool.execute(
@@ -162,9 +190,31 @@ describe("feishu files extension", () => {
         { path: "../secret.txt" },
         undefined,
         undefined,
-        createToolContext("/tmp/workspace/ou_1"),
+        createToolContext(workspace),
       ),
     ).rejects.toThrow("只能发送当前 workspace 里的文件");
+    expect(messenger.sendLocalFileMessage).not.toHaveBeenCalled();
+    expect(messenger.sendLocalImageMessage).not.toHaveBeenCalled();
+  });
+
+  it("workspace 内指向外部文件的符号链接会被拦住", async () => {
+    const { tools, messenger } = collectTools();
+    const sendTool = tools.find((tool) => tool.name === "feishu_file_send");
+    const workspace = await createTempWorkspace();
+    const outside = await createWorkspaceFile("secret.txt", "secret");
+    const linkPath = join(workspace, "exports/secret.txt");
+    await mkdir(dirname(linkPath), { recursive: true });
+    await symlink(outside.filePath, linkPath);
+
+    await expect(
+      sendTool.execute(
+        "call-1",
+        { path: "exports/secret.txt" },
+        undefined,
+        undefined,
+        createToolContext(workspace),
+      ),
+    ).rejects.toThrow("符号链接不能指向工作目录外");
     expect(messenger.sendLocalFileMessage).not.toHaveBeenCalled();
     expect(messenger.sendLocalImageMessage).not.toHaveBeenCalled();
   });

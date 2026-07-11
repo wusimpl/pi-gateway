@@ -248,7 +248,7 @@ export function createCommandService(deps: CommandServiceDeps): CommandService {
     }
 
     return {
-      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_POLICY: "whitelist",
       FEISHU_P2P_CHAT_ALLOWLIST: [],
     };
   }

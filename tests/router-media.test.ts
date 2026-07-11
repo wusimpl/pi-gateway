@@ -66,6 +66,8 @@ describe("handleFeishuMessage 多模态消息", () => {
 
     initRouter({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: [],
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,
       FEISHU_MEDIA_OLLAMA_BASE_URL: "http://127.0.0.1:11434",

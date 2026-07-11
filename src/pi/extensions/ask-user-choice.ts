@@ -49,7 +49,10 @@ function normalizeArgs(args: unknown): Record<string, unknown> {
 export function createAskUserChoiceExtension(
   messenger: Pick<FeishuMessenger, "sendFeishuMessage"> & Partial<Pick<FeishuMessenger, "sendFeishuMessageToTarget">>,
   choiceStore: Pick<FeishuChoiceInteractionStore, "waitForChoice">,
-  resolveIdentityByWorkspace: (cwd: string) => WorkspaceChoiceContext | null = getWorkspaceContext,
+  resolveIdentityByWorkspace: (
+    cwd: string,
+    sessionManager?: object,
+  ) => WorkspaceChoiceContext | null = getWorkspaceContext,
 ): ExtensionFactory {
   const askUserChoiceTool = defineTool({
     name: "ask_user_choice",
@@ -80,7 +83,9 @@ export function createAskUserChoiceExtension(
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const workspaceContext = normalizeWorkspaceChoiceContext(resolveIdentityByWorkspace(ctx.cwd));
+      const workspaceContext = normalizeWorkspaceChoiceContext(
+        resolveIdentityByWorkspace(ctx.cwd, ctx.sessionManager),
+      );
       if (!workspaceContext?.identity.openId) {
         throw new Error("当前 workspace 没有关联到飞书用户，暂时不能发起选择卡片");
       }

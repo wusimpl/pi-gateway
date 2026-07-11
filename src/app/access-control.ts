@@ -21,7 +21,7 @@ export function canAccessP2PChat(openId: string, config?: P2PAccessConfig): bool
     return true;
   }
 
-  const policy = config?.FEISHU_P2P_CHAT_POLICY ?? "all";
+  const policy = config?.FEISHU_P2P_CHAT_POLICY ?? "whitelist";
   if (policy === "all") {
     return true;
   }

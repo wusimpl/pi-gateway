@@ -6,10 +6,11 @@ import { formatError } from "../feishu/format.js";
 import type { FeishuMessenger } from "../feishu/send.js";
 import type { PromptRunner } from "../pi/stream.js";
 import type { PiRuntime } from "../pi/runtime.js";
-import { bindWorkspaceIdentity } from "../pi/workspace-identity.js";
+import { bindSessionIdentity, bindWorkspaceIdentity } from "../pi/workspace-identity.js";
 import type { WorkspaceService } from "../pi/workspace.js";
 import type { UserIdentity } from "../types.js";
 import { logger } from "../app/logger.js";
+import { enforceHostMachineToolAccess } from "../app/tool-access.js";
 import type { RuntimeStateStore, StopRequestResult } from "../app/state.js";
 import type { DeferredCronRunService } from "./deferred-run.js";
 import {
@@ -82,6 +83,8 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       await mkdir(sessionDir, { recursive: true });
 
       session = await deps.runtime.createPiSession(workspaceDir, sessionDir);
+      bindSessionIdentity(session, identity, conversationTarget);
+      enforceHostMachineToolAccess(session, identity, conversationTarget);
       const stoppedBeforePrompt = await deps.runtimeState.setAbortHandler(
         lockKey,
         syntheticMessageId,
@@ -179,7 +182,7 @@ export function createCronRunner(deps: CronRunnerDeps): CronRunner {
       } catch {
         // ignore
       }
-      deps.runtimeState.releaseLock(lockKey);
+      deps.runtimeState.releaseLock(lockKey, syntheticMessageId);
       await deps.deferredCronRunService?.flush(scopeKey);
     }
   }

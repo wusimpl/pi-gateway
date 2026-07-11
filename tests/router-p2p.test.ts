@@ -48,10 +48,7 @@ function createDeps(openId: string, options: {
       rawContent: '{"text":"hello"}',
       text: "hello",
     })),
-    config: options.config ?? {
-      FEISHU_P2P_CHAT_POLICY: "all",
-      FEISHU_P2P_CHAT_ALLOWLIST: [],
-    },
+    config: options.config ?? {},
     p2pSettingsStore: options.persisted === undefined ? undefined : {
       readP2PRoutingConfig: vi.fn().mockResolvedValue(options.persisted),
     },
@@ -59,8 +56,23 @@ function createDeps(openId: string, options: {
 }
 
 describe("createMessageRouter 私聊准入", () => {
-  it("默认 all 应允许私聊", async () => {
+  it("默认应忽略不在白名单的私聊", async () => {
     const deps = createDeps("ou_1");
+    const router = createMessageRouter(deps as any);
+
+    await router.handleFeishuMessage({});
+
+    expect(deps.normalizeFeishuInboundMessage).not.toHaveBeenCalled();
+    expect(deps.promptService.handleUserPrompt).not.toHaveBeenCalled();
+  });
+
+  it("显式使用 all 模式时应允许私聊", async () => {
+    const deps = createDeps("ou_1", {
+      config: {
+        FEISHU_P2P_CHAT_POLICY: "all",
+        FEISHU_P2P_CHAT_ALLOWLIST: [],
+      },
+    });
     const router = createMessageRouter(deps as any);
 
     await router.handleFeishuMessage({});

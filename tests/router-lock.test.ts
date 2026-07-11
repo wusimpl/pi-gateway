@@ -92,6 +92,8 @@ describe("handleFeishuMessage 运行锁", () => {
 
     initRouter({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: [],
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,
     } as any);
@@ -290,6 +292,81 @@ describe("handleFeishuMessage 运行锁", () => {
     expect(mocks.promptSession).toHaveBeenCalledTimes(1);
     expect(mocks.sendTextMessage).not.toHaveBeenCalled();
     expect(mocks.sendRenderedMessage).not.toHaveBeenCalled();
+  });
+
+  it("群聊运行中收到另一成员消息时应等当前任务结束后再处理", async () => {
+    const piSession = {
+      id: "pi_session_group",
+      isStreaming: true,
+      steer: vi.fn().mockResolvedValue(undefined),
+      followUp: vi.fn().mockResolvedValue(undefined),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.getOrCreateActiveSessionForTarget.mockResolvedValue({
+      activeSessionId: "session_group_1",
+      piSession,
+    });
+
+    let releasePrompt: (() => void) | undefined;
+    mocks.promptSession
+      .mockImplementationOnce(
+        () => new Promise((resolve) => {
+          releasePrompt = () => resolve({ text: "done", error: undefined });
+        }),
+      )
+      .mockResolvedValueOnce({ text: "done second", error: undefined });
+
+    const groupTarget = {
+      kind: "group",
+      key: "oc_1",
+      receiveIdType: "chat_id",
+      receiveId: "oc_1",
+      chatId: "oc_1",
+    } as const;
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_a", userId: "u_a" },
+      conversationTarget: groupTarget,
+      messageId: "om_1",
+      messageType: "text",
+      createTime: "123",
+      rawContent: '{"text":"first"}',
+      text: "first",
+    });
+
+    const firstCall = handleFeishuMessage({});
+    await vi.waitFor(() => {
+      expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+    });
+
+    mocks.parseMessageEvent.mockReturnValue({
+      ...baseEvent,
+      sender: { senderId: { openId: "ou_b", userId: "u_b" } },
+      message: { ...baseEvent.message, messageId: "om_2" },
+    });
+    mocks.normalizeFeishuInboundMessage.mockReturnValue({
+      kind: "text",
+      identity: { openId: "ou_b", userId: "u_b" },
+      conversationTarget: groupTarget,
+      messageId: "om_2",
+      messageType: "text",
+      createTime: "124",
+      rawContent: '{"text":"second"}',
+      text: "second",
+    });
+    mocks.prepareFeishuPromptInput.mockResolvedValue({ text: "second", localFiles: [] });
+
+    const secondCall = handleFeishuMessage({});
+    await Promise.resolve();
+
+    expect(piSession.steer).not.toHaveBeenCalled();
+    expect(mocks.promptSession).toHaveBeenCalledTimes(1);
+
+    releasePrompt?.();
+    await firstCall;
+    await secondCall;
+
+    expect(mocks.promptSession).toHaveBeenCalledTimes(2);
   });
 
   it("运行中收到 /next 文本时应作为 follow-up 交给 Pi", async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { createRuntimeStateStore } from "../src/app/state.js";
 import { createCronRunner } from "../src/cron/runner.js";
+import { getWorkspaceContext } from "../src/pi/workspace-identity.js";
 
 const groupTarget = {
   kind: "group",
@@ -13,10 +15,16 @@ describe("cron runner", () => {
   it("会创建隔离 session 并把结果直接回给飞书用户", async () => {
     const abort = vi.fn().mockResolvedValue(undefined);
     const dispose = vi.fn();
-    const createPiSession = vi.fn().mockResolvedValue({
+    const setActiveToolsByName = vi.fn();
+    const sessionManager = {};
+    const session = {
       abort,
       dispose,
-    });
+      sessionManager,
+      getActiveToolNames: vi.fn(() => ["read", "bash", "firecrawl_search"]),
+      setActiveToolsByName,
+    };
+    const createPiSession = vi.fn().mockResolvedValue(session);
     const promptSession = vi.fn().mockResolvedValue({
       text: "done",
       error: undefined,
@@ -77,6 +85,11 @@ describe("cron runner", () => {
       "/tmp/workspace/u_1",
       "/tmp/pi-gateway-data/cron/sessions/ou_1/cron_1",
     );
+    expect(setActiveToolsByName).toHaveBeenCalledWith(["firecrawl_search"]);
+    expect(getWorkspaceContext("/tmp/workspace/u_1", sessionManager)).toEqual({
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: undefined,
+    });
     expect(promptSession).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -96,17 +109,23 @@ describe("cron runner", () => {
       undefined,
     );
     expect(runtimeState.acquireLock).toHaveBeenCalledWith("cron:ou_1", expect.stringMatching(/^cron:cron_1:/));
-    expect(runtimeState.releaseLock).toHaveBeenCalledWith("cron:ou_1");
+    expect(runtimeState.releaseLock).toHaveBeenCalledWith("cron:ou_1", expect.stringMatching(/^cron:cron_1:/));
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it("群聊任务会沿用当前群的工作目录和回复目标，并使用独立 cron 锁", async () => {
     const abort = vi.fn().mockResolvedValue(undefined);
     const dispose = vi.fn();
-    const createPiSession = vi.fn().mockResolvedValue({
+    const setActiveToolsByName = vi.fn();
+    const sessionManager = {};
+    const session = {
       abort,
       dispose,
-    });
+      sessionManager,
+      getActiveToolNames: vi.fn(() => ["read", "bash"]),
+      setActiveToolsByName,
+    };
+    const createPiSession = vi.fn().mockResolvedValue(session);
     const promptSession = vi.fn().mockResolvedValue({
       text: "done",
       error: undefined,
@@ -172,6 +191,11 @@ describe("cron runner", () => {
       "/tmp/workspace/conversations/oc_group_1",
       "/tmp/pi-gateway-data/cron/sessions/oc_group_1/cron_group_1",
     );
+    expect(setActiveToolsByName).toHaveBeenCalledWith([]);
+    expect(getWorkspaceContext("/tmp/workspace/conversations/oc_group_1", sessionManager)).toEqual({
+      identity: { openId: "ou_1", userId: "u_1" },
+      conversationTarget: groupTarget,
+    });
     expect(promptSession).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -191,7 +215,10 @@ describe("cron runner", () => {
       groupTarget,
     );
     expect(runtimeState.acquireLock).toHaveBeenCalledWith("cron:oc_group_1", expect.stringMatching(/^cron:cron_group_1:/));
-    expect(runtimeState.releaseLock).toHaveBeenCalledWith("cron:oc_group_1");
+    expect(runtimeState.releaseLock).toHaveBeenCalledWith(
+      "cron:oc_group_1",
+      expect.stringMatching(/^cron:cron_group_1:/),
+    );
   });
 
   it("拿不到 cron 锁时会直接返回 busy", async () => {
@@ -246,6 +273,83 @@ describe("cron runner", () => {
       status: "busy",
       error: "当前会话还有定时任务在跑",
     });
+  });
+
+  it("同 scope 的前一个 cron 运行超过 10 分钟时，新任务仍不能进入", async () => {
+    const runtimeState = createRuntimeStateStore();
+    let finishPrompt!: (result: { text: string; error: undefined }) => void;
+    const promptSession = vi.fn()
+      .mockImplementationOnce(
+        () => new Promise<{ text: string; error: undefined }>((resolve) => {
+          finishPrompt = resolve;
+        }),
+      )
+      .mockResolvedValue({ text: "unexpected second run", error: undefined });
+    const runner = createCronRunner({
+      config: {
+        DATA_DIR: "/tmp/pi-gateway-data",
+        TEXT_CHUNK_LIMIT: 2000,
+        CRON_JOB_TIMEOUT_MS: 30_000,
+        CRON_DEFAULT_TZ: "Asia/Shanghai",
+      },
+      runtime: {
+        createPiSession: vi.fn().mockResolvedValue({
+          abort: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+        }),
+      },
+      runtimeState,
+      workspaceService: {
+        ensureUserWorkspace: vi.fn().mockResolvedValue("/tmp/workspace/u_1"),
+      },
+      promptRunner: {
+        promptSession,
+      },
+      messenger: {
+        sendTextMessage: vi.fn(),
+      },
+    });
+    const baseJob = {
+      openId: "ou_1",
+      userId: "u_1",
+      scopeType: "dm" as const,
+      scopeKey: "ou_1",
+      enabled: true,
+      prompt: "总结今天的待办。",
+      schedule: {
+        kind: "cron" as const,
+        expr: "0 9 * * *",
+        tz: "Asia/Shanghai",
+      },
+      deleteAfterRun: false,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+      state: {},
+    };
+
+    const firstRun = runner.run({ ...baseJob, id: "cron_1", name: "早报" });
+    await vi.waitFor(() => expect(promptSession).toHaveBeenCalledTimes(1));
+
+    const tenMinutesLater = Date.now() + 10 * 60 * 1000 + 1;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(tenMinutesLater);
+    let secondResult;
+    try {
+      secondResult = await runner.run({ ...baseJob, id: "cron_2", name: "午报" });
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    finishPrompt({ text: "done", error: undefined });
+    const firstResult = await firstRun;
+    runtimeState.clearAllState();
+
+    expect(secondResult).toEqual({
+      jobId: "cron_2",
+      status: "busy",
+      error: "当前会话还有定时任务在跑",
+    });
+    expect(firstResult).toEqual({ jobId: "cron_1", status: "success" });
+    expect(promptSession).toHaveBeenCalledTimes(1);
   });
 
   it("stop 会按定时任务 synthetic messageId 前缀请求停止", async () => {

@@ -63,7 +63,10 @@ function normalizePart(part: unknown): unknown {
 
 export function createFeishuMessageExtension(
   messenger: Pick<FeishuMessenger, "sendTextMessage"> & Partial<Pick<FeishuMessenger, "sendTextMessageToTarget">>,
-  resolveIdentityByWorkspace: (cwd: string) => WorkspaceMessageContext | null = getWorkspaceContext,
+  resolveIdentityByWorkspace: (
+    cwd: string,
+    sessionManager?: object,
+  ) => WorkspaceMessageContext | null = getWorkspaceContext,
 ): ExtensionFactory {
   const sendMessageTool = defineTool({
     name: "feishu_message_send",
@@ -93,7 +96,9 @@ export function createFeishuMessageExtension(
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const workspaceContext = normalizeWorkspaceMessageContext(resolveIdentityByWorkspace(ctx.cwd));
+      const workspaceContext = normalizeWorkspaceMessageContext(
+        resolveIdentityByWorkspace(ctx.cwd, ctx.sessionManager),
+      );
       if (!workspaceContext?.identity.openId) {
         throw new Error("当前 workspace 没有关联到飞书会话，暂时不能发送飞书消息");
       }

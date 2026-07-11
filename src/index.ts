@@ -49,6 +49,7 @@ import { setQuotedMessageDataDir } from "./storage/quoted-messages.js";
 import { createConversationStateStore } from "./storage/conversations.js";
 import { createGroupSettingsStore } from "./storage/group-settings.js";
 import { createGroupUnmatchedMessageStore } from "./storage/group-unmatched-messages.js";
+import { createP2PSettingsStore } from "./storage/p2p-settings.js";
 import { createUserStateStore } from "./storage/users.js";
 import { createWorkspaceService } from "./pi/workspace.js";
 import { createRuntimeConfigStore } from "./app/runtime-config.js";
@@ -91,6 +92,7 @@ async function main() {
   const conversationStateStore = createConversationStateStore(config.DATA_DIR);
   const groupSettingsStore = createGroupSettingsStore(config.DATA_DIR);
   const groupUnmatchedMessageStore = createGroupUnmatchedMessageStore(config.DATA_DIR);
+  const p2pSettingsStore = createP2PSettingsStore(config.DATA_DIR);
   const workspaceService = createWorkspaceService(config.PI_WORKSPACE_ROOT);
   const skillStatsStore = createSkillStatsStore(config.DATA_DIR);
 
@@ -253,6 +255,7 @@ async function main() {
     skillStatsStore,
     groupSettingsStore,
     groupUnmatchedMessageStore,
+    p2pSettingsStore,
   });
   const commandService = createCommandServiceWithMessenger(feishuMessenger);
   const promptService = createPromptService({
@@ -281,33 +284,37 @@ async function main() {
     config,
     groupSettingsStore,
     groupUnmatchedMessageStore,
+    p2pSettingsStore,
     runtimeConfig,
     groupOwnerResolver: feishuChatInfoService,
   });
   logger.info("消息路由就绪");
 
-  const adminTargets = createAdminTargetService(config);
-  const adminCommandExecutor = createAdminCommandExecutor({
-    config,
-    messenger: feishuMessenger,
-    createCommandService: (messenger) => createCommandServiceWithMessenger(messenger),
-  });
-  const adminPages = createAdminPageDataService({
-    targets: adminTargets,
-    sessionService,
-    runtimeState,
-    listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
-    runtimeConfig,
-    cronService: cronService ?? undefined,
-    groupSettingsStore,
-    skillStatsStore,
-  });
-  const adminServer = createAdminServer(config, {
-    targets: adminTargets,
-    commands: adminCommandExecutor,
-    pages: adminPages,
-  });
-  await adminServer.start();
+  let adminServer: AdminServer | null = null;
+  if (config.ADMIN_ENABLED) {
+    const adminTargets = createAdminTargetService(config);
+    const adminCommandExecutor = createAdminCommandExecutor({
+      config,
+      messenger: feishuMessenger,
+      createCommandService: (messenger) => createCommandServiceWithMessenger(messenger),
+    });
+    const adminPages = createAdminPageDataService({
+      targets: adminTargets,
+      sessionService,
+      runtimeState,
+      listAvailableModels: () => listAvailableModels(piRuntime.getModelRegistry()),
+      runtimeConfig,
+      cronService: cronService ?? undefined,
+      groupSettingsStore,
+      skillStatsStore,
+    });
+    adminServer = createAdminServer(config, {
+      targets: adminTargets,
+      commands: adminCommandExecutor,
+      pages: adminPages,
+    });
+    await adminServer.start();
+  }
 
   registerShutdown(sessionService, runtimeState, cronService, adminServer);
 

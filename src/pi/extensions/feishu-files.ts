@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises";
 import { resolve, relative, isAbsolute } from "node:path";
 import { Type } from "@mariozechner/pi-ai";
 import {
@@ -37,14 +38,15 @@ function normalizeArgs(args: unknown): Record<string, unknown> {
   };
 }
 
-function resolveWorkspaceFilePath(cwd: string, rawPath: string): string {
+async function resolveWorkspaceFilePath(cwd: string, rawPath: string): Promise<string> {
   const trimmed = rawPath.trim();
   if (!trimmed) {
     throw new Error("path 不能为空");
   }
 
-  const resolvedPath = resolve(cwd, trimmed);
-  const relativePath = relative(cwd, resolvedPath);
+  const workspacePath = resolve(cwd);
+  const resolvedPath = resolve(workspacePath, trimmed);
+  const relativePath = relative(workspacePath, resolvedPath);
   if (
     relativePath === ".." ||
     relativePath.startsWith("../") ||
@@ -54,12 +56,29 @@ function resolveWorkspaceFilePath(cwd: string, rawPath: string): string {
     throw new Error("只能发送当前 workspace 里的文件，不能越出工作目录");
   }
 
-  return resolvedPath;
+  const [realWorkspacePath, realFilePath] = await Promise.all([
+    realpath(workspacePath),
+    realpath(resolvedPath),
+  ]);
+  const realRelativePath = relative(realWorkspacePath, realFilePath);
+  if (
+    realRelativePath === ".." ||
+    realRelativePath.startsWith("../") ||
+    realRelativePath.startsWith("..\\") ||
+    isAbsolute(realRelativePath)
+  ) {
+    throw new Error("只能发送当前 workspace 里的真实文件，符号链接不能指向工作目录外");
+  }
+
+  return realFilePath;
 }
 
 export function createFeishuFilesExtension(
   messenger: Pick<FeishuMessenger, "sendLocalFileMessage" | "sendLocalImageMessage">,
-  resolveIdentityByWorkspace: (cwd: string) => WorkspaceFileContext | null = getWorkspaceContext,
+  resolveIdentityByWorkspace: (
+    cwd: string,
+    sessionManager?: object,
+  ) => WorkspaceFileContext | null = getWorkspaceContext,
 ): ExtensionFactory {
   const sendImageTool = defineTool({
     name: "feishu_image_send",
@@ -77,10 +96,10 @@ export function createFeishuFilesExtension(
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const workspaceContext = resolveWorkspaceContext(ctx.cwd, resolveIdentityByWorkspace);
+      const workspaceContext = resolveWorkspaceContext(ctx.cwd, ctx.sessionManager, resolveIdentityByWorkspace);
       const identity = workspaceContext.identity;
       const target = resolveFileRecipient(identity, workspaceContext);
-      const filePath = resolveWorkspaceFilePath(ctx.cwd, params.path);
+      const filePath = await resolveWorkspaceFilePath(ctx.cwd, params.path);
       const fileName = typeof params.file_name === "string" ? params.file_name : undefined;
       const result = await messenger.sendLocalImageMessage(target, {
         path: filePath,
@@ -117,10 +136,10 @@ export function createFeishuFilesExtension(
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const workspaceContext = resolveWorkspaceContext(ctx.cwd, resolveIdentityByWorkspace);
+      const workspaceContext = resolveWorkspaceContext(ctx.cwd, ctx.sessionManager, resolveIdentityByWorkspace);
       const identity = workspaceContext.identity;
       const target = resolveFileRecipient(identity, workspaceContext);
-      const filePath = resolveWorkspaceFilePath(ctx.cwd, params.path);
+      const filePath = await resolveWorkspaceFilePath(ctx.cwd, params.path);
       const fileName = typeof params.file_name === "string" ? params.file_name : undefined;
       if (isFeishuImageFileName(filePath) || (fileName && isFeishuImageFileName(fileName))) {
         const result = await messenger.sendLocalImageMessage(target, {
@@ -166,9 +185,10 @@ export function createFeishuFilesExtension(
 
 function resolveWorkspaceContext(
   cwd: string,
-  resolveIdentityByWorkspace: (cwd: string) => WorkspaceFileContext | null,
+  sessionManager: object,
+  resolveIdentityByWorkspace: (cwd: string, sessionManager?: object) => WorkspaceFileContext | null,
 ): WorkspaceContext {
-  const workspaceContext = normalizeWorkspaceFileContext(resolveIdentityByWorkspace(cwd));
+  const workspaceContext = normalizeWorkspaceFileContext(resolveIdentityByWorkspace(cwd, sessionManager));
   if (!workspaceContext?.identity.openId) {
     throw new Error("当前 workspace 没有关联到飞书用户，暂时不能发送文件");
   }

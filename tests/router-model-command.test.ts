@@ -71,7 +71,7 @@ vi.mock("../src/pi/models.js", () => ({
   formatModelLabel: (provider: string, id: string) => `${provider}/${id}`,
 }));
 
-import { acquireLock, clearAllState, releaseLock } from "../src/app/state.js";
+import { acquireLock, clearAllState } from "../src/app/state.js";
 import { handleFeishuMessage, initRouter } from "../src/app/router.js";
 
 const baseEvent = {
@@ -82,7 +82,6 @@ const baseEvent = {
 describe("handleFeishuMessage 模型命令", () => {
   beforeEach(() => {
     clearAllState();
-    releaseLock("ou_1");
 
     mocks.sendTextMessage.mockReset();
     mocks.sendRenderedMessage.mockReset();
@@ -100,6 +99,8 @@ describe("handleFeishuMessage 模型命令", () => {
 
     initRouter({
       FEISHU_PROCESSING_REACTION_TYPE: "SMILE",
+      FEISHU_P2P_CHAT_POLICY: "all",
+      FEISHU_P2P_CHAT_ALLOWLIST: [],
       STREAMING_ENABLED: true,
       TEXT_CHUNK_LIMIT: 2000,
     } as any);

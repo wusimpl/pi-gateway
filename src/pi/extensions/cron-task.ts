@@ -46,7 +46,10 @@ function normalizeArgs(args: unknown): Record<string, unknown> {
 
 export function createCronTaskExtension(
   getCronService: () => CronService | null,
-  resolveIdentityByWorkspace: (cwd: string) => WorkspaceCronContext | null = getWorkspaceContext,
+  resolveIdentityByWorkspace: (
+    cwd: string,
+    sessionManager?: object,
+  ) => WorkspaceCronContext | null = getWorkspaceContext,
   getDeferredCronRunService: () => DeferredCronRunService | null = () => null,
 ): ExtensionFactory {
   const cronTaskTool = defineTool({
@@ -86,7 +89,9 @@ export function createCronTaskExtension(
     }),
     prepareArguments: normalizeArgs as any,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const workspaceContext = normalizeWorkspaceCronContext(resolveIdentityByWorkspace(ctx.cwd));
+      const workspaceContext = normalizeWorkspaceCronContext(
+        resolveIdentityByWorkspace(ctx.cwd, ctx.sessionManager),
+      );
       if (!workspaceContext?.identity.openId) {
         throw new Error("当前 workspace 没有关联到飞书用户，暂时不能管理定时任务");
       }

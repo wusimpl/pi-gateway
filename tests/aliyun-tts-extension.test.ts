@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -113,7 +113,7 @@ describe("aliyun tts extension", () => {
     });
     expect(await readFile(join(cwd, "tts/hello.mp3"))).toEqual(audioBytes);
     expect(result.details).toMatchObject({
-      path: join(cwd, "tts/hello.mp3"),
+      path: await realpath(join(cwd, "tts/hello.mp3")),
       request_id: "req_1",
       audio_id: "audio_1",
       size_bytes: audioBytes.length,
@@ -262,5 +262,48 @@ describe("aliyun tts extension", () => {
         createToolContext("/tmp/workspace"),
       ),
     ).rejects.toThrow("路径必须在当前 workspace 里");
+  });
+
+  it("输出目录不能通过符号链接写到 workspace 外", async () => {
+    const fetchMock = vi.fn() as any;
+    const tools = collectTools(fetchMock);
+    const synthesizeTool = tools.find((tool) => tool.name === "tts_synthesize");
+    const cwd = await createTempWorkspace();
+    const outsideDir = await createTempWorkspace();
+    await symlink(outsideDir, join(cwd, "tts"));
+
+    await expect(
+      synthesizeTool.execute(
+        "call-1",
+        { text: "你好", output_name: "outside.mp3" },
+        undefined,
+        undefined,
+        createToolContext(cwd),
+      ),
+    ).rejects.toThrow("输出目录不能包含符号链接");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("输出文件本身不能是符号链接", async () => {
+    const fetchMock = vi.fn() as any;
+    const tools = collectTools(fetchMock);
+    const synthesizeTool = tools.find((tool) => tool.name === "tts_synthesize");
+    const cwd = await createTempWorkspace();
+    const outsideDir = await createTempWorkspace();
+    const outsideFile = join(outsideDir, "outside.mp3");
+    await writeFile(outsideFile, "outside");
+    await mkdir(join(cwd, "tts"));
+    await symlink(outsideFile, join(cwd, "tts/outside.mp3"));
+
+    await expect(
+      synthesizeTool.execute(
+        "call-1",
+        { text: "你好", output_name: "outside.mp3" },
+        undefined,
+        undefined,
+        createToolContext(cwd),
+      ),
+    ).rejects.toThrow("输出文件不能是符号链接");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

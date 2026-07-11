@@ -63,7 +63,7 @@ export function createRuntimeConfigStore(
   let audioTranscribeProvider: AudioTranscribeProvider =
     config.FEISHU_AUDIO_TRANSCRIBE_PROVIDER ?? "whisper";
   let streamingEnabled = config.STREAMING_ENABLED ?? false;
-  let p2pChatPolicy: P2PChatPolicy = config.FEISHU_P2P_CHAT_POLICY ?? "all";
+  let p2pChatPolicy: P2PChatPolicy = config.FEISHU_P2P_CHAT_POLICY ?? "whitelist";
   let p2pChatAllowlist = normalizeStringList(config.FEISHU_P2P_CHAT_ALLOWLIST ?? []);
   let groupChatPolicy: GroupChatPolicy = config.FEISHU_GROUP_CHAT_POLICY ?? "disabled";
   let groupChatAllowlist = normalizeStringList(config.FEISHU_GROUP_CHAT_ALLOWLIST ?? []);

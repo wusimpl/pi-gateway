@@ -48,7 +48,7 @@ const envSchema = z.object({
   ALIYUN_TTS_VOICE: z.string().default("longlaoyi_v3"),
   ALIYUN_TTS_FORMAT: z.enum(["mp3", "wav", "pcm", "opus"]).default("mp3"),
   ALIYUN_TTS_SAMPLE_RATE: z.coerce.number().int().positive().default(24000),
-  FEISHU_P2P_CHAT_POLICY: z.enum(["all", "whitelist"]).default("all"),
+  FEISHU_P2P_CHAT_POLICY: z.enum(["all", "whitelist"]).default("whitelist"),
   FEISHU_P2P_CHAT_ALLOWLIST: z.string().default("").transform(parseCommaSeparatedList),
   FEISHU_GROUP_CHAT_POLICY: z.enum(["disabled", "allowlist", "open"]).default("disabled"),
   FEISHU_GROUP_CHAT_ALLOWLIST: z.string().default("").transform(parseCommaSeparatedList),
@@ -77,10 +77,22 @@ const envSchema = z.object({
   TEXT_CHUNK_LIMIT: z.coerce.number().int().positive().default(2000),
   FEISHU_PROCESSING_REACTION_TYPE: z.string().optional(),
   FEISHU_STEERING_REACTION_TYPE: z.string().default("OnIt"),
+  ADMIN_ENABLED: z
+    .string()
+    .transform((v) => v === "true")
+    .default("false"),
   ADMIN_HOST: z.string().default("127.0.0.1"),
   ADMIN_PORT: z.coerce.number().int().positive().default(8787),
-  ADMIN_PASSWORD: z.string().default("admin"),
+  ADMIN_PASSWORD: z.string().default(""),
   ADMIN_SESSION_TTL_MS: z.coerce.number().int().positive().default(24 * 60 * 60 * 1000),
+}).superRefine((config, ctx) => {
+  if (config.ADMIN_ENABLED && config.ADMIN_PASSWORD.length < 12) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ADMIN_PASSWORD"],
+      message: "ADMIN_ENABLED=true 时，ADMIN_PASSWORD 至少需要 12 位",
+    });
+  }
 });
 
 type ParsedConfig = z.infer<typeof envSchema>;

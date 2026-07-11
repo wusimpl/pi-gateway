@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => {
     stop: vi.fn().mockResolvedValue(undefined),
     getUrl: vi.fn(() => "http://127.0.0.1:8787/admin/"),
   };
+  const p2pSettingsStore = {
+    readP2PRoutingConfig: vi.fn().mockResolvedValue(null),
+    writeP2PRoutingConfig: vi.fn().mockResolvedValue(undefined),
+  };
 
   return {
     client,
@@ -76,6 +80,7 @@ const mocks = vi.hoisted(() => {
     createGrokSearchExtension: vi.fn(() => "grok-search-extension-factory"),
     grokSearchEnabled: true,
     grokSearchApiKey: "grok-key",
+    adminEnabled: false,
     createSkillStatsStore: vi.fn(() => "skill-stats-store"),
     createSkillStatsExtension: vi.fn(() => "skill-stats-extension-factory"),
     createSessionService: vi.fn(() => ({
@@ -108,6 +113,8 @@ const mocks = vi.hoisted(() => {
       releaseLock: vi.fn(),
     })),
     createGroupSettingsStore: vi.fn(() => ({})),
+    p2pSettingsStore,
+    createP2PSettingsStore: vi.fn(() => p2pSettingsStore),
     createUserStateStore: vi.fn(() => ({})),
     createWorkspaceService: vi.fn(() => ({
       getUserWorkspaceDir: vi.fn(),
@@ -152,6 +159,11 @@ vi.mock("../src/config.js", () => ({
     CRON_ENABLED: true,
     CRON_DEFAULT_TZ: "Asia/Shanghai",
     CRON_JOB_TIMEOUT_MS: 30000,
+    ADMIN_ENABLED: mocks.adminEnabled,
+    ADMIN_HOST: "127.0.0.1",
+    ADMIN_PORT: 8787,
+    ADMIN_PASSWORD: "test-password-123",
+    ADMIN_SESSION_TTL_MS: 86400000,
     LOG_LEVEL: "info",
   }),
 }));
@@ -263,6 +275,10 @@ vi.mock("../src/storage/group-settings.js", () => ({
   createGroupSettingsStore: mocks.createGroupSettingsStore,
 }));
 
+vi.mock("../src/storage/p2p-settings.js", () => ({
+  createP2PSettingsStore: mocks.createP2PSettingsStore,
+}));
+
 vi.mock("../src/storage/quoted-messages.js", () => ({
   setQuotedMessageDataDir: mocks.setQuotedMessageDataDir,
 }));
@@ -296,6 +312,7 @@ describe("index wiring", () => {
     mocks.createGrokSearchExtension.mockClear();
     mocks.grokSearchEnabled = true;
     mocks.grokSearchApiKey = "grok-key";
+    mocks.adminEnabled = false;
     mocks.createSkillStatsStore.mockClear();
     mocks.createSkillStatsExtension.mockClear();
     mocks.cronService.start.mockClear();
@@ -316,6 +333,9 @@ describe("index wiring", () => {
     mocks.adminServer.getUrl.mockClear();
     mocks.createRuntimeStateStore.mockClear();
     mocks.createGroupSettingsStore.mockClear();
+    mocks.createP2PSettingsStore.mockClear();
+    mocks.p2pSettingsStore.readP2PRoutingConfig.mockClear();
+    mocks.p2pSettingsStore.writeP2PRoutingConfig.mockClear();
     mocks.createUserStateStore.mockClear();
     mocks.setQuotedMessageDataDir.mockClear();
     mocks.createWorkspaceService.mockClear();
@@ -363,6 +383,13 @@ describe("index wiring", () => {
       model: "grok-search-model",
     });
     expect(mocks.createGroupSettingsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
+    expect(mocks.createP2PSettingsStore).toHaveBeenCalledWith("/tmp/pi-gateway-data");
+    expect(mocks.createCommandService.mock.calls[0]?.[0]?.p2pSettingsStore).toBe(
+      mocks.p2pSettingsStore,
+    );
+    expect(mocks.createMessageRouter.mock.calls[0]?.[0]?.p2pSettingsStore).toBe(
+      mocks.p2pSettingsStore,
+    );
     expect(mocks.createMessageRouter.mock.calls[0]?.[0]?.config.FEISHU_BOT_OPEN_ID).toBe("ou_bot_1");
     expect(mocks.createSkillStatsExtension).toHaveBeenCalledWith("skill-stats-store");
     expect(mocks.createCommandService.mock.calls[0]?.[0]?.skillStatsStore).toBe("skill-stats-store");
@@ -381,6 +408,29 @@ describe("index wiring", () => {
       "配置加载成功",
       expect.objectContaining({ aliyunTtsEnabled: true, grokSearchEnabled: true }),
     );
+  });
+
+  it("后台关闭时不应启动管理服务", async () => {
+    await import("../src/index.ts");
+
+    await vi.waitFor(() => {
+      expect(mocks.startMessageConnection).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.createAdminServer).not.toHaveBeenCalled();
+    expect(mocks.adminServer.start).not.toHaveBeenCalled();
+  });
+
+  it("后台启用时应启动管理服务", async () => {
+    mocks.adminEnabled = true;
+
+    await import("../src/index.ts");
+
+    await vi.waitFor(() => {
+      expect(mocks.adminServer.start).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.createAdminServer).toHaveBeenCalledTimes(1);
   });
 
   it("ALIYUN_TTS_ENABLED=false 时不应注册阿里云 TTS 扩展", async () => {
