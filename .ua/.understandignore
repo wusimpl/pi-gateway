@@ -1,0 +1,50 @@
+# .understandignore — patterns for files/dirs to exclude from analysis
+# Syntax: same as .gitignore (globs, # comments, ! negation, trailing / for dirs)
+#
+# Built-in defaults (always excluded unless negated):
+#   node_modules/, .git/, dist/, build/, obj/, *.lock, *.min.js, etc.
+#
+
+# --- From .gitignore ---
+.tmp*
+data/
+voice/
+.env
+tmp/
+nul
+.venv*/
+
+# --- Runtime / generated / tooling noise ---
+feishu-doc/
+.agents/
+.autoloop/
+.ua/
+
+# --- Tests ---
+tests/
+*.test.*
+*.spec.*
+*.snap
+
+# --- One-off root scripts (飞书文档插图/检查用临时脚本，非主业务) ---
+cleanup_failed_fig10.mjs
+convert_figure_caption.mjs
+convert_image_snippet.mjs
+insert_figures_in_place_fixed.mjs
+insert_figures_in_place.mjs
+insert_remaining_figures.mjs
+inspect_block_children.mjs
+inspect_bottom.mjs
+inspect_doc_blocks.mjs
+inspect_range.mjs
+replace_fig10_image.mjs
+test_convert_actual_image.mjs
+test_convert_full_caption.mjs
+test_insert_to_tmp_doc.mjs
+tmp_inspect_doc_blocks.ts
+verify_figures.mjs
+package-lock.json
+
+# --- Optional (kept for architecture context) ---
+# docs/          # 产品/管理文档，有助于理解能力边界
+# scripts/       # 语音转写等辅助脚本
