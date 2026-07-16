@@ -96,7 +96,7 @@ Pi Gateway
    ├─ 飞书事件解析与路由
    ├─ 私聊/群聊访问控制
    ├─ 消息归一化：text/post/image/audio/file
-   ├─ 媒体下载、OCR、语音转写
+   ├─ 媒体下载、语音转写
    ├─ 会话状态与 workspace 管理
    ├─ Pi Code Agent runtime
    ├─ 飞书文档/文件/消息/定时任务 extension tools
@@ -125,7 +125,6 @@ Pi 模型、工具、skills、文件系统
 - npm
 - 一个飞书自建应用
 - 已配置可用模型的 Pi Code Agent 环境
-- 可选：Ollama 图像 OCR 模型
 - 可选：语音转写脚本、SenseVoice 或豆包 ASR
 - 可选：Grok 搜索 API
 - 可选：阿里云百炼 DashScope API Key
@@ -264,8 +263,6 @@ workspace 规则：
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `FEISHU_MEDIA_OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | 模型不支持图片输入时使用的 Ollama 地址 |
-| `FEISHU_MEDIA_OCR_MODEL` | `glm-ocr:latest` | OCR/视觉 fallback 模型 |
 | `FEISHU_AUDIO_TRANSCRIBE_PROVIDER` | `whisper` | 语音转写：`whisper`、`sensevoice`、`doubao` |
 | `FEISHU_AUDIO_TRANSCRIBE_SCRIPT` | `~/.openclaw/skills/audio-transcribe/transcribe.sh` | whisper 外部转写脚本 |
 | `FEISHU_AUDIO_TRANSCRIBE_LANGUAGE` | 空 | 语音识别语言；常用 `zh` |
@@ -277,7 +274,7 @@ workspace 规则：
 图片处理逻辑：
 
 - 当前模型支持图片输入时，图片以 base64 image content 直接传给 Pi。
-- 当前模型不支持图片输入时，走 Ollama OCR fallback。
+- 当前模型不支持图片输入时，直接提示用户切换到支持视觉能力的模型。
 
 语音处理逻辑：
 
@@ -736,14 +733,9 @@ Pi Gateway 启动时会调用 Pi 模型注册表自检。请先配置 Pi Code Ag
 - keyword 模式下是否设置了关键词
 - `FEISHU_BOT_OPEN_ID` 是否能自动获取或手动配置正确
 
-### 图片识别失败
+### 图片无法处理
 
-如果当前模型不支持图片输入，会走 Ollama OCR fallback。请检查：
-
-- `FEISHU_MEDIA_OLLAMA_BASE_URL`
-- `FEISHU_MEDIA_OCR_MODEL`
-- Ollama 服务是否可访问
-- OCR 模型是否已拉取
+当前模型不支持图片输入时，网关会提示切换到支持视觉能力的模型后重试。
 
 ### 语音转写失败
 

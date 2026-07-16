@@ -906,6 +906,44 @@ describe("createPromptService", () => {
     expect(releaseLock).toHaveBeenCalledWith("ou_1", "om_stop_1");
   });
 
+  it("模型不支持图片输入时应直接返回具体错误", async () => {
+    preparePromptInput.mockRejectedValue(
+      new Error("当前模型不支持图片输入，无法处理图片。请切换到支持图片/视觉能力的模型后重试。"),
+    );
+
+    const promptService = createPromptService({
+      config: basePromptConfig(),
+      runtimeState: { acquireLock, releaseLock, setAbortHandler, isStopRequested, isDraining },
+      sessionService: { getOrCreateActiveSession, touchSession },
+      workspaceService: { getUserWorkspaceDir: () => "/tmp/workspace" },
+      promptRunner: { promptSession },
+      messenger: { sendTextMessage, addProcessingReaction },
+      quotedMessageStore: { readQuotedMessage: readCachedQuotedMessage },
+      downloadResource,
+      readQuotedMessage,
+      preparePromptInput,
+    });
+
+    await promptService.handleUserPrompt(
+      { openId: "ou_1", userId: "u_1" },
+      {
+        kind: "image",
+        identity: { openId: "ou_1", userId: "u_1" },
+        messageId: "om_image_unsupported",
+        messageType: "image",
+        createTime: "123",
+        rawContent: '{"image_key":"img_123"}',
+        imageKey: "img_123",
+      },
+    );
+
+    expect(promptSession).not.toHaveBeenCalled();
+    expect(sendTextMessage).toHaveBeenCalledWith(
+      "ou_1",
+      "❌ 错误: 当前模型不支持图片输入，无法处理图片。请切换到支持图片/视觉能力的模型后重试。",
+    );
+  });
+
   it("豆包不支持的音频格式应直接返回具体错误", async () => {
     preparePromptInput.mockRejectedValue(
       new Error("豆包语音暂不支持当前音频格式（audio/mp4 / .m4a），请先改用 WAV、MP3 或 OGG/OPUS。"),

@@ -21,6 +21,9 @@ const mocks = vi.hoisted(() => {
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.json",
         bindExtensions,
+        getAllTools: vi.fn(() => []),
+        getActiveToolNames: vi.fn(() => []),
+        setActiveToolsByName: vi.fn(),
       },
     })),
     logger: {
@@ -112,12 +115,47 @@ describe("pi runtime", () => {
     });
   });
 
+  it("创建 session 时会从工具目录和激活集永久移除网关禁用工具", async () => {
+    const activeTools = ["read", "grok_search", "subagent", "exa_search"];
+    const session = {
+      sessionId: "session-1",
+      sessionFile: "/tmp/session-1.json",
+      bindExtensions: mocks.bindExtensions,
+      getAllTools: vi.fn(() => [
+        { name: "read" },
+        { name: "grok_search" },
+        { name: "subagent" },
+        { name: "subagent_status" },
+        { name: "init_experiment" },
+        { name: "run_experiment" },
+        { name: "log_experiment" },
+        { name: "exa_search" },
+      ]),
+      getActiveToolNames: vi.fn(() => [...activeTools]),
+      setActiveToolsByName: vi.fn((tools: string[]) => {
+        activeTools.splice(0, activeTools.length, ...tools);
+      }),
+    };
+    mocks.createAgentSession.mockResolvedValueOnce({ session });
+    const runtime = createPiRuntime();
+
+    const created = await runtime.createPiSession("/tmp/workspace/ou_1", "/tmp/sessions/ou_1");
+
+    expect(created.getAllTools().map((tool: { name: string }) => tool.name)).toEqual(["read", "exa_search"]);
+    expect(created.getActiveToolNames()).toEqual(["read", "exa_search"]);
+    created.setActiveToolsByName(["grok_search", "log_experiment", "exa_search"]);
+    expect(activeTools).toEqual(["exa_search"]);
+  });
+
   it("创建 session 时会把 unexpected EOF 纳入自动重试判断", async () => {
     const defaultRetryClassifier = vi.fn(() => false);
     const session = {
       sessionId: "session-1",
       sessionFile: "/tmp/session-1.json",
       bindExtensions: mocks.bindExtensions,
+      getAllTools: vi.fn(() => []),
+      getActiveToolNames: vi.fn(() => []),
+      setActiveToolsByName: vi.fn(),
       _isRetryableError: defaultRetryClassifier,
     };
     mocks.createAgentSession.mockResolvedValueOnce({ session });

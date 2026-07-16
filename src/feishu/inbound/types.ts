@@ -66,8 +66,6 @@ export interface DownloadedFeishuResource {
 
 export interface FeishuMediaProcessingOptions {
   workspaceDir: string;
-  ollamaBaseUrl: string;
-  ocrModel: string;
   audioTranscribeProvider: "whisper" | "sensevoice" | "doubao";
   audioTranscribeScript: string;
   audioLanguage: string;

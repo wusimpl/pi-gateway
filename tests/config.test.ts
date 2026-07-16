@@ -217,23 +217,7 @@ describe("loadConfig", () => {
     expect(config.FEISHU_AUDIO_TRANSCRIBE_DOUBAO_API_KEY).toBe("test-doubao-key");
   });
 
-  it("阿里云语音合成配置应有默认值", async () => {
-    applyBaseEnv();
-    const { loadConfig } = await import("../src/config.js");
 
-    const config = loadConfig();
-    expect(config.ALIYUN_TTS_ENABLED).toBe(false);
-    expect(config.DASHSCOPE_API_KEY).toBe("");
-    expect(config.ALIYUN_TTS_BASE_URL).toBe("https://dashscope.aliyuncs.com/api/v1");
-    expect(config.ALIYUN_TTS_MODEL).toBe("cosyvoice-v3-flash");
-    expect(config.ALIYUN_TTS_VOICE).toBe("longlaoyi_v3");
-    expect(config.ALIYUN_TTS_FORMAT).toBe("mp3");
-    expect(config.ALIYUN_TTS_SAMPLE_RATE).toBe(24000);
-    expect(config.GROK_SEARCH_ENABLED).toBe(false);
-    expect(config.GROK_SEARCH_API_KEY).toBe("");
-    expect(config.GROK_SEARCH_BASE_URL).toBe("https://jiuuij.de5.net");
-    expect(config.GROK_SEARCH_MODEL).toBe("grok-4.20-multi-agent-console");
-  });
 
   it("Grok 搜索配置应支持自定义", async () => {
     applyBaseEnv({

@@ -37,8 +37,6 @@ const STEER_REPLY_SEPARATOR = "\n\n ---\n**继续处理你刚发来的消息**\n
 interface PromptServiceDeps {
   config: Pick<
     Config,
-    | "FEISHU_MEDIA_OLLAMA_BASE_URL"
-    | "FEISHU_MEDIA_OCR_MODEL"
     | "FEISHU_AUDIO_TRANSCRIBE_PROVIDER"
     | "FEISHU_AUDIO_TRANSCRIBE_SCRIPT"
     | "FEISHU_AUDIO_TRANSCRIBE_LANGUAGE"
@@ -108,8 +106,6 @@ export function createPromptService(deps: PromptServiceDeps): PromptService {
 
     return {
       workspaceDir: getWorkspaceDir(identity, conversationTarget),
-      ollamaBaseUrl: deps.config.FEISHU_MEDIA_OLLAMA_BASE_URL,
-      ocrModel: deps.config.FEISHU_MEDIA_OCR_MODEL,
       audioTranscribeProvider,
       audioTranscribeScript: deps.config.FEISHU_AUDIO_TRANSCRIBE_SCRIPT,
       audioLanguage: deps.config.FEISHU_AUDIO_TRANSCRIBE_LANGUAGE,
@@ -526,13 +522,8 @@ function formatPromptPreparationError(error: unknown): string | undefined {
     return `SenseVoice 转写失败：${reason || "请稍后重试。"}`;
   }
 
-  const ocrFailure = lines.find((line) => line.startsWith("OCR 请求失败:"));
-  if (ocrFailure) {
-    return `图片识别失败：${ocrFailure.slice("OCR 请求失败:".length).trim()}`;
-  }
-
-  if (message.includes("OCR 没返回可用结果")) {
-    return "图片识别失败：OCR 没返回可用结果。";
+  if (message.includes("当前模型不支持图片输入")) {
+    return lines.find((line) => line.includes("当前模型不支持图片输入"));
   }
 
   if (message.includes("SenseVoice 语音转写没有产出文本")) {

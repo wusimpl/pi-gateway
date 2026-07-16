@@ -4,8 +4,6 @@ import { prepareFeishuPromptInput, supportsImageInput } from "../src/feishu/inbo
 
 const baseOptions = {
   workspaceDir: "/tmp/pi-workspace/user",
-  ollamaBaseUrl: "http://127.0.0.1:11434",
-  ocrModel: "glm-ocr:latest",
   audioTranscribeProvider: "whisper" as const,
   audioTranscribeScript: "/tmp/transcribe.sh",
   audioLanguage: "zh",
@@ -378,8 +376,8 @@ describe("prepareFeishuPromptInput", () => {
     });
   });
 
-  it("富文本图片在模型不支持图片时应下载成路径并追加 OCR 结果", async () => {
-    const result = await prepareFeishuPromptInput(
+  it("富文本图片在模型不支持图片时应直接返回明确错误", async () => {
+    await expect(prepareFeishuPromptInput(
       {
         kind: "text",
         identity: { openId: "ou_1" },
@@ -392,25 +390,7 @@ describe("prepareFeishuPromptInput", () => {
       },
       { model: { input: ["text"] } } as any,
       baseOptions,
-      {
-        downloadResource: async () => ({
-          resourceType: "image",
-          downloadType: "image",
-          fileKey: "img_post_1",
-          filePath: "/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png",
-          fileName: "image-img_post_1.png",
-          mimeType: "image/png",
-        }),
-        runImageOcr: async () => "截图里有一个登录错误",
-      },
-    );
-
-    expect(result.images).toBeUndefined();
-    expect(result.localFiles).toEqual(["/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png"]);
-    expect(result.text).toContain("帮我看这张图【图片 1】：/tmp/pi-workspace/user/.feishu-inbox/om_post_image_1/image-img_post_1.png");
-    expect(result.text).toContain("当前模型不支持直接看图");
-    expect(result.text).toContain("截图里有一个登录错误");
-    expect(result.preludeText).toContain("**OCR 识别结果**");
+    )).rejects.toThrow("当前模型不支持图片输入，无法处理图片。请切换到支持图片/视觉能力的模型后重试。");
   });
 
   it("引用回复时应把被引用消息一起拼进文本 prompt", async () => {
@@ -441,8 +421,8 @@ describe("prepareFeishuPromptInput", () => {
     expect(result.text).toContain("go on");
   });
 
-  it("模型不支持图片时应走 OCR 文本兜底", async () => {
-    const result = await prepareFeishuPromptInput(
+  it("模型不支持图片时应直接返回明确错误", async () => {
+    await expect(prepareFeishuPromptInput(
       {
         kind: "image",
         identity: { openId: "ou_1" },
@@ -454,23 +434,7 @@ describe("prepareFeishuPromptInput", () => {
       },
       { model: { input: ["text"] } } as any,
       baseOptions,
-      {
-        downloadResource: async () => ({
-          resourceType: "image",
-          downloadType: "image",
-          fileKey: "img_123",
-          filePath: "/tmp/pi-workspace/user/.feishu-inbox/om_1/image.png",
-          fileName: "image.png",
-          mimeType: "image/png",
-        }),
-        runImageOcr: async () => "图片里写着：你好世界",
-      },
-    );
-
-    expect(result.images).toBeUndefined();
-    expect(result.text).toContain("当前模型不支持直接看图");
-    expect(result.text).toContain("图片里写着：你好世界");
-    expect(result.preludeText).toBe(" ---\n**OCR 识别结果**\n图片里写着：你好世界");
+    )).rejects.toThrow("当前模型不支持图片输入，无法处理图片。请切换到支持图片/视觉能力的模型后重试。");
   });
 
   it("语音消息应先转成文字", async () => {

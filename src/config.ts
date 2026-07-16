@@ -7,8 +7,6 @@ const envSchema = z.object({
   FEISHU_APP_ID: z.string().min(1, "FEISHU_APP_ID is required"),
   FEISHU_APP_SECRET: z.string().min(1, "FEISHU_APP_SECRET is required"),
   FEISHU_DOMAIN: z.enum(["feishu", "larksuite"]).default("feishu"),
-  FEISHU_MEDIA_OLLAMA_BASE_URL: z.string().url().default("http://127.0.0.1:11434"),
-  FEISHU_MEDIA_OCR_MODEL: z.string().default("glm-ocr:latest"),
   FEISHU_AUDIO_TRANSCRIBE_PROVIDER: z.enum(["whisper", "sensevoice", "doubao"]).default("whisper"),
   FEISHU_AUDIO_TRANSCRIBE_SCRIPT: z.string().default("~/.openclaw/skills/audio-transcribe/transcribe.sh"),
   FEISHU_AUDIO_TRANSCRIBE_LANGUAGE: z.string().default(""),

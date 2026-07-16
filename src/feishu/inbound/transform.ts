@@ -9,7 +9,6 @@ import type { FeishuInboundMessage, FeishuMediaProcessingOptions, PreparedPrompt
 import { downloadFeishuResource } from "./resource.js";
 
 const execFileAsync = promisify(execFile);
-const OCR_PROMPT = "请提取这张图片里的全部文字，按阅读顺序输出；如果没有可读文字，就简短描述主要内容。";
 const EXTERNAL_PROCESS_TIMEOUT_MS = 10 * 60 * 1000;
 const SENSEVOICE_TRANSCRIBE_SCRIPT = fileURLToPath(
   new URL("../../../scripts/sensevoice_transcribe.py", import.meta.url),
@@ -53,7 +52,6 @@ interface DoubaoRecognitionResponse {
 interface TransformDeps {
   downloadResource?: typeof downloadFeishuResource;
   readBinaryFile?: typeof readFile;
-  runImageOcr?: typeof runImageOcr;
   transcribeAudio?: typeof transcribeAudioFile;
 }
 
@@ -65,20 +63,17 @@ export async function prepareFeishuPromptInput(
 ): Promise<PreparedPromptInput> {
   const downloadResource = deps.downloadResource ?? downloadFeishuResource;
   const readBinaryFile = deps.readBinaryFile ?? readFile;
-  const runOcr = deps.runImageOcr ?? runImageOcr;
   const transcribeAudio = deps.transcribeAudio ?? transcribeAudioFile;
 
   const currentMessageInput = await prepareSingleFeishuPromptInput(message, session, options, {
     downloadResource,
     readBinaryFile,
-    runImageOcr: runOcr,
     transcribeAudio,
   });
   const unmatchedContextInput = message.unmatchedContext?.length
     ? await prepareUnmatchedContextInput(message.unmatchedContext, session, options, {
       downloadResource,
       readBinaryFile,
-      runImageOcr: runOcr,
       transcribeAudio,
     })
     : null;
@@ -102,7 +97,6 @@ async function prepareSingleFeishuPromptInput(
   deps: {
     downloadResource: typeof downloadFeishuResource;
     readBinaryFile: typeof readFile;
-    runImageOcr: typeof runImageOcr;
     transcribeAudio: typeof transcribeAudioFile;
   },
 ): Promise<PreparedPromptInput> {
@@ -111,7 +105,6 @@ async function prepareSingleFeishuPromptInput(
       const embeddedImageInput = await prepareEmbeddedImageInput(message, session, options, {
         downloadResource: deps.downloadResource,
         readBinaryFile: deps.readBinaryFile,
-        runImageOcr: deps.runImageOcr,
       });
       return {
         text: withQuotedMessageContext(message, embeddedImageInput.text),
@@ -121,38 +114,29 @@ async function prepareSingleFeishuPromptInput(
       };
     }
     case "image": {
+      if (!supportsImageInput(session)) {
+        throw new Error("当前模型不支持图片输入，无法处理图片。请切换到支持图片/视觉能力的模型后重试。");
+      }
+
       const resource = await deps.downloadResource({
         workspaceDir: options.workspaceDir,
         messageId: message.messageId,
         fileKey: message.imageKey,
         resourceType: "image",
       });
-
-      if (supportsImageInput(session)) {
-        const binary = await deps.readBinaryFile(resource.filePath);
-        return {
-          text: withQuotedMessageContext(
-            message,
-            `用户发来了一张图片，图片已保存到本地：${resource.filePath}\n请直接查看图片内容并继续对话；如果用户没写额外说明，就先简短描述图片里有什么。`,
-          ),
-          images: [
-            {
-              type: "image",
-              data: binary.toString("base64"),
-              mimeType: resource.mimeType,
-            },
-          ],
-          localFiles: [resource.filePath],
-        };
-      }
-
-      const ocrText = await deps.runImageOcr(resource.filePath, options);
+      const binary = await deps.readBinaryFile(resource.filePath);
       return {
         text: withQuotedMessageContext(
           message,
-          `用户发来了一张图片，图片已保存到本地：${resource.filePath}\n当前模型不支持直接看图，以下是本地 OCR/视觉结果：\n${ocrText}`,
+          `用户发来了一张图片，图片已保存到本地：${resource.filePath}\n请直接查看图片内容并继续对话；如果用户没写额外说明，就先简短描述图片里有什么。`,
         ),
-        preludeText: formatDisplaySection("OCR 识别结果", ocrText),
+        images: [
+          {
+            type: "image",
+            data: binary.toString("base64"),
+            mimeType: resource.mimeType,
+          },
+        ],
         localFiles: [resource.filePath],
       };
     }
@@ -201,7 +185,6 @@ async function prepareUnmatchedContextInput(
   deps: {
     downloadResource: typeof downloadFeishuResource;
     readBinaryFile: typeof readFile;
-    runImageOcr: typeof runImageOcr;
     transcribeAudio: typeof transcribeAudioFile;
   },
 ): Promise<PreparedPromptInput & { images: NonNullable<PreparedPromptInput["images"]> }> {
@@ -291,37 +274,6 @@ function truncateForContext(text: string, limit: number): string {
 
 export function supportsImageInput(session: AgentSession): boolean {
   return Boolean(session.model?.input.includes("image"));
-}
-
-export async function runImageOcr(
-  imagePath: string,
-  options: Pick<FeishuMediaProcessingOptions, "ollamaBaseUrl" | "ocrModel">,
-): Promise<string> {
-  const imageData = await readFile(imagePath, { encoding: "base64" });
-  const baseUrl = options.ollamaBaseUrl.replace(/\/+$/, "");
-  const response = await fetch(`${baseUrl}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: options.ocrModel,
-      prompt: OCR_PROMPT,
-      stream: false,
-      images: [imageData],
-    }),
-    signal: AbortSignal.timeout(EXTERNAL_PROCESS_TIMEOUT_MS),
-  });
-
-  const payload = (await response.json()) as { response?: string; error?: string };
-  if (!response.ok) {
-    throw new Error(payload.error || `OCR 请求失败: HTTP ${response.status}`);
-  }
-
-  const result = payload.response?.trim();
-  if (!result) {
-    throw new Error("OCR 没返回可用结果");
-  }
-
-  return result;
 }
 
 export async function transcribeAudioFile(
@@ -598,7 +550,7 @@ async function prepareEmbeddedImageInput(
   message: Extract<FeishuInboundMessage, { kind: "text" }>,
   session: AgentSession,
   options: FeishuMediaProcessingOptions,
-  deps: Required<Pick<TransformDeps, "downloadResource" | "readBinaryFile" | "runImageOcr">>,
+  deps: Required<Pick<TransformDeps, "downloadResource" | "readBinaryFile">>,
 ): Promise<{
   text: string;
   preludeText?: string;
@@ -613,8 +565,9 @@ async function prepareEmbeddedImageInput(
   let text = message.text;
   const images: NonNullable<PreparedPromptInput["images"]> = [];
   const localFiles: string[] = [];
-  const ocrSections: string[] = [];
-  const canUseImageInput = supportsImageInput(session);
+  if (!supportsImageInput(session)) {
+    throw new Error("当前模型不支持图片输入，无法处理图片。请切换到支持图片/视觉能力的模型后重试。");
+  }
 
   for (const embeddedImage of embeddedImages) {
     const resource = await deps.downloadResource({
@@ -626,31 +579,15 @@ async function prepareEmbeddedImageInput(
     localFiles.push(resource.filePath);
     text = text.replaceAll(embeddedImage.placeholder, `${embeddedImage.placeholder}：${resource.filePath}`);
 
-    if (canUseImageInput) {
-      const binary = await deps.readBinaryFile(resource.filePath);
-      images.push({
-        type: "image",
-        data: binary.toString("base64"),
-        mimeType: resource.mimeType,
-      });
-      continue;
-    }
-
-    const ocrText = await deps.runImageOcr(resource.filePath, options);
-    ocrSections.push(`${embeddedImage.placeholder}（${resource.filePath}）\n${ocrText}`);
+    const binary = await deps.readBinaryFile(resource.filePath);
+    images.push({
+      type: "image",
+      data: binary.toString("base64"),
+      mimeType: resource.mimeType,
+    });
   }
 
-  if (ocrSections.length === 0) {
-    return { text, images, localFiles };
-  }
-
-  const ocrText = ocrSections.join("\n\n");
-  return {
-    text: `${text}\n\n当前模型不支持直接看图，以下是富文本图片的本地 OCR/视觉结果：\n${ocrText}`,
-    preludeText: formatDisplaySection("OCR 识别结果", ocrText),
-    images,
-    localFiles,
-  };
+  return { text, images, localFiles };
 }
 
 function formatDisplaySection(title: string, content: string): string {

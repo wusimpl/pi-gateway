@@ -45,7 +45,6 @@ const GATEWAY_DEFAULT_ENABLED_TOOL_NAMES = [
   "serper_search",
   "webclaw",
 ];
-const GATEWAY_DEFAULT_DISABLED_TOOL_NAMES = new Set(["init_experiment", "run_experiment", "log_experiment"]);
 const defaultToolNamesBySession = new WeakMap<object, string[]>();
 const groupChatContextBySession = new WeakSet<object>();
 
@@ -780,9 +779,7 @@ function applySavedToolSelection(
 function getDefaultEnabledToolNames(
   session: Pick<AgentSession, "getActiveToolNames" | "getAllTools">,
 ): string[] {
-  const defaultTools = session
-    .getActiveToolNames()
-    .filter((toolName) => !GATEWAY_DEFAULT_DISABLED_TOOL_NAMES.has(toolName));
+  const defaultTools = session.getActiveToolNames();
   const defaultToolSet = new Set(defaultTools);
   const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
 

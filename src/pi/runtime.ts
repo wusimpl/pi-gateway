@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { logger } from "../app/logger.js";
 import { createRuntimeMetadataExtension } from "./extensions/runtime-metadata.js";
+import { installGatewayToolFilter } from "./tool-filter.js";
 
 export interface PiSessionResourceOptions {
   loadGlobalAgentsSkills?: boolean;
@@ -105,6 +106,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
       sessionFile: session.sessionFile,
     });
     await bindGatewayExtensions(session);
+    installGatewayToolFilter(session);
     installGatewayRetryClassifier(session);
     return session;
   }
@@ -133,6 +135,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
         sessionFile: session.sessionFile,
       });
       await bindGatewayExtensions(session);
+      installGatewayToolFilter(session);
       installGatewayRetryClassifier(session);
       return { session, fallbackMessage: modelFallbackMessage };
     } catch (err) {
@@ -160,6 +163,7 @@ export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime
       sessionFile: session.sessionFile,
     });
     await bindGatewayExtensions(session);
+    installGatewayToolFilter(session);
     installGatewayRetryClassifier(session);
     return session;
   }

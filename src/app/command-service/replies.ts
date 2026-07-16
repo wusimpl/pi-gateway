@@ -414,8 +414,7 @@ function extractAudioTranscript(text: string): string | null {
 function isImagePrompt(text: string): boolean {
   return (
     text.startsWith("用户发来了一张图片，图片已保存到本地：") &&
-    (text.includes("\n请直接查看图片内容并继续对话；如果用户没写额外说明，就先简短描述图片里有什么。") ||
-      text.includes("\n当前模型不支持直接看图，以下是本地 OCR/视觉结果：\n"))
+    text.includes("\n请直接查看图片内容并继续对话；如果用户没写额外说明，就先简短描述图片里有什么。")
   );
 }
 

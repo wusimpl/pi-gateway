@@ -276,7 +276,7 @@ describe("handleFeishuMessage 会话历史命令", () => {
           {
             role: "user",
             content:
-              "用户发来了一张图片，图片已保存到本地：/tmp/pi-workspace/user/.feishu-inbox/om_2/image.png\n当前模型不支持直接看图，以下是本地 OCR/视觉结果：\n这里是截图里的文字",
+              "用户发来了一张图片，图片已保存到本地：/tmp/pi-workspace/user/.feishu-inbox/om_2/image.png\n请直接查看图片内容并继续对话；如果用户没写额外说明，就先简短描述图片里有什么。",
           },
           { role: "assistant", content: [{ type: "text", text: "我看到一张报错截图" }] },
         ],
