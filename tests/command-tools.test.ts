@@ -90,7 +90,7 @@ function createDeps(piSession: ReturnType<typeof createPiSessionMock>["session"]
 }
 
 describe("command service tools", () => {
-  it("普通私聊查看 `/tools` 时会清除已启用的宿主机工具", async () => {
+  it("普通私聊查看 `/tools` 时保留受限 bash 和文件工具", async () => {
     const piSession = createPiSessionMock({
       activeTools: ["read", "bash", "tts_synthesize"],
       allTools: ["read", "bash", "edit", "write", "grep", "tts_synthesize"],
@@ -104,9 +104,9 @@ describe("command service tools", () => {
 
     expect(messenger.sendRenderedMessage).toHaveBeenCalledWith(
       "ou_1",
-      "🧰 当前 tools（1/6 已启用）\n" +
-        "❌ read\n" +
-        "❌ bash\n" +
+      "🧰 当前 tools（3/6 已启用）\n" +
+        "✅ read\n" +
+        "✅ bash\n" +
         "❌ edit\n" +
         "❌ write\n" +
         "❌ grep\n" +
@@ -119,11 +119,8 @@ describe("command service tools", () => {
         "恢复默认：/tools reset",
       2000,
     );
-    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["tts_synthesize"]);
-    expect(userStateStore.writeUserState).toHaveBeenCalledWith(
-      "ou_1",
-      expect.objectContaining({ enabledTools: ["tts_synthesize"] }),
-    );
+    expect(piSession.spies.setActiveToolsByName).not.toHaveBeenCalled();
+    expect(userStateStore.writeUserState).not.toHaveBeenCalled();
   });
 
   it("私聊超级管理员可以启用宿主机工具", async () => {
@@ -193,7 +190,7 @@ describe("command service tools", () => {
     );
   });
 
-  it("群聊超级管理员也不能启用宿主机工具", async () => {
+  it("群聊可以启用工作空间文件工具", async () => {
     const piSession = createPiSessionMock({
       activeTools: ["tts_synthesize"],
       allTools: ["read", "tts_synthesize"],
@@ -213,15 +210,12 @@ describe("command service tools", () => {
       target,
     );
 
-    expect(messenger.sendTextMessageToTarget).toHaveBeenCalledWith(
-      target,
-      "群聊中不能启用会直接操作机器人所在电脑的工具：read。",
-    );
-    expect(piSession.spies.setActiveToolsByName).not.toHaveBeenCalled();
-    expect(sessionService.writeSessionState).not.toHaveBeenCalled();
+    expect(messenger.sendTextMessageToTarget).not.toHaveBeenCalled();
+    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["tts_synthesize", "read"]);
+    expect(sessionService.writeSessionState).toHaveBeenCalled();
   });
 
-  it("群聊处理工具命令时会过滤现有宿主机工具", async () => {
+  it("群聊处理工具命令时保留受限 bash 并过滤其他宿主机工具", async () => {
     const piSession = createPiSessionMock({ activeTools: ["read", "bash", "grep"] });
     const { service, sessionService } = createDeps(piSession.session);
     const target = {
@@ -244,11 +238,11 @@ describe("command service tools", () => {
       target,
     );
 
-    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith([]);
+    expect(piSession.spies.setActiveToolsByName).toHaveBeenCalledWith(["read", "bash"]);
     expect(sessionService.writeSessionState).toHaveBeenCalledWith(
       { openId: "ou_1", userId: "u_1" },
       target,
-      expect.objectContaining({ enabledTools: [] }),
+      expect.objectContaining({ enabledTools: ["read", "bash"] }),
     );
   });
 

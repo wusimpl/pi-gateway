@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { SUPER_ADMIN_OPEN_ID } from "../src/app/access-control.js";
 import {
   canEnableHostMachineTools,
+  canEnableToolName,
   enforceHostMachineToolAccess,
+  isGroupWorkspaceFileToolName,
   isHostMachineToolName,
 } from "../src/app/tool-access.js";
 
@@ -22,9 +24,17 @@ const groupTarget = {
 };
 
 describe("host machine tool access", () => {
-  it.each(["read", "bash", "edit", "write", "grep", "find", "ls"])(
+  it.each(["bash", "grep", "find"])(
     "会把 %s 识别为宿主机工具",
     (toolName) => {
+      expect(isHostMachineToolName(toolName)).toBe(true);
+    },
+  );
+
+  it.each(["read", "edit", "write", "ls"])(
+    "会把 %s 识别为群聊工作空间文件工具",
+    (toolName) => {
+      expect(isGroupWorkspaceFileToolName(toolName)).toBe(true);
       expect(isHostMachineToolName(toolName)).toBe(true);
     },
   );
@@ -35,18 +45,25 @@ describe("host machine tool access", () => {
     expect(canEnableHostMachineTools({ openId: SUPER_ADMIN_OPEN_ID }, groupTarget)).toBe(false);
   });
 
-  it("普通用户开始任务前会移除已经启用的宿主机工具", () => {
+  it("私聊和群聊都允许启用文件工具，但仍禁止其他宿主机工具", () => {
+    expect(canEnableToolName("read", { openId: "ou_user" }, p2pTarget)).toBe(true);
+    expect(canEnableToolName("read", { openId: "ou_user" }, groupTarget)).toBe(true);
+    expect(canEnableToolName("bash", { openId: "ou_user" }, p2pTarget)).toBe(true);
+    expect(canEnableToolName("bash", { openId: "ou_user" }, groupTarget)).toBe(true);
+  });
+
+  it("普通用户开始任务前仍会移除未受限开放的宿主机工具", () => {
     const setActiveToolsByName = vi.fn();
     const activeTools = enforceHostMachineToolAccess(
       {
-        getActiveToolNames: () => ["read", "bash", "firecrawl_search"],
+        getActiveToolNames: () => ["read", "bash", "grep", "firecrawl_search"],
         setActiveToolsByName,
       },
       { openId: "ou_user" },
       p2pTarget,
     );
 
-    expect(activeTools).toEqual(["firecrawl_search"]);
-    expect(setActiveToolsByName).toHaveBeenCalledWith(["firecrawl_search"]);
+    expect(activeTools).toEqual(["read", "bash", "firecrawl_search"]);
+    expect(setActiveToolsByName).toHaveBeenCalledWith(["read", "bash", "firecrawl_search"]);
   });
 });

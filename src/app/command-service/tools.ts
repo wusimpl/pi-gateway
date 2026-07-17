@@ -2,7 +2,7 @@ import type { ConversationTarget } from "../../conversation.js";
 import { getSessionDefaultToolNames } from "../../pi/sessions.js";
 import type { UserIdentity, UserState } from "../../types.js";
 import { handleBridgeCommand, type BridgeCommand } from "../commands.js";
-import { canEnableHostMachineTools, isHostMachineToolName } from "../tool-access.js";
+import { canEnableToolName } from "../tool-access.js";
 import {
   dedupeToolNames,
   getToolConfigSession,
@@ -40,14 +40,11 @@ export function createToolsCommandHandlers(deps: ToolsCommandHandlersDeps) {
     const allToolNames = toolSession.getAllTools().map((tool) => tool.name);
     const allToolNameSet = new Set(allToolNames);
     let currentActiveTools = dedupeToolNames(toolSession.getActiveToolNames().filter((name) => allToolNameSet.has(name)));
-    const hostMachineToolsAllowed = canEnableHostMachineTools(identity, conversationTarget);
-    if (!hostMachineToolsAllowed) {
-      const filteredActiveTools = currentActiveTools.filter((name) => !isHostMachineToolName(name));
-      if (filteredActiveTools.length !== currentActiveTools.length) {
-        currentActiveTools = filteredActiveTools;
-        toolSession.setActiveToolsByName(currentActiveTools);
-        await persistTargetToolSelection(identity, conversationTarget, sessionState, currentActiveTools);
-      }
+    const filteredActiveTools = currentActiveTools.filter((name) => canEnableToolName(name, identity, conversationTarget));
+    if (filteredActiveTools.length !== currentActiveTools.length) {
+      currentActiveTools = filteredActiveTools;
+      toolSession.setActiveToolsByName(currentActiveTools);
+      await persistTargetToolSelection(identity, conversationTarget, sessionState, currentActiveTools);
     }
 
     const parsed = parseToolsArgs(command.args);
@@ -72,11 +69,11 @@ export function createToolsCommandHandlers(deps: ToolsCommandHandlersDeps) {
       const unfilteredDefaultTools = dedupeToolNames(
         getSessionDefaultToolNames(toolSession).filter((name) => allToolNameSet.has(name)),
       );
-      const restrictedDefaultTools = hostMachineToolsAllowed
-        ? []
-        : unfilteredDefaultTools.filter(isHostMachineToolName);
+      const restrictedDefaultTools = unfilteredDefaultTools.filter(
+        (name) => !canEnableToolName(name, identity, conversationTarget),
+      );
       const defaultTools = restrictedDefaultTools.length > 0
-        ? unfilteredDefaultTools.filter((name) => !isHostMachineToolName(name))
+        ? unfilteredDefaultTools.filter((name) => canEnableToolName(name, identity, conversationTarget))
         : unfilteredDefaultTools;
       toolSession.setActiveToolsByName(defaultTools);
       await persistTargetToolSelection(identity, conversationTarget, sessionState, defaultTools);
@@ -96,8 +93,8 @@ export function createToolsCommandHandlers(deps: ToolsCommandHandlersDeps) {
     }
 
     const requestedTools = dedupeToolNames(parsed.toolNames);
-    const restrictedRequestedTools = !hostMachineToolsAllowed && (action === "on" || action === "set")
-      ? requestedTools.filter(isHostMachineToolName)
+    const restrictedRequestedTools = action === "on" || action === "set"
+      ? requestedTools.filter((name) => !canEnableToolName(name, identity, conversationTarget))
       : [];
     if (restrictedRequestedTools.length > 0) {
       await deps.sendTextReply(

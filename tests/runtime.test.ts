@@ -99,7 +99,7 @@ describe("pi runtime", () => {
     expect(mocks.loaderInstances[0]?.options.extensionFactories).toEqual(
       expect.arrayContaining([extensionFactory]),
     );
-    expect((mocks.loaderInstances[0]?.options.extensionFactories as unknown[]) ?? []).toHaveLength(2);
+    expect((mocks.loaderInstances[0]?.options.extensionFactories as unknown[]) ?? []).toHaveLength(3);
     expect(mocks.loaderReload).toHaveBeenCalledTimes(1);
     expect(mocks.createAgentSession).toHaveBeenCalledWith({
       cwd: "/tmp/workspace/ou_1",

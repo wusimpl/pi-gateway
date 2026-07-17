@@ -85,7 +85,6 @@ describe("cron runner", () => {
       "/tmp/workspace/u_1",
       "/tmp/pi-gateway-data/cron/sessions/ou_1/cron_1",
     );
-    expect(setActiveToolsByName).toHaveBeenCalledWith(["firecrawl_search"]);
     expect(getWorkspaceContext("/tmp/workspace/u_1", sessionManager)).toEqual({
       identity: { openId: "ou_1", userId: "u_1" },
       conversationTarget: undefined,
@@ -191,7 +190,6 @@ describe("cron runner", () => {
       "/tmp/workspace/conversations/oc_group_1",
       "/tmp/pi-gateway-data/cron/sessions/oc_group_1/cron_group_1",
     );
-    expect(setActiveToolsByName).toHaveBeenCalledWith([]);
     expect(getWorkspaceContext("/tmp/workspace/conversations/oc_group_1", sessionManager)).toEqual({
       identity: { openId: "ou_1", userId: "u_1" },
       conversationTarget: groupTarget,

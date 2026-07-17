@@ -671,7 +671,7 @@ describe("session service", () => {
     const result = await service.getOrCreateActiveSession({ openId: "ou_1", userId: "u_1" });
 
     expect(result.activeSessionId).toBe("pi-session-789");
-    expect(setActiveToolsByName).toHaveBeenLastCalledWith([]);
+    expect(setActiveToolsByName).toHaveBeenCalledWith(["read", "bash"]);
     expect(getSessionDefaultToolNames(session as any)).toEqual(["read", "bash", "edit"]);
   });
 

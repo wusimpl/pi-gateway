@@ -16,6 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { logger } from "../app/logger.js";
+import { createGroupWorkspaceFilesExtension } from "./extensions/group-workspace-files.js";
 import { createRuntimeMetadataExtension } from "./extensions/runtime-metadata.js";
 import { installGatewayToolFilter } from "./tool-filter.js";
 
@@ -66,7 +67,11 @@ type RetryClassifierSession = {
 export function createPiRuntime(options: CreatePiRuntimeOptions = {}): PiRuntime {
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
-  const extensionFactories = [...(options.extensionFactories ?? []), createRuntimeMetadataExtension()];
+  const extensionFactories = [
+    ...(options.extensionFactories ?? []),
+    createRuntimeMetadataExtension(),
+    createGroupWorkspaceFilesExtension(),
+  ];
   const agentsFilesOverride = createAgentsFilesOverride({
     disableGlobalAgents: options.disableGlobalAgents === true,
     gatewayAgentsFile: options.gatewayAgentsFile,

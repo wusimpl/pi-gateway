@@ -12,8 +12,19 @@ const HOST_MACHINE_TOOL_NAMES = new Set([
   "ls",
 ]);
 
+const GROUP_WORKSPACE_FILE_TOOL_NAMES = new Set([
+  "read",
+  "edit",
+  "write",
+  "ls",
+]);
+
 export function isHostMachineToolName(toolName: string): boolean {
   return HOST_MACHINE_TOOL_NAMES.has(toolName);
+}
+
+export function isGroupWorkspaceFileToolName(toolName: string): boolean {
+  return GROUP_WORKSPACE_FILE_TOOL_NAMES.has(toolName);
 }
 
 export function canEnableHostMachineTools(
@@ -22,6 +33,18 @@ export function canEnableHostMachineTools(
 ): boolean {
   const isP2P = !conversationTarget || conversationTarget.kind === "p2p";
   return isP2P && isSuperAdminOpenId(identity.openId);
+}
+
+export function canEnableToolName(
+  toolName: string,
+  identity: UserIdentity,
+  conversationTarget?: ConversationTarget,
+): boolean {
+  if (isGroupWorkspaceFileToolName(toolName) || toolName === "bash") {
+    return true;
+  }
+
+  return !isHostMachineToolName(toolName) || canEnableHostMachineTools(identity, conversationTarget);
 }
 
 export function enforceHostMachineToolAccess(
@@ -33,11 +56,7 @@ export function enforceHostMachineToolAccess(
   conversationTarget?: ConversationTarget,
 ): string[] {
   const currentTools = session.getActiveToolNames?.() ?? [];
-  if (canEnableHostMachineTools(identity, conversationTarget)) {
-    return currentTools;
-  }
-
-  const allowedTools = currentTools.filter((toolName) => !isHostMachineToolName(toolName));
+  const allowedTools = currentTools.filter((toolName) => canEnableToolName(toolName, identity, conversationTarget));
   if (allowedTools.length !== currentTools.length) {
     session.setActiveToolsByName?.(allowedTools);
   }
