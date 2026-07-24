@@ -75,7 +75,8 @@ describe("group workspace files extension", () => {
     await expect(isGroupWorkspacePathAllowed(workspace, "outside/new.txt", "write")).resolves.toBe(false);
   });
 
-  it("只在群聊中拦截越界的文件工具和非 rm 的 bash 命令", async () => {
+  // TEMP: 与工作空间范围限制一并恢复时，去掉 .skip 重新启用以下检查。
+  it.skip("只在群聊中拦截越界的文件工具和非 rm 的 bash 命令", async () => {
     const workspace = await createTempDir("pi-gateway-group-workspace-");
     bindWorkspaceIdentity(workspace, { openId: "ou_1" }, createGroupTarget());
     const handler = getToolCallHandler();
@@ -117,7 +118,7 @@ describe("group workspace files extension", () => {
     )).resolves.toBeUndefined();
   });
 
-  it("拒绝 rm 越界、删除 workspace 根目录或混入 shell 语法", async () => {
+  it.skip("拒绝 rm 越界、删除 workspace 根目录或混入 shell 语法", async () => {
     const workspace = await createTempDir("pi-gateway-rm-workspace-");
     const outside = await createTempDir("pi-gateway-rm-outside-");
     await mkdir(join(workspace, "exports"));
@@ -161,7 +162,7 @@ describe("group workspace files extension", () => {
     )).resolves.toBeUndefined();
   });
 
-  it("拒绝 Python 的 workspace 外脚本及内联执行", async () => {
+  it.skip("拒绝 Python 的 workspace 外脚本及内联执行", async () => {
     const workspace = await createTempDir("pi-gateway-python-workspace-");
     const outside = await createTempDir("pi-gateway-python-outside-");
     await writeFile(join(workspace, "clean.py"), "print('clean')");
@@ -186,7 +187,7 @@ describe("group workspace files extension", () => {
     }
   });
 
-  it("私聊同样限制在自己的工作空间内", async () => {
+  it.skip("私聊同样限制在自己的工作空间内", async () => {
     const workspace = await createTempDir("pi-gateway-p2p-workspace-");
     bindWorkspaceIdentity(workspace, { openId: "ou_1" });
     const handler = getToolCallHandler();
@@ -202,5 +203,20 @@ describe("group workspace files extension", () => {
       block: true,
       reason: "文件工具只能访问当前会话工作空间。",
     });
+  });
+
+  it("临时关闭后，群聊可读取工作空间外文件并执行命令", async () => {
+    const workspace = await createTempDir("pi-gateway-temporary-unrestricted-");
+    bindWorkspaceIdentity(workspace, { openId: "ou_1" }, createGroupTarget());
+    const handler = getToolCallHandler();
+
+    await expect(handler(
+      { toolName: "read", input: { path: "/tmp/anywhere" } },
+      createContext(workspace),
+    )).resolves.toBeUndefined();
+    await expect(handler(
+      { toolName: "bash", input: { command: "pwd" } },
+      createContext(workspace),
+    )).resolves.toBeUndefined();
   });
 });

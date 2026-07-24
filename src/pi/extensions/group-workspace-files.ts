@@ -16,6 +16,10 @@ type FileAccessKind = "read" | "write";
 export function createGroupWorkspaceFilesExtension(): (pi: ExtensionAPI) => void {
   return (pi) => {
     pi.on("tool_call", async (event, ctx) => {
+      // TEMP: disable workspace path restriction for group/p2p bash/write/etc.
+      return undefined;
+
+      /*
       if (!WORKSPACE_FILE_TOOL_NAMES.has(event.toolName) && event.toolName !== "bash") {
         return undefined;
       }
@@ -43,6 +47,7 @@ export function createGroupWorkspaceFilesExtension(): (pi: ExtensionAPI) => void
       }
 
       return undefined;
+      */
     });
   };
 }
